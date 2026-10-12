@@ -101,6 +101,7 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
         if record.pop("compacted", False):
             # PostCompact cannot add context itself; the next tool call carries the reminder.
             decision.context = gates.summary(state)
+            decision.notes.append("route summary re-injected on the first tool call after compaction")
         hook_state.save()
         _log(store, state, event_name, decision)
         return 0, _pre_tool_use_output(decision)
@@ -126,12 +127,19 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
             return 0, ""
         record.pop("compacted", None)
         hook_state.save()
+        _log(
+            store,
+            state,
+            event_name,
+            gates.Decision(notes=["route summary re-injected at session start (compact)"]),
+        )
         output = {"hookEventName": "SessionStart", "additionalContext": decision.context}
         return 0, json.dumps({"hookSpecificOutput": output})
 
     # post-compact
     record["compacted"] = True
     hook_state.save()
+    _log(store, state, event_name, gates.Decision(notes=["compaction observed"]))
     return 0, ""
 
 
