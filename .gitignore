@@ -38,3 +38,6 @@ Thumbs.db
 .env.*
 *.pem
 *.key
+
+# Local session handoff notes
+HANDOFF.md
