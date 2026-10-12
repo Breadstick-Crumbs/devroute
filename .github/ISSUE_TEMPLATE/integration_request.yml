@@ -1,0 +1,34 @@
+name: Tool or integration request
+description: Propose a tool, MCP server, or environment DevRoute should detect or recommend.
+labels: [registry, enhancement]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool name and homepage
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [cli, script, mcp, skill, service, native, other environment adapter]
+    validations:
+      required: true
+  - type: input
+    id: capabilities
+    attributes:
+      label: Capabilities it provides
+      description: See `devroute research --list` (e.g. browser_testing, security_analysis).
+    validations:
+      required: true
+  - type: textarea
+    id: detection
+    attributes:
+      label: How to detect it without executing anything
+      description: Binaries, manifest entries, config files, MCP server name patterns.
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and setup considerations
+      description: Permissions, credentials, network access, license.

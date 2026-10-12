@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in DevRoute does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the exact command and its output.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal project layout or task description that triggers it.
+  - type: input
+    id: version
+    attributes:
+      label: DevRoute version
+      placeholder: devroute --version
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and Python version
+      placeholder: e.g. Ubuntu 24.04, Python 3.12
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Privacy
+      options:
+        - label: I removed tokens, credentials, and private paths from the output above.
+          required: true

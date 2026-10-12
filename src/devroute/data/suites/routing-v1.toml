@@ -1,0 +1,175 @@
+# Routing reference suite v1.
+#
+# Each case states the profile the maintainers expect and, optionally, the
+# minimum risk level the assessment must reach. These are judgments about a
+# sensible route, not measured ground truth. The suite exists to make routing
+# behavior explicit and to catch unintended changes when heuristics are edited.
+
+[[cases]]
+id = "typo-readme"
+task = "Fix typo in README"
+expected = "fast"
+
+[[cases]]
+id = "rename-variable"
+task = "Rename the variable usr to user in the profile helper"
+expected = "fast"
+
+[[cases]]
+id = "log-message"
+task = "Update the log message when the cache is cleared"
+expected = "fast"
+
+[[cases]]
+id = "docstring"
+task = "Add docstrings to the date parsing utilities"
+expected = "fast"
+
+[[cases]]
+id = "simple-crash"
+task = "Fix the crash when the config file is empty"
+expected = "fast"
+
+[[cases]]
+id = "bump-version"
+task = "Bump the version to 1.4.2 in the changelog"
+expected = "fast"
+
+[[cases]]
+id = "pagination"
+task = "Add pagination to the /users API endpoint"
+expected = "standard"
+
+[[cases]]
+id = "dark-mode"
+task = "Add a dark mode toggle to the settings page"
+expected = "standard"
+
+[[cases]]
+id = "csv-export"
+task = "Implement CSV export for the reports page"
+expected = "standard"
+
+[[cases]]
+id = "flaky-test"
+task = "Investigate why the date formatting test fails intermittently"
+expected = "standard"
+
+[[cases]]
+id = "vague"
+task = "make it better"
+expected = "standard"
+
+[[cases]]
+id = "password-hashing"
+task = "Change password hashing from SHA1 to bcrypt"
+expected = "standard"
+min_risk = "high"
+
+[[cases]]
+id = "login-button"
+task = "Fix the login button alignment on mobile"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "api-key-logging"
+task = "Stop logging API keys in the request logger"
+expected = "standard"
+min_risk = "high"
+
+[[cases]]
+id = "email-notifications"
+task = "Send an email notification when an order ships"
+expected = "standard"
+
+[[cases]]
+id = "add-tests"
+task = "Write unit tests for the invoice total calculator"
+expected = "standard"
+
+[[cases]]
+id = "add-index"
+task = "Add a database index on orders.created_at"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "file-upload"
+task = "Allow users to upload a profile picture"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "platform"
+task = "Build a property management platform with authentication, payments, and an admin dashboard"
+expected = "deep"
+min_risk = "critical"
+
+[[cases]]
+id = "saas-dashboard"
+task = "Build a SaaS dashboard with authentication and billing"
+expected = "deep"
+min_risk = "high"
+
+[[cases]]
+id = "microservices"
+task = "Refactor the monolith into microservices for orders, inventory, and shipping"
+expected = "deep"
+
+[[cases]]
+id = "drop-table"
+task = "Drop the legacy orders table from the production database"
+expected = "deep"
+min_risk = "critical"
+
+[[cases]]
+id = "multi-tenant"
+task = "Add multi-tenant workspaces with per-tenant data isolation"
+expected = "deep"
+min_risk = "high"
+
+[[cases]]
+id = "race-condition"
+task = "Fix the race condition in the payment webhook handler that sometimes double-charges customers"
+expected = "deep"
+min_risk = "critical"
+
+[[cases]]
+id = "framework-upgrade"
+task = "Migrate the frontend from React 16 to React 18"
+expected = "deep"
+
+[[cases]]
+id = "realtime-chat"
+task = "Implement real-time chat with websockets, message history, and read receipts"
+expected = "deep"
+
+[[cases]]
+id = "oauth-sso"
+task = "Add SSO login with OAuth for enterprise customers"
+expected = "standard"
+min_risk = "high"
+
+[[cases]]
+id = "data-backfill"
+task = "Backfill the missing country field for all existing customer records"
+expected = "deep"
+min_risk = "high"
+
+[[cases]]
+id = "deploy-pipeline"
+task = "Set up a CI/CD pipeline that deploys to production on merge"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "performance"
+task = "Optimize the slow search query on the products page"
+expected = "standard"
+
+[[cases]]
+id = "hyphenated-platform"
+task = "Build a multi-warehouse inventory platform with user authentication, Stripe billing, and an admin dashboard"
+expected = "deep"
+min_risk = "critical"

@@ -1,0 +1,31 @@
+name: Routing feedback
+description: DevRoute chose the wrong workflow, or scored complexity or risk badly for a task.
+labels: [routing, heuristics]
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: Task description
+      description: The exact text you gave DevRoute (redact anything confidential).
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: DevRoute output
+      description: Paste `devroute assess --json "<task>"` or the relevant part of the brief.
+      render: json
+    validations:
+      required: true
+  - type: dropdown
+    id: expected
+    attributes:
+      label: Profile you expected
+      options: [FAST, STANDARD, DEEP]
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: Which risk or complexity factor was missed or over-weighted? Proposed suite case welcome.

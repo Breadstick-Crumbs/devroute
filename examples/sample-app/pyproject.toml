@@ -1,0 +1,14 @@
+[project]
+name = "inventory-app"
+version = "0.1.0"
+description = "A tiny stock-tracking service used to demonstrate DevRoute."
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100

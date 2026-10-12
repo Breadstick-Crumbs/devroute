@@ -1,0 +1,37 @@
+name = "fast"
+title = "FAST"
+summary = "Small, well-understood, low-risk change. Minimal planning, one agent, focused tests."
+intended_for = "Typos, contained bug fixes, small refactors, and changes confined to one area with no security or data impact."
+planning = "minimal"
+delegation = "none: a single primary agent does the work"
+review = "self-review of the final diff"
+isolation = "none needed; work on the current branch"
+verification_depth = "focused: tests that cover the changed code"
+report = "short completion report"
+
+approval_checkpoints = []
+
+[[phases]]
+id = "locate"
+title = "Locate"
+action = "Find the exact code to change with targeted searches. Avoid broad repository exploration."
+
+[[phases]]
+id = "implement"
+title = "Implement"
+action = "Make the smallest change that fully solves the task."
+
+[[phases]]
+id = "verify"
+title = "Verify"
+action = "Run the tests that cover the changed code (add a regression test for bug fixes) and any required checks."
+
+[[phases]]
+id = "report"
+title = "Report"
+action = "Summarize the change, list the checks that actually ran with their results, and note anything not verified."
+
+[[capabilities]]
+id = "version_control"
+level = "recommended"
+reason = "review the diff before finishing"

@@ -1,0 +1,116 @@
+# Capability taxonomy. `keywords` are used to infer which capabilities a
+# discovered skill, subagent, or MCP server offers from its name and description.
+
+[[capabilities]]
+id = "version_control"
+title = "Version control"
+description = "Track, diff, and revert changes."
+keywords = ["git", "commit", "branch", "version control"]
+
+[[capabilities]]
+id = "github"
+title = "GitHub integration"
+description = "Pull requests, issues, and CI status on GitHub."
+keywords = ["github", "pull request", "pr review", "issues"]
+
+[[capabilities]]
+id = "unit_testing"
+title = "Unit testing"
+description = "Run fast automated tests of individual units."
+keywords = ["unit test", "pytest", "jest", "vitest", "test runner", "tdd"]
+
+[[capabilities]]
+id = "integration_testing"
+title = "Integration testing"
+description = "Exercise components together across real boundaries (database, HTTP, queues)."
+keywords = ["integration test", "contract test", "api test"]
+
+[[capabilities]]
+id = "browser_testing"
+title = "Browser / end-to-end testing"
+description = "Drive a real browser to verify user-facing flows."
+keywords = ["browser", "playwright", "cypress", "puppeteer", "selenium", "e2e", "end-to-end", "chrome"]
+
+[[capabilities]]
+id = "static_analysis"
+title = "Linting / static analysis"
+description = "Detect defects and style issues without running the code."
+keywords = ["lint", "linter", "static analysis", "eslint", "ruff"]
+
+[[capabilities]]
+id = "type_checking"
+title = "Type checking"
+description = "Verify type annotations and interfaces."
+keywords = ["type check", "mypy", "pyright", "typescript", "tsc"]
+
+[[capabilities]]
+id = "security_analysis"
+title = "Security analysis"
+description = "Find vulnerabilities in code (SAST) or review changes for security issues."
+keywords = ["security", "vulnerab", "sast", "threat", "owasp"]
+
+[[capabilities]]
+id = "dependency_audit"
+title = "Dependency audit"
+description = "Check dependencies against known-vulnerability databases."
+keywords = ["dependency audit", "vulnerable dependencies", "sca", "supply chain"]
+
+[[capabilities]]
+id = "secret_scanning"
+title = "Secret scanning"
+description = "Detect committed credentials and keys."
+keywords = ["secret scan", "secrets", "credential leak", "gitleaks"]
+
+[[capabilities]]
+id = "database_tooling"
+title = "Database tooling"
+description = "Inspect and manipulate databases and schemas."
+keywords = ["database", "sql", "postgres", "mysql", "sqlite", "schema"]
+
+[[capabilities]]
+id = "migration_checks"
+title = "Migration checks"
+description = "Validate schema migrations before they run against real data."
+keywords = ["migration", "alembic", "prisma", "flyway", "liquibase"]
+
+[[capabilities]]
+id = "payment_sandbox"
+title = "Payment sandbox"
+description = "Exercise payment flows in a provider's test mode without moving real money."
+keywords = ["stripe", "payment", "billing", "checkout sandbox"]
+
+[[capabilities]]
+id = "performance_testing"
+title = "Performance testing"
+description = "Measure latency, throughput, and resource use."
+keywords = ["performance", "benchmark", "load test", "profil"]
+
+[[capabilities]]
+id = "code_review"
+title = "Code review"
+description = "Review a diff for correctness, design, and risk."
+keywords = ["code review", "review", "reviewer", "audit"]
+
+[[capabilities]]
+id = "web_research"
+title = "Web research"
+description = "Search and read documentation and external sources."
+keywords = ["web search", "research", "documentation lookup", "fetch"]
+
+[[capabilities]]
+id = "deployment"
+title = "Deployment tooling"
+description = "Build and ship to an environment."
+keywords = ["deploy", "release", "kubernetes", "terraform", "vercel"]
+
+[[capabilities]]
+id = "containerization"
+title = "Containers"
+description = "Build and run containers for reproducible environments."
+keywords = ["docker", "container", "podman"]
+
+[[capabilities]]
+id = "continuous_integration"
+title = "Continuous integration"
+description = "Automated checks that run on every change."
+keywords = ["ci", "github actions", "pipeline"]
