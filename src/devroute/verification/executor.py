@@ -91,11 +91,11 @@ def run_command(argv: list[str], cwd: Path, timeout: float) -> tuple[str, int | 
     started = time.monotonic()
     # Run in a new process group/session so a timeout can stop the whole tree
     # (test runners often spawn children that would otherwise keep running).
-    group: dict[str, Any] = (
-        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-        if os.name == "nt"
-        else {"start_new_session": True}
-    )
+    group: dict[str, Any]
+    if sys.platform == "win32":
+        group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        group = {"start_new_session": True}
     try:
         # Bandit B603: argv list from the tool registry, no shell.
         proc = subprocess.Popen(  # nosec B603

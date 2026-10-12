@@ -11,7 +11,7 @@ import json
 import os
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from devroute.discovery.models import Finding, Status
@@ -220,7 +220,9 @@ def _mcp_finding(name: str, entry: Any, scope: str, disabled: set[str], registry
         raw = entry.get("command")
         parts = raw.split() if isinstance(raw, str) else []
         executable = parts[0] if parts else ""
-        label = Path(executable).name if executable else "(none)"
+        # PureWindowsPath splits on both "/" and "\", so Windows-style paths in configs
+        # are reduced to their basename on every OS.
+        label = PureWindowsPath(executable).name if executable else "(none)"
         finding.detail["command"] = label
         if executable and (shutil.which(executable) or Path(executable).is_file()):
             finding.evidence.append(f"launch command '{label}' resolvable; server not started")
