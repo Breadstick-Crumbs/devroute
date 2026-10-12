@@ -205,3 +205,16 @@ def test_subdirectory_of_repository_counts_as_git(tmp_path: Path):
     sub = tmp_path / "packages" / "app"
     sub.mkdir(parents=True)
     assert scan_project(sub).is_git_repo
+
+
+def test_declared_capabilities_override_inference(tmp_path: Path, home: Path, registry):
+    root = tmp_path / "proj"
+    write(
+        root,
+        ".claude/agents/researcher.md",
+        "---\nname: researcher\ndescription: Researches browser testing and payment tools\n"
+        "devroute-capabilities: web_research, not_a_capability\n---\nx",
+    )
+    [agent] = build_inventory(root, registry, home=home, env={}).by_kind("agent")
+    assert agent.capabilities == ["web_research"]
+    assert any("not_a_capability" in e for e in agent.evidence)

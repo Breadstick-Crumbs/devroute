@@ -20,6 +20,8 @@ from devroute.registry import Registry
 _FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(?:(.*?)\r?\n)?---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 _KEY = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 MAX_DEFINITION_BYTES = 512_000
+# Optional frontmatter key listing DevRoute capability ids a skill or subagent provides.
+CAPABILITIES_KEY = "devroute-capabilities"
 
 
 class FrontmatterError(ValueError):
@@ -114,12 +116,23 @@ def _definition_finding(kind: str, name: str, path: Path, scope: str, registry: 
     for key in ("tools", "model", "allowed-tools", "disable-model-invocation", "argument-hint", "isolation"):
         if key in meta:
             detail[key] = meta[key][:200]
+    declared = meta.get(CAPABILITIES_KEY)
+    if declared is not None:
+        # An explicit declaration beats guessing from prose descriptions.
+        names = [c.strip() for c in declared.strip("[]").split(",") if c.strip()]
+        capabilities = [c for c in names if c in registry.capabilities]
+        evidence.append(f"capabilities declared in frontmatter ({CAPABILITIES_KEY})")
+        unknown = [c for c in names if c not in registry.capabilities]
+        if unknown:
+            evidence.append(f"unknown capability ids ignored: {', '.join(unknown)}")
+    else:
+        capabilities = infer_capabilities(f"{display} {description}", registry)
     return Finding(
         id=f"{kind}:{scope}:{display}",
         kind=kind,
         name=display,
         status=status,
-        capabilities=infer_capabilities(f"{display} {description}", registry),
+        capabilities=capabilities,
         evidence=evidence,
         scope=scope,
         detail=detail,

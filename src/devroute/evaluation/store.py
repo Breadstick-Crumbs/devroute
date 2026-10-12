@@ -10,7 +10,7 @@ from typing import Any
 
 from devroute.paths import records_dir
 
-RECORD_KINDS = ("routes", "outcomes", "evidence", "research")
+RECORD_KINDS = ("routes", "outcomes", "evidence", "research", "approvals", "enforcement")
 
 
 class RecordError(Exception):
@@ -60,15 +60,21 @@ class RecordStore:
                     self.skipped_lines += 1
         return items
 
-    def resolve_route(self, ref: str) -> dict[str, Any]:
-        """Find a route record by full id, unique prefix, or ``latest``."""
+    def resolve_route(self, ref: str, session_id: str | None = None) -> dict[str, Any]:
+        """Find a route record by full id, unique prefix, or ``latest``.
+
+        With ``session_id``, ``latest`` means the newest route created in that session
+        (falling back to the newest overall), so concurrent sessions do not act on each
+        other's routes.
+        """
         routes = self.read("routes")
         if not routes:
             raise RecordError(
                 "no route records yet (records are written by `devroute route` after `devroute init`)"
             )
         if ref == "latest":
-            return routes[-1]
+            own = [r for r in routes if session_id and r.get("session_id") == session_id]
+            return own[-1] if own else routes[-1]
         exact = [r for r in routes if r.get("id") == ref]
         if exact:
             return exact[-1]

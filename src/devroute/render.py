@@ -13,6 +13,9 @@ from devroute.pipeline import TaskPlan
 from devroute.research import ResearchReport
 from devroute.verification import Evidence
 
+# Phases where the selected code-navigation tool is named in the brief.
+NAVIGATION_PHASES = frozenset({"locate", "investigate", "requirements"})
+
 STATUS_LABELS = {
     Status.AVAILABLE_VERIFIED: "verified",
     Status.INSTALLED_UNVERIFIED: "installed (unverified)",
@@ -117,9 +120,13 @@ def render_brief(plan: TaskPlan) -> str:
         lines += [f"Claude Code skills and subagents available: {names}", ""]
 
     lines += ["## Proposed steps", ""]
+    nav = next(
+        (r.selected for r in plan.recommendations if r.capability == "code_navigation" and r.selected), None
+    )
     for i, phase in enumerate(p.phases, 1):
         marker = " **[approval]**" if phase.approval else ""
-        lines.append(f"{i}. **{phase.title}**{marker} - {phase.action}")
+        hint = f" Navigation: {nav.name}." if nav and phase.id in NAVIGATION_PHASES else ""
+        lines.append(f"{i}. **{phase.title}**{marker} - {phase.action}{hint}")
     lines.append("")
 
     lines += ["## Required verification", ""]

@@ -53,6 +53,7 @@ class Candidate:
     command: list[str] | None = None
     install: str = ""
     notes: str = ""
+    adjustments: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -147,7 +148,57 @@ def _discovered_candidate(finding: Finding) -> Candidate:
     )
 
 
-def candidates_for(capability: str, inventory: Inventory, registry: Registry) -> list[Candidate]:
+@dataclass(frozen=True)
+class SelectionContext:
+    """Project facts that change which tool is the right one, not just which is available."""
+
+    large_repo_files: int = 2000
+    size_adjustment: float = 5.0
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any] | None) -> SelectionContext:
+        if not config:
+            return cls()
+        return cls(
+            large_repo_files=int(config.get("context", {}).get("large_repo_files", 2000)),
+            size_adjustment=float(config.get("selection", {}).get("code_navigation_size_adjustment", 5.0)),
+        )
+
+
+# Kinds that index the codebase (graphs, language servers) rather than scanning text.
+_INDEXED_KINDS = frozenset({"mcp", "skill", "agent"})
+
+
+def _adjust_for_size(candidates: list[Candidate], inventory: Inventory, context: SelectionContext) -> None:
+    """Code navigation depends on repository size: text search is enough for small repositories,
+    while an index pays for its context cost in large ones."""
+    files = inventory.source_files
+    large = files >= context.large_repo_files
+    for c in candidates:
+        if c.kind in _INDEXED_KINDS:
+            delta = context.size_adjustment if large else -context.size_adjustment
+            reason = (
+                f"large repository ({files} source files): an index saves search-and-read round trips"
+                if large
+                else f"small repository ({files} source files): built-in search is sufficient"
+            )
+        elif c.kind == "native" and large:
+            delta = -context.size_adjustment
+            reason = (
+                f"large repository ({files} source files): text search scales poorly for call-graph questions"
+            )
+        else:
+            continue
+        c.score += delta
+        c.adjustments.append(reason)
+
+
+def candidates_for(
+    capability: str,
+    inventory: Inventory,
+    registry: Registry,
+    context: SelectionContext | None = None,
+) -> list[Candidate]:
     candidates: list[Candidate] = []
     for tool in registry.tools_for(capability):
         candidate = _registry_candidate(tool, capability, inventory)
@@ -161,12 +212,15 @@ def candidates_for(capability: str, inventory: Inventory, registry: Registry) ->
         for candidate in candidates:
             if candidate.id == "git" and candidate.status.usable:
                 candidate.notes = "git is installed but this project is not a repository yet"
+    if capability == "code_navigation":
+        _adjust_for_size(candidates, inventory, context or SelectionContext())
     return sorted(candidates, key=lambda c: (-c.score, c.name))
 
 
 def _rationale(selected: Candidate | None, suggestion: Candidate | None, others: list[Candidate]) -> str:
     if selected is not None:
         parts = [f"{selected.name} ({selected.kind}) is {selected.status.value.replace('_', ' ')}"]
+        parts += selected.adjustments
         heavier = [
             c for c in others if KIND_PREFERENCE.get(c.kind, 1) < KIND_PREFERENCE.get(selected.kind, 1)
         ]
@@ -185,11 +239,14 @@ def _rationale(selected: Candidate | None, suggestion: Candidate | None, others:
 
 
 def recommend(
-    requirements: list[CapabilityRequirement], inventory: Inventory, registry: Registry
+    requirements: list[CapabilityRequirement],
+    inventory: Inventory,
+    registry: Registry,
+    context: SelectionContext | None = None,
 ) -> list[ToolRecommendation]:
     recommendations: list[ToolRecommendation] = []
     for req in requirements:
-        candidates = candidates_for(req.capability, inventory, registry)
+        candidates = candidates_for(req.capability, inventory, registry, context)
         usable = [c for c in candidates if c.status.usable]
         selected = usable[0] if usable else None
         suggestion = None if selected else (candidates[0] if candidates else None)

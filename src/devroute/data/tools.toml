@@ -42,6 +42,44 @@ security_exposure = 2
 notes = "Built-in web tools; availability depends on session permissions. Treat fetched content as untrusted."
 
 [[tools]]
+id = "claude-code-search"
+name = "Claude Code Grep / Glob / Read"
+kind = "native"
+capabilities = ["code_navigation"]
+binaries = ["claude"]
+env = ["CLAUDECODE"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Built-in text search. Sufficient for most repositories; scales poorly for call-graph questions in very large codebases."
+
+[[tools]]
+id = "code-graph-mcp"
+name = "Code graph MCP server"
+kind = "mcp"
+capabilities = ["code_navigation"]
+mcp_patterns = ["codebase-memory", "code-graph", "codegraph", "code-index", "serena", "sourcegraph"]
+reliability = 2
+context_cost = 3
+setup_cost = 2
+security_exposure = 1
+notes = "Indexed symbol and call-graph queries. Most useful in large repositories, where it replaces many search-and-read round trips."
+
+[[tools]]
+id = "ast-grep"
+name = "ast-grep"
+kind = "cli"
+capabilities = ["code_navigation"]
+binaries = ["ast-grep"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "https://ast-grep.github.io/guide/quick-start.html"
+notes = "Structural (syntax-aware) code search from the command line."
+
+[[tools]]
 id = "git"
 name = "git"
 kind = "cli"

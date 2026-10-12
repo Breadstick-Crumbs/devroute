@@ -117,6 +117,12 @@ store_task_text = false   # only a SHA-256 of the task is stored
 ### Capabilities
 Run `devroute research --list`.
 
+### `[enforcement]`
+Settings for opt-in hook enforcement: `approval_profiles`, `evidence_profiles`, `max_stop_blocks`, `edit_tools`, `shell_write_patterns`, and `irreversible_commands`. See [enforcement.md](enforcement.md).
+
+### `[selection]`
+`code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers.
+
 ## Checking the effect of a change
 
 ```bash
