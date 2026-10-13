@@ -16,14 +16,20 @@ from typing import Any, TextIO
 
 from susanoo import __version__
 from susanoo.adapters.claude_code.installer import (
+    UNREADABLE,
+    FileAction,
+    _read,
     actions_to_dicts,
     apply_install,
     apply_uninstall,
     enforcement_enabled,
+    enforcement_scope,
     plan_install,
     plan_uninstall,
+    read_manifest,
     sha256,
     skill_template,
+    update_manifest,
 )
 from susanoo.adapters.claude_code.legacy import (
     MigrationError,
@@ -36,6 +42,13 @@ from susanoo.adapters.claude_code.legacy import (
     remove_legacy_files,
     stale_hook_settings,
     state_sources,
+)
+from susanoo.adapters.claude_code.settings_hooks import (
+    GATE_EVENTS,
+    SETTINGS_FILE,
+    apply_settings,
+    owned_events_in,
+    plan_settings,
 )
 from susanoo.analyzer import assess
 from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
@@ -168,13 +181,21 @@ def cmd_inventory(ctx: Context, stdin: TextIO) -> int:
 def cmd_init(ctx: Context, stdin: TextIO) -> int:
     args = ctx.args
     notes: list[str] = []
+    manifest = read_manifest(ctx.root)
+    managed = manifest.get("settings_managed") is True
+    created = manifest.get("settings_created") is True
+    migration: list[FileAction] = []
     if args.uninstall:
         own = plan_uninstall(ctx.root)
         legacy = plan_legacy_files(ctx.root)
-        actions = own + legacy
+        settings = plan_settings(ctx.root, want=False, managed=managed, created=created)
+        _refuse_settings_conflict(settings, want=False)
         if not args.dry_run:
+            # Settings first, while the manifest that records Susanoo's ownership still exists.
+            settings = _apply_settings(ctx.root, want=False, managed=managed, created=created)[0]
             apply_uninstall(ctx.root, own)
             remove_legacy_files(ctx.root, legacy)
+        actions = own + legacy + ([settings] if settings else [])
     else:
         # A DevRoute installation is migrated in two phases: its state first (so records and the
         # enforce choice carry over), its old skill and subagents only after the new ones exist.
@@ -187,6 +208,17 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
             if args.no_enforce
             else planned_enforce(ctx.root, migration, enforcement_enabled(ctx.root))
         )
+        scope = args.enforce_scope or enforcement_scope(ctx.root)
+        if args.enforce_scope and not enforce:
+            ctx.err.write("note: --enforce-scope was saved; it takes effect with --enforce\n")
+        want_settings = enforce and scope == "settings"
+        skill_hooks = enforce and scope == "skill"
+        # With the skill scope, a compaction hook Susanoo put in settings earlier stays: the skill
+        # cannot provide it, and it cannot run twice.
+        keep = frozenset({"SessionStart"}) if skill_hooks else frozenset()
+        settings = plan_settings(ctx.root, want=want_settings, managed=managed, created=created, keep=keep)
+        skill_plan = plan_install(ctx.root, force=args.force, with_agents=False, enforce=skill_hooks)[0]
+        _check_single_hook_place(ctx, enforce, want_settings, skill_hooks, settings, skill_plan)
         if enforce and not shutil.which("susanoo"):
             ctx.err.write(
                 "warning: enforcement hooks run `susanoo hook ...`, but `susanoo` is not on PATH. "
@@ -198,7 +230,7 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 ctx.root,
                 force=args.force,
                 with_agents=not args.no_agents,
-                enforce=enforce,
+                enforce=skill_hooks,
                 manifest_files=migrated_manifest(ctx.root)["files"] if moving else None,
                 read_from=state_sources(ctx.root) if moving else None,
             )
@@ -209,12 +241,22 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 raise CLIError(str(exc)) from exc
             if note:
                 notes.append(note)
-            install = plan_install(
-                ctx.root, force=args.force, with_agents=not args.no_agents, enforce=enforce
+            # Settings first: if they cannot be written, the skill and manifest stay as they were.
+            settings, created = _apply_settings(
+                ctx.root, want=want_settings, managed=managed, created=created, keep=keep
             )
-            apply_install(ctx.root, install, with_agents=not args.no_agents, enforce=enforce)
+            update_manifest(
+                ctx.root,
+                settings_created=created,
+                settings_managed=bool(owned_events_in(ctx.root / SETTINGS_FILE))
+                and (want_settings or managed),
+            )
+            install = plan_install(
+                ctx.root, force=args.force, with_agents=not args.no_agents, enforce=skill_hooks
+            )
+            apply_install(ctx.root, install, with_agents=not args.no_agents, enforce=enforce, scope=scope)
             remove_legacy_files(ctx.root, migration)
-        actions = migration + install
+        actions = migration + install + ([settings] if settings else [])
     if args.json:
         ctx.emit_json({"root": str(ctx.root), "dry_run": args.dry_run, "actions": actions_to_dicts(actions)})
         return EXIT_OK
@@ -226,10 +268,10 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
     if not actions:
         lines.append("  nothing to do")
     lines.append("")
-    conflicts = [a for a in actions if a.action == "conflict"]
+    conflicts = [a for a in actions if a.action == "conflict" and a.path != SETTINGS_FILE]
     if conflicts:
         lines.append(f"{len(conflicts)} file(s) left untouched because they differ from Susanoo's version.")
-    if any(a.action in ("migrate", "merge", "remove") for a in actions) and not args.uninstall:
+    if any(a.action in ("migrate", "merge", "remove") for a in migration):
         verb = "Will migrate" if args.dry_run else "Migrated"
         lines.append(f"{verb} the DevRoute installation; DevRoute is now Susanoo.")
     lines += notes
@@ -239,14 +281,121 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 "Local records in .susanoo/records were kept; delete them yourself if you no longer need them."
             )
     elif not args.dry_run:
+        touched = any(a.path == SETTINGS_FILE and a.action not in ("unchanged", "conflict") for a in actions)
         lines += [
-            "Settings, CLAUDE.md, and MCP configuration were not modified.",
+            f"Only Susanoo's hook entries in {SETTINGS_FILE} were changed; CLAUDE.md and MCP configuration "
+            "were not modified."
+            if touched
+            else "Settings, CLAUDE.md, and MCP configuration were not modified.",
             "Next: run `susanoo doctor`, then in Claude Code: /susanoo <task description>",
         ]
     else:
         lines.append("No files were written (dry run). Re-run without --dry-run to apply.")
     ctx.emit("\n".join(lines))
     return EXIT_OK
+
+
+def _settings_sources(root: Path) -> list[Path]:
+    """Settings files Claude Code reads hooks from for this project (each file once)."""
+    paths = [
+        root / SETTINGS_FILE,
+        root / ".claude" / "settings.json",
+        Path.home() / ".claude" / "settings.json",
+    ]
+    unique: dict[Path, Path] = {}
+    for path in paths:
+        unique.setdefault(path.resolve(), path)  # the project may be the home directory
+    return list(unique.values())
+
+
+def _refuse_settings_conflict(settings: FileAction | None, *, want: bool) -> None:
+    """A settings file Susanoo has to change but cannot is an error, never a silent skip."""
+    if settings and settings.action == "conflict":
+        verb = "add the enforcement hooks to" if want else "remove Susanoo's hooks from"
+        problem = settings.note.split(";")[0]
+        raise CLIError(
+            f"cannot {verb} {SETTINGS_FILE}: it {problem}. Fix the file first"
+            + ("." if want else ", or remove the `susanoo hook` entries yourself.")
+            + " Nothing was changed."
+        )
+
+
+def _check_single_hook_place(
+    ctx: Context,
+    enforce: bool,
+    want_settings: bool,
+    skill_hooks: bool,
+    settings: FileAction | None,
+    skill_plan: FileAction,
+) -> None:
+    """Refuse, before any change, an install that would leave enforcement hooks in two places.
+
+    Claude Code does not deduplicate identical hooks, so every gate would run twice.
+    """
+    _refuse_settings_conflict(settings, want=want_settings)
+    if not enforce:
+        return
+    unchanged = "Nothing was changed."
+    if want_settings and skill_plan.action == "conflict":
+        current = _read(ctx.root / skill_plan.path)
+        if current == UNREADABLE:
+            raise CLIError(
+                f"{skill_plan.path} is not a readable text file. Fix or remove it first. {unchanged}"
+            )
+        if "susanoo hook" in str(current):
+            raise CLIError(
+                "the /susanoo skill has local changes and still declares the enforcement hooks, so they "
+                "would also run from settings. Remove its `hooks:` block, or rerun with --force (a backup "
+                f"is written first). {unchanged}"
+            )
+    removing = settings is not None and settings.action in ("remove", "remove-hooks")
+    if skill_hooks and not removing and owned_events_in(ctx.root / SETTINGS_FILE) & GATE_EVENTS:
+        raise CLIError(
+            f"{SETTINGS_FILE} already runs Susanoo's hooks, so the skill's would run twice. Use "
+            f"--enforce-scope settings, or remove them from that file. {unchanged}"
+        )
+    elsewhere = [str(p) for p in _settings_sources(ctx.root)[1:] if owned_events_in(p) & GATE_EVENTS]
+    if elsewhere:
+        raise CLIError(
+            f"{', '.join(elsewhere)} already runs Susanoo's hooks, so enforcement would run them twice. "
+            f"Remove them there, or use --no-enforce. {unchanged}"
+        )
+
+
+def _apply_settings(root: Path, **kwargs: Any) -> tuple[FileAction | None, bool]:
+    try:
+        return apply_settings(root, **kwargs)
+    except OSError as exc:
+        raise CLIError(f"could not update {SETTINGS_FILE}: {exc}") from exc
+
+
+def _check_hook_placement(ctx: Context, check: Callable[[str, str, str], None], *, skill_hooks: bool) -> None:
+    """Report where enforcement hooks live, and warn when the same events run twice."""
+    local = ctx.root / SETTINGS_FILE
+    settings_gates = [p for p in _settings_sources(ctx.root) if owned_events_in(p) & GATE_EVENTS]
+    places = (["the /susanoo skill"] if skill_hooks else []) + [str(p) for p in settings_gates]
+    if len(places) > 1:
+        check(
+            "enforcement",
+            "warn",
+            f"hooks are in {' and '.join(places)}; Claude Code runs each, so every gate runs twice. "
+            "Keep one: `susanoo init --enforce-scope skill|settings`, and remove any you added by hand",
+        )
+    elif settings_gates:
+        check("enforcement", "ok", f"hooks on (in {settings_gates[0]})")
+    elif enforcement_scope(ctx.root) == "settings" and enforcement_enabled(ctx.root):
+        missing = ", ".join(sorted(GATE_EVENTS - owned_events_in(local)))
+        check(
+            "enforcement",
+            "warn",
+            f"settings scope is recorded, but {SETTINGS_FILE} lacks {missing}; run `susanoo init`",
+        )
+    if (skill_hooks or settings_gates) and not shutil.which("susanoo"):
+        check(
+            "enforcement",
+            "warn",
+            "hooks call `susanoo`, which is not on PATH; they will fail open until it is",
+        )
 
 
 def cmd_doctor(ctx: Context, stdin: TextIO) -> int:
@@ -321,18 +470,14 @@ def cmd_doctor(ctx: Context, stdin: TextIO) -> int:
         check(
             "/susanoo skill", "ok", "installed and current" + (" (enforcement hooks on)" if enforced else "")
         )
-        if enforced and not shutil.which("susanoo"):
-            check(
-                "enforcement",
-                "warn",
-                "hooks call `susanoo`, which is not on PATH; they will fail open until it is",
-            )
     else:
+        enforced = "susanoo hook" in skill.read_text(encoding="utf-8")
         check(
             "/susanoo skill",
             "warn",
             "installed but differs from this Susanoo version (modified or outdated); `susanoo init` shows options",
         )
+    _check_hook_placement(ctx, check, skill_hooks=skill.is_file() and enforced)
     agents = [
         n
         for n in ("susanoo-reviewer", "susanoo-researcher")
@@ -655,7 +800,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--enforce",
         action="store_true",
-        help="add enforcement hooks to the /susanoo skill (plan-approval, evidence, irreversible-action gates)",
+        help="turn on enforcement hooks (plan-approval, evidence, irreversible-action gates)",
+    )
+    p.add_argument(
+        "--enforce-scope",
+        choices=["skill", "settings"],
+        help="where the hooks live: the /susanoo skill (default; only that Claude Code process) or "
+        ".claude/settings.local.json (every session, including resumed ones); the choice is kept",
     )
     p.add_argument("--no-enforce", action="store_true", help="install the skill without enforcement hooks")
     p.set_defaults(func=cmd_init)

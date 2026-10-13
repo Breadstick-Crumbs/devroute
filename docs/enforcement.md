@@ -3,18 +3,32 @@
 A Claude Code skill is a set of instructions, and a model can drift from instructions, especially in long sessions or after context compaction. Susanoo's enforcement mode turns the parts of a workflow that matter most into **deterministic checks** that Claude Code runs through hooks.
 
 ```bash
-susanoo init --enforce        # later `susanoo init` runs keep this choice; --no-enforce turns it off
+susanoo init --enforce                           # hooks in the /susanoo skill (default scope)
+susanoo init --enforce --enforce-scope settings  # hooks in .claude/settings.local.json
 ```
 
-Enforcement requires the `susanoo` command on `PATH` in the environment Claude Code runs in. `susanoo doctor` warns if it is missing.
+Later `susanoo init` runs keep both choices; `--no-enforce` turns enforcement off. Enforcement requires the `susanoo` command on `PATH` in the environment Claude Code runs in. `susanoo doctor` warns if it is missing.
 
 ## How it is wired
 
-`--enforce` adds `PreToolUse` and `Stop` hooks to the `/susanoo` skill's frontmatter. Claude Code registers skill hooks **when the skill is invoked**, and they stay active for as long as that Claude Code process keeps running, including across context compaction. A session resumed later in a new process (`claude --resume` or `--continue`) does not have them; see the limits below. As a result:
+Hooks live in exactly one place, chosen with `--enforce-scope`. Claude Code does not deduplicate identical hooks from a skill and a settings file, so every gate would run twice. `susanoo init` therefore refuses, before changing anything, when the result would put the gates in two places: a modified `/susanoo` skill that still has hooks while you choose `settings`, Susanoo hooks you added to a settings file by hand while you choose `skill`, or Susanoo hooks in `.claude/settings.json` or `~/.claude/settings.json`. `susanoo doctor` reports where the hooks are and warns when it finds them in more than one place.
 
-- no settings file is modified;
-- sessions that never use `/susanoo` are completely unaffected;
-- each route is bound to the Claude Code session that created it, through the `CLAUDE_CODE_SESSION_ID` variable that Claude Code sets for shell commands, so hooks in one session never act on another session's route.
+| | `skill` (default) | `settings` |
+|---|---|---|
+| Where | `PreToolUse` and `Stop` hooks in the `/susanoo` skill's frontmatter | `PreToolUse`, `Stop`, and `SessionStart` (compact) hooks in `.claude/settings.local.json` |
+| Active | From the moment `/susanoo` is invoked until that Claude Code process exits, including across compaction | In every Claude Code session in the project |
+| Resumed sessions (`claude --resume`, `--continue`) | **Not enforced** | Enforced |
+| Compaction recovery | Needs the [settings snippet](#compaction-recovery) | Included |
+| Settings files | Never touched | Only Susanoo's own hook entries (commands starting with `susanoo hook`) in `settings.local.json` are added or removed; everything else in the file is kept. A file that is not valid JSON, has an unexpected shape, or is a symbolic link is never rewritten; `init` stops instead. |
+| Cost in sessions without a route | None | Every Edit, Write, and shell command, and the end of every turn (`Stop`), starts `susanoo hook`, which finds no route and allows it (a short Python start-up each time). `susanoo approve` and `--accept-missing-evidence` always ask, in any session. |
+
+`.claude/settings.local.json` is your personal settings file. Claude Code normally keeps it out of git; check that yours is ignored before committing.
+
+Switching back to the skill scope removes Susanoo's `PreToolUse` and `Stop` entries from the settings file and keeps its `SessionStart` (compact) entry, because the skill cannot provide compaction recovery and that event cannot run twice. `--no-enforce` and `susanoo init --uninstall` remove all of Susanoo's entries, and delete the file if Susanoo created it and nothing else is in it.
+
+Claude Code reads hooks from settings files when a session starts, and may ask you to review changed hooks in `/hooks` first. After changing the scope, restart running Claude Code sessions in the project so they pick up the change; until then a session can still run the hooks from the old place.
+
+In both scopes, each route is bound to the Claude Code session that created it, through the `CLAUDE_CODE_SESSION_ID` variable that Claude Code sets for shell commands, so hooks in one session never act on another session's route. A resumed session keeps its session id, which is why settings-scoped hooks still find its route.
 
 Every hook calls `susanoo hook <event>`. That command reads the event JSON, looks up the session's active route in `.susanoo/records/`, and answers in Claude Code's hook format. A route stays active until an outcome is recorded for it.
 
@@ -27,7 +41,7 @@ Every hook calls `susanoo hook <event>`. That command reads the event JSON, look
 | **Shell writes before approval** | `PreToolUse` on Bash/PowerShell | Before approval, commands that look like they modify files or the environment (redirection, `sed -i`, `rm`, `git commit`, package installs, ...) get `ask` instead of running silently. |
 | **Irreversible actions** | `PreToolUse` on Bash/PowerShell | While the `irreversible-action-gate` control is active, pushes, history rewrites, deploys, infrastructure apply/destroy, publishing, migrations, and destructive SQL get `ask`. |
 | **Evidence** | `Stop` | Once work has started (a file was changed) and the plan, if one is required, is approved, Claude cannot end the turn while required verification lacks passing evidence. Runnable checks need a passing result that Susanoo executed itself. Checks done by hand need a reported `passed`, or a reported `skipped` with the reason. A reported `failed` does not count. Ending a turn to present a plan or ask a question is never blocked. |
-| **Compaction recovery** (settings snippet) | `SessionStart` (source `compact`) | After context compaction, a short summary of the active route (profile, approval state, controls, outstanding verification) is put back into Claude's context. Claude Code does not fire this event for hooks declared in a skill, so this one needs a hook in your settings; see [Compaction recovery](#compaction-recovery). The other gates keep working after compaction without it. |
+| **Compaction recovery** | `SessionStart` (source `compact`) | After context compaction, a short summary of the active route (profile, approval state, controls, outstanding verification) is put back into Claude's context. Included in the settings scope. Claude Code does not fire this event for hooks declared in a skill, so the skill scope needs the [settings snippet](#compaction-recovery). The other gates keep working after compaction without it. |
 | **Route integrity** | `PreToolUse` on Bash/PowerShell | While a plan is unapproved, closing the route (`susanoo outcome`) or replacing it (`susanoo route`) needs your confirmation, so the gates cannot be dropped silently. |
 
 Related integrity rule, active with or without enforcement: `susanoo outcome --status completed --source agent` is refused while required verification lacks passing evidence. People recording outcomes themselves (`--source human`) are trusted.
@@ -58,7 +72,7 @@ irreversible_commands = ['...']
 
 ## Compaction recovery
 
-Claude Code does not fire `SessionStart` or `PostCompact` hooks declared in a skill, so the route summary is not re-injected after compaction unless you add this hook to your own `.claude/settings.local.json`:
+The settings scope includes this hook. With the skill scope, Claude Code does not fire `SessionStart` or `PostCompact` hooks declared in a skill, so the route summary is not re-injected after compaction unless you add this hook to your own `.claude/settings.local.json` (Susanoo leaves a hand-added snippet alone in the skill scope):
 
 ```json
 {"hooks": {"SessionStart": [{"matcher": "compact", "hooks": [{"type": "command", "command": "susanoo hook session-start"}]}]}}
@@ -80,12 +94,20 @@ It does nothing in sessions without an active route. Without it, the gates still
 | `SessionStart`/`PostCompact` declared in the skill | Do not fire (observed before they were removed from the skill; see [Compaction recovery](#compaction-recovery)) |
 | Plan-approval gate after `claude --resume` in a new process | **Fail**: no Susanoo hook runs, and the edit went through |
 
+With `--enforce-scope settings` (`scripts/live_enforcement_check.py --scope settings`, same version):
+
+| Check | Result |
+|---|---|
+| Plan-approval gate, approval `ask` in all four permission modes, `Stop` evidence gate | Pass, as with the skill scope; the `Stop` gate released after exactly `max_stop_blocks`, so it did not run twice |
+| Compaction recovery without any manual snippet | Pass: the route summary was re-injected after `/compact`, and the edit gate still applied |
+| Plan-approval gate after `claude --resume` in a new process | Pass: the edit was denied. Two earlier runs were inconclusive because Claude did not attempt the edit at all |
+
 These are single runs. Results can change with Claude Code versions; rerun the script after upgrading.
 
 ## Limits
 
 - **Guardrails, not a sandbox.** The gates catch drift; they are not a security boundary against a determined agent. Shell-write detection is pattern-based and cannot recognize every way a command can change files.
-- **Resumed sessions are not enforced.** Skill hooks live in the process that invoked `/susanoo`. If you quit and later continue the session with `claude --resume` or `--continue`, the route is still active in Susanoo's records but no hook runs, so none of the gates apply. Start a new `/susanoo` task instead. Adding the `PreToolUse` and `Stop` hooks to your settings closes this gap but is not recommended yet: Claude Code does not deduplicate them against the skill's identical hooks, so every hook would run twice and the `Stop` gate would release early. Settings-scoped enforcement is planned as an option for a later release ([#29](https://github.com/Breadstick-Crumbs/susanoo/issues/29)).
+- **Resumed sessions with the skill scope are not enforced.** Skill hooks live in the process that invoked `/susanoo`. If you quit and later continue the session with `claude --resume` or `--continue`, the route is still active in Susanoo's records but no hook runs, so none of the gates apply. Use `--enforce-scope settings` if you resume sessions, or start a new `/susanoo` task. Do not add the hooks to your settings by hand while the skill has them: Claude Code does not deduplicate identical hooks, so every gate would run twice and the `Stop` gate would release early.
 - **Permission modes.** In the live runs above the approval `ask` held in every permission mode, including bypassPermissions and dontAsk. The Claude Code docs do not document this for every mode, so treat it as observed behavior for the tested version. The plan-approval gate uses `deny`, which does not depend on a prompt being shown.
 - **Live coverage.** The gate logic and the hook bridge are tested end to end with recorded hook payloads. The live checks above cover the main gates in single runs; the shell-write, irreversible-action, and route-integrity gates use the same `ask` path but were not exercised live.
-- **`/clear`** gives the session a new id, which ends enforcement for routes created before it.
+- **`/clear` and `--fork-session`** give the session a new id, which ends enforcement for routes created before it.

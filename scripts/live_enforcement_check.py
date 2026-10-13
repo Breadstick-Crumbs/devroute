@@ -47,6 +47,7 @@ APPROVE_NOW = (
 )
 MODES = ("acceptEdits", "auto", "bypassPermissions", "dontAsk")
 APPROVE_RULES = ["Bash(susanoo approve)", "Bash(susanoo approve *)"]
+SCOPE = "skill"  # --enforce-scope used for every test project (set from --scope)
 MAX_STOP_BLOCKS = 3  # [enforcement] max_stop_blocks default
 # A new process group lets a timeout stop the whole tree (`claude` may be a .cmd shim on Windows).
 GROUP: dict[str, Any] = (
@@ -97,7 +98,7 @@ def make_project(base: Path, name: str) -> Path:
         ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init"],
     ):
         subprocess.run(cmd, cwd=root, check=True, capture_output=True)
-    susanoo("init", "--enforce", "--no-agents", "--path", str(root), cwd=root)
+    susanoo("init", "--enforce", "--enforce-scope", SCOPE, "--no-agents", "--path", str(root), cwd=root)
     return root
 
 
@@ -316,10 +317,11 @@ def check_approval_mode(base: Path, args: argparse.Namespace, mode: str) -> Resu
 
 
 def check_compaction(base: Path, args: argparse.Namespace) -> Result:
-    res = Result("compaction: settings snippet re-injects the route; edit gate still applies", "INCONCLUSIVE")
+    res = Result("compaction: the route is re-injected; edit gate still applies", "INCONCLUSIVE")
     root = make_project(base, "compaction")
-    # The snippet from docs/enforcement.md; the skill itself declares no compaction hooks.
-    (root / ".claude" / "settings.local.json").write_text(json.dumps(COMPACT_SNIPPET), encoding="utf-8")
+    if SCOPE == "skill":
+        # The snippet from docs/enforcement.md; the skill itself declares no compaction hooks.
+        (root / ".claude" / "settings.local.json").write_text(json.dumps(COMPACT_SNIPPET), encoding="utf-8")
     before: list[int] = []
 
     def mark(_: dict[str, Any]) -> None:
@@ -386,7 +388,7 @@ def check_resume(base: Path, args: argparse.Namespace) -> Result:
     if result.get("is_error"):
         return Result(res.check, "ERROR", [f"resumed turn failed: {str(result.get('result'))[:200]}"])
     res = edit_verdict(res, root, before)
-    if res.verdict == "FAIL":
+    if res.verdict == "FAIL" and SCOPE == "skill":
         # Documented in docs/enforcement.md; a PASS here would mean Claude Code changed.
         res.verdict = "KNOWN-LIMIT"
         res.details.append("skill hooks are not active in a resumed process (documented limitation)")
@@ -408,6 +410,12 @@ def main() -> int:
     parser.add_argument("--model", default="sonnet")
     parser.add_argument("--budget", type=float, default=0.5, help="max USD per session (--max-budget-usd)")
     parser.add_argument("--timeout", type=int, default=300, help="seconds per turn")
+    parser.add_argument(
+        "--scope",
+        choices=["skill", "settings"],
+        default="skill",
+        help="--enforce-scope for the test projects",
+    )
     parser.add_argument("--only", choices=["edit-gate", "approval", "stop-gate", "compaction", "resume"])
     args = parser.parse_args()
     if not args.claude:
@@ -422,7 +430,12 @@ def main() -> int:
     version = subprocess.run(
         [args.claude, "--version"], capture_output=True, text=True, env=ENV
     ).stdout.strip()
-    print(f"Claude Code: {version} | model: {args.model} | Susanoo interpreter: {sys.executable}\n")
+    global SCOPE
+    SCOPE = args.scope
+    print(
+        f"Claude Code: {version} | model: {args.model} | enforce scope: {SCOPE} | "
+        f"Susanoo interpreter: {sys.executable}\n"
+    )
     print("Susanoo live enforcement check (results print as each check finishes)")
     print("=" * 32, flush=True)
 
