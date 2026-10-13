@@ -7,6 +7,7 @@ from susanoo.analyzer.models import (
     CapabilityRequirement,
     CompositeScore,
     DimensionScore,
+    Floor,
     ProjectContext,
     SignalMatch,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "CapabilityRequirement",
     "CompositeScore",
     "DimensionScore",
+    "Floor",
     "ProjectContext",
     "SignalMatch",
     "assess",

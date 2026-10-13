@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Any
 
@@ -20,6 +20,7 @@ from susanoo.analyzer.models import (
     CapabilityRequirement,
     CompositeScore,
     DimensionScore,
+    Floor,
     ProjectContext,
     SignalMatch,
 )
@@ -174,8 +175,14 @@ def _composite_level(score: float, thresholds: dict[str, float], names: tuple[st
     return level
 
 
-def assess(task: str, config: Config, context: ProjectContext | None = None) -> Assessment:
-    """Assess a task description. Raises ``ValueError`` for an empty description."""
+def assess(
+    task: str, config: Config, context: ProjectContext | None = None, floor: Floor | None = None
+) -> Assessment:
+    """Assess a task description. Raises ``ValueError`` for an empty description.
+
+    ``floor`` is the assessment of the user's own message when ``task`` is Claude's description
+    of it: no dimension ends lower than the floor's, and the floor's signals and areas count.
+    """
     text = " ".join(task.split())
     if not text:
         raise ValueError("task description is empty")
@@ -225,20 +232,7 @@ def assess(task: str, config: Config, context: ProjectContext | None = None) -> 
     for match in matches:
         if match.area and match.area not in areas:
             areas.append(match.area)
-    if len(areas) >= 2:
-        component_level = 3 if len(areas) >= 3 else 2
-        if component_level > levels["affected_components"]:
-            levels["affected_components"] = component_level
-            reasons["affected_components"].append(
-                f"{len(areas)} distinct feature areas: {', '.join(areas)} -> {component_level}"
-            )
-    if len(areas) >= 3:
-        parallel_level = 3 if len(areas) >= 4 else 2
-        if parallel_level > levels["parallelization"]:
-            levels["parallelization"] = parallel_level
-            reasons["parallelization"].append(
-                f"{len(areas)} feature areas can be developed as separate units -> {parallel_level}"
-            )
+    _area_levels(areas, levels, reasons)
 
     # Small-change caps apply only when nothing indicates a larger scope.
     has_scope_signal = any(m.kind == "scope" for m in matches)
@@ -259,6 +253,11 @@ def assess(task: str, config: Config, context: ProjectContext | None = None) -> 
                 levels[dim] = cap
                 reasons[dim].append(f"capped at {cap}: {match.label} ({_quote(match.matches)})")
 
+    if floor is not None:
+        # After caps and before context: the floor only raises, and context counts once.
+        _apply_floor(floor, signal_defs, matches, areas, levels, reasons)
+
+    base_levels = dict(levels)
     context_notes = _apply_context(context, config, levels, reasons)
 
     dimensions = {d: DimensionScore(d, levels[d], reasons[d]) for d in DIMENSIONS}
@@ -277,7 +276,60 @@ def assess(task: str, config: Config, context: ProjectContext | None = None) -> 
         requirements=_requirements(matches, signal_defs),
         context_notes=context_notes,
         negated=negated,
+        base_levels=base_levels,
     )
+
+
+def _area_levels(areas: list[str], levels: dict[str, int], reasons: dict[str, list[str]]) -> None:
+    if len(areas) >= 2:
+        component_level = 3 if len(areas) >= 3 else 2
+        if component_level > levels["affected_components"]:
+            levels["affected_components"] = component_level
+            reasons["affected_components"].append(
+                f"{len(areas)} distinct feature areas: {', '.join(areas)} -> {component_level}"
+            )
+    if len(areas) >= 3:
+        parallel_level = 3 if len(areas) >= 4 else 2
+        if parallel_level > levels["parallelization"]:
+            levels["parallelization"] = parallel_level
+            reasons["parallelization"].append(
+                f"{len(areas)} feature areas can be developed as separate units -> {parallel_level}"
+            )
+
+
+def _apply_floor(
+    floor: Floor,
+    signal_defs: dict[str, dict[str, Any]],
+    matches: list[SignalMatch],
+    areas: list[str],
+    levels: dict[str, int],
+    reasons: dict[str, list[str]],
+) -> None:
+    """Raise everything to at least the user's message (see :class:`Floor`). Never lowers."""
+    for dim in DIMENSIONS:
+        level = floor.levels.get(dim, 0)
+        if level > levels[dim]:
+            levels[dim] = level
+            reasons[dim].append(f"the user's message -> {level}")
+    known = {m.id for m in matches}
+    for sid in floor.signals:
+        definition = signal_defs.get(sid)
+        if definition is None or sid in known:
+            continue
+        known.add(sid)
+        matches.append(
+            SignalMatch(
+                id=sid,
+                label=definition.get("label", sid),
+                matches=["(in the user's message)"],
+                area=definition.get("area"),
+                kind=definition.get("kind"),
+            )
+        )
+    for area in floor.areas:
+        if area not in areas:
+            areas.append(area)
+    _area_levels(areas, levels, reasons)
 
 
 def _apply_context(
@@ -352,6 +404,21 @@ def _risk(dimensions: dict[str, DimensionScore], config: Config) -> CompositeSco
         level = "critical"
         drivers.append(f"{len(severe)} risk dimensions at the highest level")
     return CompositeScore(level, round(score, 3), drivers)
+
+
+def without_vagueness(assessment: Assessment, config: Config) -> Assessment:
+    """``assessment`` without the low-confidence uncertainty penalty.
+
+    For a floor: a vague message ("ok", "why is this slow?") is not a risk, and the route built on
+    it gets its own confidence from Claude's description.
+    """
+    if assessment.confidence != "low":
+        return assessment
+    return replace(
+        assessment,
+        confidence="moderate",
+        uncertainty=_uncertainty(assessment.dimensions, "moderate", config),
+    )
 
 
 def _uncertainty(dimensions: dict[str, DimensionScore], confidence: str, config: Config) -> CompositeScore:

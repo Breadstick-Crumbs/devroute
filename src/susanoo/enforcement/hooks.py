@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from susanoo.config import load_config
 from susanoo.enforcement import gates
+from susanoo.enforcement.prompt import session_file
 from susanoo.enforcement.state import RouteState, active_route
 from susanoo.evaluation.store import RecordStore
-from susanoo.paths import find_project_root, is_initialized, records_dir
+from susanoo.paths import find_project_root, is_initialized
 
 HOOK_EVENTS = ("pre-tool-use", "stop", "session-start", "post-compact", "user-prompt-submit")
 
@@ -39,8 +39,7 @@ class SessionState:
     """
 
     def __init__(self, root: Path, session: str) -> None:
-        safe = re.sub(r"[^A-Za-z0-9_-]", "_", session)[:80] or "no-session"
-        self.path = records_dir(root) / "hooks" / f"{safe}.json"
+        self.path = session_file(root, session)
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

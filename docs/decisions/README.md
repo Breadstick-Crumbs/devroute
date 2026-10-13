@@ -9,3 +9,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0003](0003-skill-first-claude-code-integration.md) | Integrate with Claude Code through a skill and subagents, not an MCP server |
 | [0004](0004-local-jsonl-records.md) | Local JSON Lines files for records |
 | [0005](0005-safety-controls-independent-of-profile.md) | Safety controls derive from risk, not from the chosen profile |
+| [0006](0006-model-judgment-above-a-keyword-floor.md) | With automatic routing, Claude decides where keywords are unsure, never below the keyword floor of the user's message |

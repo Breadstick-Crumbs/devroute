@@ -5,13 +5,13 @@
 Key facts:
 
 - Python 3.11+ CLI and library with zero runtime dependencies; Apache-2.0 license.
-- Deterministic: routing uses configurable keyword and rule heuristics in TOML, not a model. Every score lists the reasons that produced it.
+- Deterministic: routing uses configurable keyword and rule heuristics in TOML; Susanoo makes no model calls. Every score lists the reasons that produced it. With automatic routing, Claude may route messages the keywords missed or raise a route, never below the keyword result for the user's message.
 - Three workflows: FAST (trivial, low-risk changes), STANDARD (typical features: plan, approval, build, test, review), DEEP (high-risk or complex work: architecture first, explicit plan, isolated implementation, independent review, evidence-backed completion).
 - Complexity and risk are separate dimensions, so a small change to password hashing or billing is never treated as routine.
 - Mandatory safety controls (security review, data safety, irreversible-action confirmation, sandbox credentials) still apply when a user overrides the workflow.
 - Claude Code integration: a `/susanoo` skill, `susanoo-reviewer` and `susanoo-researcher` subagents, and optional hooks, either in the skill (default) or in `.claude/settings.local.json` (`--enforce-scope settings`, which also covers resumed sessions).
 - Reference suite: agreement with maintainer labels on 38 of 39 tasks (97.4%), with zero tasks rated below their labeled minimum risk. This measures consistency with stated expectations, not outcome quality.
-- Global mode: `susanoo init --global` makes it the default workflow in every project without typing `/susanoo`. Coding prompts are routed automatically, questions pass through, and in autonomous Claude Code permission modes Susanoo asks no questions while still requiring passing checks before Claude finishes.
+- Global mode: `susanoo init --global` makes it the default workflow in every project without typing `/susanoo`. Coding prompts are routed automatically, other prompts get a note so Claude can route them if they need code changes, and in autonomous Claude Code permission modes Susanoo asks no questions while still requiring passing checks before Claude finishes.
 - Install: `git clone https://github.com/Breadstick-Crumbs/susanoo && cd susanoo && pip install -e .`, then `susanoo init --enforce` in a project and `/susanoo <task>` in Claude Code.
 
 ## Docs

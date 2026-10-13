@@ -4,6 +4,12 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- **Claude's judgment above a keyword floor** (ADR 0006). With automatic routing, prompts the hook does not route get a one-line note, and Claude routes them itself when they need code changes ("the checkout page is broken"). `susanoo route` in such a session combines Claude's description with the keyword assessment of the user's latest message: every dimension takes the stricter level, the message's signals count, and the profile is never lower than the message alone. A route that replaces an open one keeps that route's levels too, after any kind of message; `susanoo route` never replaces a route with unfinished work. `--profile` changes only the profile and never removes a safety control. `/susanoo` keeps its full brief. The hook keeps only levels and signal ids per session (from the first 20,000 characters, without counting vagueness as risk), never the message text.
+- `susanoo raise standard|deep --reason "<the risk>"` makes the open route stricter. It never lowers a route or drops a control: the open route is its floor, the target is a minimum, and risk named in the reason turns on the matching controls (also on a route that is already DEEP). Recorded evidence carries over, and so does plan approval unless the reason added a safety control. Every brief mentions it.
+- With automatic routing, `susanoo route --profile fast|standard` refuses a profile below Susanoo's recommendation unless the user's latest message named it, so Claude asks the user instead. `route` and `raise` no longer accept abbreviated options.
+- `scripts/live_auto_check.py --only unrouted`: live check that Claude routes a problem report the hook does not route.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added
