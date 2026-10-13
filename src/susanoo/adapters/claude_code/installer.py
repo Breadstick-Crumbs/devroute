@@ -2,7 +2,8 @@
 
 Rules:
 - Only Susanoo-owned files are written: the /susanoo skill, susanoo-* subagents,
-  and files under .susanoo/. Settings files, CLAUDE.md, and .mcp.json are never touched.
+  and files under .susanoo/. CLAUDE.md and .mcp.json are never touched; settings only with the
+  opt-in settings enforcement scope (see settings_hooks.py), and then only Susanoo's own entries.
 - Existing files are never overwritten unless they are unmodified Susanoo installs
   (hash matches the install manifest) or ``force`` is given, in which case a backup
   copy is written first.
@@ -56,7 +57,8 @@ def skill_template(enforce: bool = False) -> str:
 
     Hooks declared in skill frontmatter are registered when the skill is invoked and stay
     active while that Claude Code process runs (not after a later ``claude --resume``), so
-    enforcement only applies to /susanoo sessions and no settings file has to change.
+    enforcement only applies to /susanoo sessions and no settings file has to change. The
+    settings scope (settings_hooks.py) leaves the skill without hooks, so they never run twice.
     """
     text = read_data_text("templates", "skills", "susanoo", "SKILL.md")
     if not enforce:
@@ -66,7 +68,11 @@ def skill_template(enforce: bool = False) -> str:
     return text[: end + 1] + hooks.rstrip("\n") + "\n" + text[end + 1 :]
 
 
+SCOPES = ("skill", "settings")
+
+
 def targets(with_agents: bool = True, enforce: bool = False) -> list[Target]:
+    """Files to install; ``enforce`` puts the hooks in the skill (the default "skill" scope)."""
     items = [
         Target(".claude/skills/susanoo/SKILL.md", skill_template(enforce)),
         Target(".susanoo/config.toml", read_data_text("templates", "config.toml")),
@@ -113,6 +119,18 @@ def _read(path: Path) -> str | None:
 def enforcement_enabled(root: Path) -> bool:
     """Whether the last install used --enforce (later `init` runs keep that choice)."""
     return read_manifest(root).get("enforce") is True
+
+
+def enforcement_scope(root: Path) -> str:
+    """Where the last install put the hooks: "skill" (frontmatter) or "settings" (local settings)."""
+    scope = read_manifest(root).get("enforce_scope")
+    return scope if scope in SCOPES else "skill"
+
+
+def update_manifest(root: Path, **fields: Any) -> None:
+    manifest = read_manifest(root)
+    manifest.update(fields)
+    _atomic_write(install_manifest_path(root), json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
 
 def plan_install(
@@ -165,9 +183,14 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def apply_install(
-    root: Path, actions: list[FileAction], *, with_agents: bool = True, enforce: bool = False
+    root: Path,
+    actions: list[FileAction],
+    *,
+    with_agents: bool = True,
+    enforce: bool = False,
+    scope: str = "skill",
 ) -> list[FileAction]:
-    content = {t.path: t.content for t in targets(with_agents, enforce)}
+    content = {t.path: t.content for t in targets(with_agents, enforce and scope == "skill")}
     manifest = read_manifest(root)
     files: dict[str, str] = manifest["files"]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
@@ -186,6 +209,7 @@ def apply_install(
             "susanoo_version": __version__,
             "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "enforce": enforce,
+            "enforce_scope": scope,
         }
     )
     _atomic_write(install_manifest_path(root), json.dumps(manifest, indent=2, sort_keys=True) + "\n")

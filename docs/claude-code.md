@@ -19,7 +19,7 @@ susanoo init                        # --dry-run to preview, --no-agents to skip 
 | `.susanoo/config.toml` | Commented project configuration |
 | `.susanoo/.gitignore` | Keeps `records/` and `install.json` out of git |
 
-It does **not** modify `.claude/settings*.json`, `CLAUDE.md`, `.mcp.json`, or anything else you own. If a file already exists with different content, it is left alone and reported as a conflict. `--force` writes a backup before replacing. `susanoo init --uninstall` removes only files that still match what Susanoo installed.
+It does **not** modify `.claude/settings*.json`, `CLAUDE.md`, `.mcp.json`, or anything else you own. The one opt-in exception is `susanoo init --enforce --enforce-scope settings`, which adds Susanoo's own hook entries to `.claude/settings.local.json` (see [enforcement.md](enforcement.md#how-it-is-wired)). If a file already exists with different content, it is left alone and reported as a conflict. `--force` writes a backup before replacing. `susanoo init --uninstall` removes only files that still match what Susanoo installed.
 
 Commit `.claude/skills/susanoo/`, `.claude/agents/susanoo-*.md`, and `.susanoo/config.toml` if you want the whole team to use them.
 
@@ -41,7 +41,7 @@ What happens:
 
 ## Enforcement (optional)
 
-`susanoo init --enforce` adds hooks to the skill so that plan approval, verification evidence, and irreversible actions are checked deterministically rather than left to instructions. The hooks apply in the Claude Code process where you ran `/susanoo`; a session resumed later in a new process is not enforced. See [enforcement.md](enforcement.md) for this and the other limits. When you approve a plan, Claude records it with `susanoo approve`, which always asks for your confirmation.
+`susanoo init --enforce` adds hooks to the skill so that plan approval, verification evidence, and irreversible actions are checked deterministically rather than left to instructions. By default the hooks apply in the Claude Code process where you ran `/susanoo`, so a session resumed later in a new process is not enforced; `--enforce-scope settings` puts them in your local settings instead, which covers resumed sessions. See [enforcement.md](enforcement.md) for this and the other limits. When you approve a plan, Claude records it with `susanoo approve`, which always asks for your confirmation.
 
 ## Permissions
 
@@ -57,7 +57,7 @@ The skill pre-approves only Susanoo's own read and record commands: `susanoo rou
 | Git worktrees (`claude --worktree`, subagent `isolation: worktree`) | isolated DEEP implementation |
 | Permission system | approval of commands that run project code or install software |
 
-Susanoo reads (never writes) `.mcp.json`, `~/.claude.json`, settings files, and `.claude/` directories to build its inventory.
+Susanoo reads `.mcp.json`, `~/.claude.json`, settings files, and `.claude/` directories to build its inventory, and never writes them, except for its own hook entries with `--enforce-scope settings`.
 
 ## Without Claude Code
 
