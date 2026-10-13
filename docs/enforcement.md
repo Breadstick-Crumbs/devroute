@@ -118,11 +118,11 @@ Automatic routing (`scripts/live_auto_check.py`, projects installed with `--enfo
 
 | Check | Result |
 |---|---|
-| A question ("What does app.py do?") | Pass: not routed. Rerun with the unrouted-message note (Unreleased): still not routed |
+| A question ("What does app.py do?") | Pass: not routed. Rerun twice with the unrouted-message note (Unreleased): still not routed |
 | A task in default mode | Routed automatically. In two runs Claude presented the plan and waited for approval instead of editing, so the edit gate was not needed as a backstop (inconclusive as a gate test) |
 | A task in acceptEdits mode | Pass: routed and built with no Susanoo approval or question. Claude Code's own permissions blocked the unapproved `susanoo verify` shell command headlessly, and the evidence gate then held the turn for `max_stop_blocks` |
 | A task in bypassPermissions mode | Pass: routed, built without questions, `susanoo verify --execute` run (a failing test was fixed and rerun), outcome recorded as completed, no stop blocks needed |
-| A problem report the hook does not route ("app.py is missing the hello() function ..."), bypassPermissions, Unreleased | Pass: Claude followed the note, ran `susanoo route` itself (recorded as routed by Claude, STANDARD), and built the change |
+| A problem report the hook does not route ("app.py is missing the hello() function ..."), bypassPermissions, Unreleased | Mixed, 4 of 5 runs pass. In the passing runs Claude followed the note, ran `susanoo route` itself (recorded as routed by Claude; STANDARD before the vague-message fix, FAST after it), and built the change. In one run Claude built the change without routing, so no gates applied |
 
 These are single runs. Results can change with Claude Code versions; rerun the scripts after upgrading.
 
