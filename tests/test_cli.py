@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from devroute import __version__
 from devroute.cli import main
 
 
@@ -26,7 +27,7 @@ def test_version_and_help(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["--version"])
     assert exc.value.code == 0
-    assert "devroute 0.1.0" in capsys.readouterr().out
+    assert f"devroute {__version__}" in capsys.readouterr().out
     assert main([], stdout=io.StringIO()) == 2
 
 
@@ -100,7 +101,7 @@ def test_full_record_lifecycle(python_project: Path):
         "pytest",
     )
     assert code == 0 and "source: reported" in out
-    code, out, _ = run(
+    code, out, err = run(
         python_project,
         "outcome",
         record_id[:15],
@@ -114,6 +115,22 @@ def test_full_record_lifecycle(python_project: Path):
         "devroute-reviewer",
         "--tokens",
         "1000",
+    )
+    # unit_tests is runnable, so a reported result is not enough for an agent to claim completion.
+    assert code == 1 and "lacks passing evidence" in err
+    code, out, err = run(
+        python_project,
+        "outcome",
+        record_id[:15],
+        "--status",
+        "completed",
+        "--minutes",
+        "12",
+        "--source",
+        "agent",
+        "--tokens",
+        "1000",
+        "--accept-missing-evidence",
     )
     assert code == 0
 

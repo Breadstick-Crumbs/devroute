@@ -15,7 +15,7 @@ from devroute.discovery import Inventory, build_inventory, has_test_framework
 from devroute.registry import Registry, load_registry
 from devroute.research import Gap, analyze_gaps
 from devroute.router import Profile, RouteDecision, load_profiles, route
-from devroute.selection import ToolRecommendation, recommend
+from devroute.selection import SelectionContext, ToolRecommendation, recommend
 from devroute.verification import VerificationPlan, build_plan, select_steps, verification_requirements
 
 
@@ -115,7 +115,7 @@ def plan_task(
     requirements = merge_requirements(
         assessment.requirements, profile_reqs, verification_requirements(selected_steps)
     )
-    recommendations = recommend(requirements, inventory, registry)
+    recommendations = recommend(requirements, inventory, registry, SelectionContext.from_config(config))
     gaps = analyze_gaps(recommendations)
     verification = build_plan(decision.profile, selected_steps, recommendations)
     needed = {r.capability for r in requirements}
@@ -133,7 +133,9 @@ def plan_task(
     )
 
 
-def route_record(plan: TaskPlan, record_id: str, config: Config) -> dict[str, Any]:
+def route_record(
+    plan: TaskPlan, record_id: str, config: Config, session_id: str | None = None
+) -> dict[str, Any]:
     """The persistent summary of a routing decision (no inventory details, no secrets)."""
     a = plan.assessment
     store_text = config.get("records", {}).get("store_task_text", True)
@@ -156,4 +158,8 @@ def route_record(plan: TaskPlan, record_id: str, config: Config) -> dict[str, An
         "controls": [c.id for c in plan.decision.controls],
         "gaps": [{"capability": g.capability, "blocking": g.blocking} for g in plan.gaps],
         "verification": [{"id": s.id, "level": s.level, "mode": s.mode} for s in plan.verification.steps],
+        "checkpoints": plan.decision.checkpoints,
+        "phases": [p.title for p in plan.profile.phases],
+        # Binds the route to the Claude Code session that created it (enforcement hooks).
+        "session_id": session_id,
     }

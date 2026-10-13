@@ -37,7 +37,9 @@ Show the user a compact summary: mode and why, complexity / risk / uncertainty, 
 
 - FAST with no approval checkpoints: proceed directly.
 - Otherwise, stop at every checkpoint listed in the brief and wait for the user's explicit approval. Present the plan before editing files in STANDARD and DEEP.
+- When the user approves the plan, record it with `devroute approve` (the user may be asked to confirm the command). Never run it without the user's approval.
 - Mandatory safety controls always apply, whatever profile was chosen.
+- If a DevRoute hook blocks or questions an action, follow its message. Do not work around it.
 
 ## 4. Execute the selected profile
 

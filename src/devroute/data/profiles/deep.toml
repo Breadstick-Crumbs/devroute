@@ -67,3 +67,8 @@ reason = "isolated branch or worktree and reviewable history"
 id = "code_review"
 level = "required"
 reason = "DEEP workflow requires independent review"
+
+[[capabilities]]
+id = "code_navigation"
+level = "recommended"
+reason = "investigate affected code before changing it"

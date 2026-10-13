@@ -61,3 +61,8 @@ reason = "incremental commits and diff review"
 id = "code_review"
 level = "recommended"
 reason = "STANDARD workflow review phase"
+
+[[capabilities]]
+id = "code_navigation"
+level = "recommended"
+reason = "investigate affected code before changing it"

@@ -47,7 +47,54 @@ store_task_text = true
 
 [context]
 # Repository context adjustments (explained in every assessment that uses them).
+# Also the size at which indexed code navigation (code graphs) is preferred over text search.
 large_repo_files = 2000
+
+[selection]
+# Score shift applied to code-navigation candidates by repository size: indexed tools gain it
+# in large repositories and lose it in small ones; built-in text search loses it in large ones.
+code_navigation_size_adjustment = 5.0
+
+[enforcement]
+# Used only when the /devroute skill was installed with `devroute init --enforce`.
+# Profiles whose file edits wait for the user to approve the plan.
+approval_profiles = ["standard", "deep"]
+# Profiles whose turn cannot end while required verification lacks evidence.
+evidence_profiles = ["fast", "standard", "deep"]
+# Consecutive blocks (with nothing changing) before the evidence gate lets the turn end.
+max_stop_blocks = 3
+edit_tools = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
+# Shell commands that may modify files or the environment. Before plan approval they
+# require confirmation (asked, not denied). Case-insensitive regular expressions.
+shell_write_patterns = [
+    '(?<![<>&-])[0-9]?>{1,2}\s*(?!/dev/null|&|nul\b)[^\s|&]',
+    '\bsed\b[^|;&]*?\s(?:-[a-z]*i[a-z]*|--in-place)\b',
+    '\b(?:perl|ruby)\s+-[a-z]*i',
+    '\btee\b',
+    '\b(?:rm|mv|cp|mkdir|touch|chmod|truncate|dd|ln)\s',
+    '\bgit\s+(?:commit|apply|am|restore|reset|merge|rebase|cherry-pick|checkout\s+--|stash\s+pop)\b',
+    '\b(?:npm|pnpm|yarn|bun)\s+(?:install|add|remove|uninstall|i)\b',
+    '\bpip3?\s+(?:install|uninstall)\b',
+    '\b(?:Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item)\b',
+]
+# Commands that need confirmation while the irreversible-action-gate control is active.
+irreversible_commands = [
+    '\bgit\s+push\b',
+    '\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f|branch\s+-D|filter-branch|filter-repo)\b',
+    '\brm\s+-[a-z]*(?:rf|fr)',
+    '\b(?:kubectl)\s+(?:apply|delete|replace|patch|scale|rollout)\b',
+    '\b(?:terraform|tofu)\s+(?:apply|destroy|import)\b',
+    '\bhelm\s+(?:install|upgrade|uninstall|rollback)\b',
+    '\bvercel\b.*--prod',
+    '\b(?:fly|flyctl)\s+deploy\b',
+    '\bnetlify\s+deploy\b.*--prod',
+    '\b(?:npm|pnpm|yarn)\s+publish\b',
+    '\b(?:twine\s+upload|cargo\s+publish|docker\s+push|gh\s+release\s+create)\b',
+    '\balembic\s+(?:upgrade|downgrade)\b',
+    '\bprisma\s+(?:migrate\s+(?:deploy|reset)|db\s+push)\b',
+    'manage\.py\s+(?:migrate|flush)\b',
+    '\b(?:drop\s+(?:table|database|schema)|truncate\s+table|delete\s+from)\b',
+]
 
 # ---------------------------------------------------------------------------
 # Signals: phrases in the task description that raise assessment dimensions.
@@ -66,7 +113,7 @@ patterns = [
     "from scratch", "greenfield", "end[- ]to[- ]end", "full[- ]stack", "mvp", "saas",
 ]
 effects = { implementation_complexity = 3, architectural_complexity = 3, technical_uncertainty = 2, testing_difficulty = 2 }
-recommends = ["integration_testing", "code_review"]
+recommends = ["integration_testing", "code_review", "code_navigation"]
 
 [[signals]]
 id = "architecture-change"
@@ -78,7 +125,7 @@ patterns = [
     "(?:major|framework|python|node|java|react) (?:version )?upgrade", "upgrade (?:to|from) \\w+",
 ]
 effects = { implementation_complexity = 2, architectural_complexity = 3, affected_components = 2, technical_uncertainty = 1, testing_difficulty = 2 }
-recommends = ["integration_testing", "code_review"]
+recommends = ["integration_testing", "code_review", "code_navigation"]
 
 [[signals]]
 id = "feature"

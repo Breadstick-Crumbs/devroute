@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "devroute"
-version = "0.1.0"
+version = "0.2.0"
 description = "Adaptive AI-native engineering framework. The right workflow, tools, and agents for every development task."
 readme = "README.md"
 license = "Apache-2.0"
@@ -78,7 +78,8 @@ ignore = [
 max-line-length = 130
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S603", "S607", "S108"]
+"tests/**" = ["S101", "S603", "S607", "S108", "RUF059"]
+"scripts/**" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"

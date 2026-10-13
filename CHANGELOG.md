@@ -4,6 +4,19 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-13
+
+### Added
+- Opt-in workflow enforcement (`devroute init --enforce`): hooks registered by the `/devroute` skill add a plan-approval gate for edits, approval integrity, shell-write and irreversible-action confirmation, and an evidence gate on `Stop` with loop protection. Routes are bound to the Claude Code session that created them. Route re-injection after compaction is available through a settings snippet, because Claude Code does not fire compaction hooks declared in a skill. Sessions resumed in a new process are not enforced; see `docs/enforcement.md`.
+- `scripts/live_enforcement_check.py`: a manual check of the gates against a real headless Claude Code session. Results for Claude Code 2.1.296 are in `docs/enforcement.md`.
+- `devroute approve` and `devroute hook <event>` commands.
+- `code_navigation` capability with repository-size-aware selection between built-in search and code-graph tools (MCP servers, skills, subagents), plus registry entries for code-graph MCP servers and ast-grep.
+- `devroute-capabilities` frontmatter key so skills and subagents can declare their capabilities instead of relying on keyword inference.
+
+### Changed
+- An agent can no longer record an outcome as `completed` while required verification lacks passing evidence (unless `--accept-missing-evidence`, which enforcement mode always confirms with the user).
+- Capability inference no longer treats generic words like "audit" as code review.
+
 ## [0.1.0] - 2026-10-13
 
 First public release: a working vertical slice of the framework.

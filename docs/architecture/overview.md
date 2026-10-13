@@ -24,6 +24,7 @@ src/devroute/
   research.py          Capability Research Engine       analyze_gaps(...), research(capability, ...)
   verification/        Verification Intelligence        select_steps / build_plan / execute_plan
   evaluation/          Evaluation & Learning Engine     RecordStore, summarize, run_suite
+  enforcement/         Opt-in workflow enforcement      gates (pure decisions), hooks (Claude Code bridge)
   adapters/claude_code Claude Code integration          discovery of skills/agents/MCP, installer
   pipeline.py          Orchestration                    plan_task(task, root, config) -> TaskPlan
   render.py            Execution brief and reports
@@ -109,6 +110,10 @@ Identical commands run once per execution; later steps reuse the result and say 
 - **Installer**: manifest-based (`.devroute/install.json`), atomic writes, conflict detection, backups on `--force`, and hash-checked uninstall.
 
 DevRoute reuses Claude Code's own mechanisms (skills, subagents, plan mode, `--worktree` isolation, the permission system) instead of adding a separate orchestration layer.
+
+### Enforcement (`enforcement/`, opt-in)
+
+`gates.py` contains pure functions that take a hook event and the session's route state and return a decision: deny or ask on tool use, block on stop, or extra context. `state.py` derives the route state from records: active route for a session, approval, and missing or failing evidence. `hooks.py` translates between Claude Code's hook JSON and those decisions, and logs every intervention. The hooks are declared in the `/devroute` skill's frontmatter, so they exist only in the Claude Code process that invoked the skill, not in a session resumed later. Compaction recovery (`session-start`) is wired through a settings hook instead, because Claude Code does not fire compaction events for skill hooks. See [enforcement.md](../enforcement.md).
 
 ## Data flow of `devroute route`
 

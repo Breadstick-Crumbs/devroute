@@ -39,6 +39,10 @@ What happens:
 5. Claude runs `devroute verify --execute` and records the checks it performed itself with `devroute evidence`.
 6. Claude reports results, separating checks that ran from checks that did not, and records the outcome with `devroute outcome`.
 
+## Enforcement (optional)
+
+`devroute init --enforce` adds hooks to the skill so that plan approval, verification evidence, and irreversible actions are checked deterministically rather than left to instructions. The hooks apply in the Claude Code process where you ran `/devroute`; a session resumed later in a new process is not enforced. See [enforcement.md](enforcement.md) for this and the other limits. When you approve a plan, Claude records it with `devroute approve`, which always asks for your confirmation.
+
 ## Permissions
 
 The skill pre-approves only DevRoute's own read and record commands: `devroute route`, `assess`, `research`, `evidence`, `outcome`, and `report`, plus `python -m devroute route` as a fallback. None of them executes project code. The most `route --verify-tools` can do is run `--version` on packaged-registry tools found outside the project. `devroute verify --execute` runs your project's test, lint, and type-check commands, so Claude Code asks before running it, as it would for any command that executes project code. To allow it without prompts, add a permission rule in your own settings. DevRoute will not do that for you.

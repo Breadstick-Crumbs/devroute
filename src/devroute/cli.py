@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import shutil
 import sys
@@ -18,6 +19,7 @@ from devroute.adapters.claude_code.installer import (
     actions_to_dicts,
     apply_install,
     apply_uninstall,
+    enforcement_enabled,
     plan_install,
     plan_uninstall,
     sha256,
@@ -26,6 +28,7 @@ from devroute.adapters.claude_code.installer import (
 from devroute.analyzer import assess
 from devroute.config import PROFILE_ORDER, Config, ConfigError, load_config
 from devroute.discovery import build_inventory
+from devroute.enforcement import HOOK_EVENTS, evidence_status, handle
 from devroute.evaluation import (
     OUTCOME_STATUSES,
     RecordError,
@@ -121,7 +124,8 @@ def _record_route(ctx: Context, plan: TaskPlan) -> str | None:
     if ctx.args.no_record or not is_initialized(ctx.root):
         return None
     record_id = new_record_id()
-    RecordStore(ctx.root).append("routes", route_record(plan, record_id, ctx.config))
+    session = ctx.args.session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    RecordStore(ctx.root).append("routes", route_record(plan, record_id, ctx.config, session))
     return record_id
 
 
@@ -156,9 +160,15 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
         if not args.dry_run:
             apply_uninstall(ctx.root, actions)
     else:
-        actions = plan_install(ctx.root, force=args.force, with_agents=not args.no_agents)
+        enforce = True if args.enforce else False if args.no_enforce else enforcement_enabled(ctx.root)
+        if enforce and not shutil.which("devroute"):
+            ctx.err.write(
+                "warning: enforcement hooks run `devroute hook ...`, but `devroute` is not on PATH. "
+                "Hooks will fail open (Claude Code shows a hook error) until it is.\n"
+            )
+        actions = plan_install(ctx.root, force=args.force, with_agents=not args.no_agents, enforce=enforce)
         if not args.dry_run:
-            apply_install(ctx.root, actions, with_agents=not args.no_agents)
+            apply_install(ctx.root, actions, with_agents=not args.no_agents, enforce=enforce)
     if args.json:
         ctx.emit_json({"root": str(ctx.root), "dry_run": args.dry_run, "actions": actions_to_dicts(actions)})
         return EXIT_OK
@@ -241,8 +251,20 @@ def cmd_doctor(ctx: Context, stdin: TextIO) -> int:
     skill = ctx.root / ".claude" / "skills" / "devroute" / "SKILL.md"
     if not skill.is_file():
         check("/devroute skill", "warn", "not installed; run `devroute init`")
-    elif sha256(skill.read_text(encoding="utf-8")) == sha256(skill_template()):
-        check("/devroute skill", "ok", "installed and current")
+    elif (current := sha256(skill.read_text(encoding="utf-8"))) in (
+        sha256(skill_template(False)),
+        sha256(skill_template(True)),
+    ):
+        enforced = current == sha256(skill_template(True))
+        check(
+            "/devroute skill", "ok", "installed and current" + (" (enforcement hooks on)" if enforced else "")
+        )
+        if enforced and not shutil.which("devroute"):
+            check(
+                "enforcement",
+                "warn",
+                "hooks call `devroute`, which is not on PATH; they will fail open until it is",
+            )
     else:
         check(
             "/devroute skill",
@@ -316,7 +338,7 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
         override = args.profile
     else:
         try:
-            record = RecordStore(ctx.root).resolve_route(args.record)
+            record = RecordStore(ctx.root).resolve_route(args.record, _session())
         except RecordError as exc:
             raise CLIError(f'{exc}. Pass the task text instead: devroute verify "<task>"') from exc
         if not record.get("task"):
@@ -358,6 +380,11 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
     return EXIT_FAIL if failed else EXIT_OK
 
 
+def _session() -> str | None:
+    """The Claude Code session running this command, if any (scopes `latest`)."""
+    return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
 def _require_initialized(ctx: Context) -> RecordStore:
     if not is_initialized(ctx.root):
         raise CLIError("local records are disabled; run `devroute init` first")
@@ -367,11 +394,13 @@ def _require_initialized(ctx: Context) -> RecordStore:
 def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
     store = _require_initialized(ctx)
     try:
-        record = store.resolve_route(ctx.args.record)
+        record = store.resolve_route(ctx.args.record, _session())
     except RecordError as exc:
         raise CLIError(str(exc)) from exc
     try:
-        item = reported_evidence(ctx.args.step, ctx.args.status, ctx.args.command, ctx.args.note or "")
+        item = reported_evidence(
+            ctx.args.step, ctx.args.status, ctx.args.evidence_command, ctx.args.note or ""
+        )
     except ValueError as exc:
         raise CLIError(str(exc)) from exc
     item.record_id = str(record["id"])
@@ -392,7 +421,7 @@ def _csv(value: str | None) -> list[str]:
 def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
     store = _require_initialized(ctx)
     try:
-        record = store.resolve_route(ctx.args.record)
+        record = store.resolve_route(ctx.args.record, _session())
     except RecordError as exc:
         raise CLIError(str(exc)) from exc
     a = ctx.args
@@ -400,6 +429,15 @@ def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
         value = getattr(a, name)
         if value is not None and value < 0:
             raise CLIError(f"--{name} must not be negative")
+    missing, failing = evidence_status(record, store.read("evidence"))
+    unmet = missing + failing
+    if a.status == "completed" and a.source == "agent" and unmet and not a.accept_missing_evidence:
+        raise CLIError(
+            "cannot record 'completed': required verification lacks passing evidence: "
+            + ", ".join(unmet)
+            + ". Run `devroute verify --execute`, record checks with `devroute evidence`, "
+            "or record --status partial."
+        )
     data = {
         "record_id": record["id"],
         "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -413,6 +451,7 @@ def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
         "agents": _csv(a.agents),
         "tools": _csv(a.tools),
         "notes": a.notes or "",
+        "unmet_verification": unmet,
     }
     store.append("outcomes", data)
     if a.json:
@@ -420,6 +459,41 @@ def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
     else:
         ctx.emit(f"Recorded outcome for {record['id']}: {a.status} (source: {a.source})")
     return EXIT_OK
+
+
+def cmd_approve(ctx: Context, stdin: TextIO) -> int:
+    store = _require_initialized(ctx)
+    try:
+        record = store.resolve_route(ctx.args.record, _session())
+    except RecordError as exc:
+        raise CLIError(str(exc)) from exc
+    data = {
+        "record_id": record["id"],
+        "approved_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "checkpoint": ctx.args.checkpoint,
+        "session_id": os.environ.get("CLAUDE_CODE_SESSION_ID"),
+        "note": ctx.args.note or "",
+    }
+    store.append("approvals", data)
+    if ctx.args.json:
+        ctx.emit_json(data)
+    else:
+        ctx.emit(f"Recorded approval of '{ctx.args.checkpoint}' for {record['id']}.")
+    return EXIT_OK
+
+
+def cmd_hook(ctx: Context, stdin: TextIO) -> int:
+    raw = stdin.read()
+    try:
+        event = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError as exc:
+        raise CLIError(f"hook input is not valid JSON: {exc.msg}") from exc
+    if not isinstance(event, dict):
+        raise CLIError("hook input must be a JSON object")
+    code, output = handle(ctx.args.event, event)
+    if output:
+        ctx.emit(output)
+    return code
 
 
 def cmd_research(ctx: Context, stdin: TextIO) -> int:
@@ -506,6 +580,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--include-inventory", action="store_true", help="include the full inventory in --json output"
     )
+    p.add_argument("--session", help="Claude Code session id (default: $CLAUDE_CODE_SESSION_ID)")
     p.set_defaults(func=cmd_route)
 
     p = sub.add_parser("init", parents=[common], help="install the /devroute skill and project files safely")
@@ -515,6 +590,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--uninstall", action="store_true", help="remove files DevRoute installed (unmodified ones only)"
     )
+    p.add_argument(
+        "--enforce",
+        action="store_true",
+        help="add enforcement hooks to the /devroute skill (plan-approval, evidence, irreversible-action gates)",
+    )
+    p.add_argument("--no-enforce", action="store_true", help="install the skill without enforcement hooks")
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("report", parents=[common], help="show local records, summaries, and recommendations")
@@ -537,7 +618,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("record", help="route record id, prefix, or 'latest'")
     p.add_argument("--step", required=True, help="verification step id, e.g. unit_tests")
     p.add_argument("--status", required=True, choices=EVIDENCE_STATUSES)
-    p.add_argument("--command", help="the command that was run")
+    # dest differs from "command", which names the selected subcommand.
+    p.add_argument("--command", dest="evidence_command", help="the command that was run")
     p.add_argument("--note", help="short summary of the result")
     p.set_defaults(func=cmd_evidence)
 
@@ -555,7 +637,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agents", help="comma-separated agents/subagents used")
     p.add_argument("--tools", help="comma-separated main tools used")
     p.add_argument("--notes", help="free-text note")
+    p.add_argument(
+        "--accept-missing-evidence",
+        action="store_true",
+        help="allow an agent to record 'completed' although required checks lack passing evidence",
+    )
     p.set_defaults(func=cmd_outcome)
+
+    p = sub.add_parser("approve", parents=[common], help="record that you approved the plan for a route")
+    p.add_argument("record", nargs="?", default="latest", help="route record id, prefix, or 'latest'")
+    p.add_argument("--checkpoint", default="plan", help="which checkpoint is approved (default: plan)")
+    p.add_argument("--note", help="optional note")
+    p.set_defaults(func=cmd_approve)
+
+    p = sub.add_parser("hook", help="entry point for Claude Code hooks (reads the event JSON on stdin)")
+    p.add_argument("event", choices=HOOK_EVENTS)
+    p.set_defaults(func=cmd_hook)
 
     p = sub.add_parser(
         "research", parents=[common], help="evaluate options for a capability gap (local registry)"
@@ -596,7 +693,7 @@ def main(
         parser.print_help(out)
         return EXIT_USAGE
 
-    start = Path(args.path) if args.path else None
+    start = Path(args.path) if getattr(args, "path", None) else None
     if start is not None and not start.is_dir():
         err.write(f"devroute: error: --path {start} is not a directory\n")
         return EXIT_USAGE

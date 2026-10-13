@@ -1,6 +1,6 @@
 ---
 name: devroute-researcher
-description: Researches options for a missing development capability identified by DevRoute (for example browser testing or a payment sandbox). Compares existing tools and integrations, including security and setup implications, and recommends one. Never installs anything.
+description: Researches options for a missing development capability identified by DevRoute. Compares existing tools and integrations, including risk and setup implications, and recommends one. Never installs anything.
 tools: Read, Grep, Glob, WebSearch, WebFetch
 model: inherit
 ---

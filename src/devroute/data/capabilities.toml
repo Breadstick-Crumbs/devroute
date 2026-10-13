@@ -89,7 +89,14 @@ keywords = ["performance", "benchmark", "load test", "profil"]
 id = "code_review"
 title = "Code review"
 description = "Review a diff for correctness, design, and risk."
-keywords = ["code review", "review", "reviewer", "audit"]
+# Deliberately narrow: generic words like "audit" also describe code-graph tools.
+keywords = ["code review", "reviewer", "review the diff", "review changes", "pull request review"]
+
+[[capabilities]]
+id = "code_navigation"
+title = "Code navigation"
+description = "Find definitions, callers, and dependencies to understand code before changing it."
+keywords = ["codebase", "code graph", "knowledge graph", "call graph", "callers", "call chain", "symbol", "navigate", "code search", "language server", "lsp"]
 
 [[capabilities]]
 id = "web_research"

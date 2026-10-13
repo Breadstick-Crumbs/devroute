@@ -50,13 +50,24 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def skill_template() -> str:
-    return read_data_text("templates", "skills", "devroute", "SKILL.md")
+def skill_template(enforce: bool = False) -> str:
+    """The /devroute skill; with ``enforce`` its frontmatter also registers the enforcement hooks.
+
+    Hooks declared in skill frontmatter are registered when the skill is invoked and stay
+    active while that Claude Code process runs (not after a later ``claude --resume``), so
+    enforcement only applies to /devroute sessions and no settings file has to change.
+    """
+    text = read_data_text("templates", "skills", "devroute", "SKILL.md")
+    if not enforce:
+        return text
+    hooks = read_data_text("templates", "skills", "devroute", "enforcement-hooks.yaml")
+    end = text.index("\n---\n", 3)
+    return text[: end + 1] + hooks.rstrip("\n") + "\n" + text[end + 1 :]
 
 
-def targets(with_agents: bool = True) -> list[Target]:
+def targets(with_agents: bool = True, enforce: bool = False) -> list[Target]:
     items = [
-        Target(".claude/skills/devroute/SKILL.md", skill_template()),
+        Target(".claude/skills/devroute/SKILL.md", skill_template(enforce)),
         Target(".devroute/config.toml", read_data_text("templates", "config.toml")),
         Target(".devroute/.gitignore", GITIGNORE),
     ]
@@ -98,10 +109,17 @@ def _read(path: Path) -> str | None:
         return UNREADABLE
 
 
-def plan_install(root: Path, *, force: bool = False, with_agents: bool = True) -> list[FileAction]:
+def enforcement_enabled(root: Path) -> bool:
+    """Whether the last install used --enforce (later `init` runs keep that choice)."""
+    return bool(read_manifest(root).get("enforce", False))
+
+
+def plan_install(
+    root: Path, *, force: bool = False, with_agents: bool = True, enforce: bool = False
+) -> list[FileAction]:
     manifest = read_manifest(root)["files"]
     actions: list[FileAction] = []
-    for target in targets(with_agents):
+    for target in targets(with_agents, enforce):
         current = _read(root / target.path)
         if current is None:
             actions.append(FileAction(target.path, "create"))
@@ -137,8 +155,10 @@ def _atomic_write(path: Path, content: str) -> None:
         raise
 
 
-def apply_install(root: Path, actions: list[FileAction], *, with_agents: bool = True) -> list[FileAction]:
-    content = {t.path: t.content for t in targets(with_agents)}
+def apply_install(
+    root: Path, actions: list[FileAction], *, with_agents: bool = True, enforce: bool = False
+) -> list[FileAction]:
+    content = {t.path: t.content for t in targets(with_agents, enforce)}
     manifest = read_manifest(root)
     files: dict[str, str] = manifest["files"]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
@@ -153,7 +173,11 @@ def apply_install(root: Path, actions: list[FileAction], *, with_agents: bool = 
         if action.writes or action.action == "unchanged":
             files[action.path] = sha256(content[action.path])
     manifest.update(
-        {"devroute_version": __version__, "updated_at": datetime.now(UTC).isoformat(timespec="seconds")}
+        {
+            "devroute_version": __version__,
+            "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "enforce": enforce,
+        }
     )
     _atomic_write(install_manifest_path(root), json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return actions
@@ -161,7 +185,10 @@ def apply_install(root: Path, actions: list[FileAction], *, with_agents: bool = 
 
 def plan_uninstall(root: Path) -> list[FileAction]:
     manifest = read_manifest(root)["files"]
-    known = {t.path: sha256(t.content) for t in targets(with_agents=True)}
+    known: dict[str, set[str]] = {}
+    for variant in (False, True):
+        for t in targets(with_agents=True, enforce=variant):
+            known.setdefault(t.path, set()).add(sha256(t.content))
     actions: list[FileAction] = []
     for rel in sorted(known):
         current = _read(root / rel)
@@ -173,7 +200,7 @@ def plan_uninstall(root: Path) -> list[FileAction]:
             actions.append(FileAction(rel, "keep-modified", "not a readable text file; left in place"))
             continue
         digest = sha256(current)
-        if digest in (manifest.get(rel), known.get(rel)):
+        if digest == manifest.get(rel) or digest in known.get(rel, set()):
             actions.append(FileAction(rel, "remove"))
         else:
             actions.append(FileAction(rel, "keep-modified", "modified since installation; left in place"))

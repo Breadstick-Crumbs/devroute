@@ -4,6 +4,18 @@ description: Assess a software engineering task, choose a fitting workflow (FAST
 argument-hint: "[--profile fast|standard|deep] <task description>"
 disable-model-invocation: true
 allowed-tools: Bash(devroute route *), Bash(devroute assess *), Bash(devroute research *), Bash(devroute evidence *), Bash(devroute outcome *), Bash(devroute report *), Bash(python -m devroute route *)
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell"
+      hooks:
+        - type: command
+          command: "devroute hook pre-tool-use"
+          timeout: 30
+  Stop:
+    - hooks:
+        - type: command
+          command: "devroute hook stop"
+          timeout: 30
 ---
 
 # DevRoute
@@ -37,7 +49,9 @@ Show the user a compact summary: mode and why, complexity / risk / uncertainty, 
 
 - FAST with no approval checkpoints: proceed directly.
 - Otherwise, stop at every checkpoint listed in the brief and wait for the user's explicit approval. Present the plan before editing files in STANDARD and DEEP.
+- When the user approves the plan, record it with `devroute approve` (the user may be asked to confirm the command). Never run it without the user's approval.
 - Mandatory safety controls always apply, whatever profile was chosen.
+- If a DevRoute hook blocks or questions an action, follow its message. Do not work around it.
 
 ## 4. Execute the selected profile
 

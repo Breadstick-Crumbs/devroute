@@ -38,7 +38,8 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Delegation plans: which units suit parallel subagents or worktrees, and which share files and must stay serial | 🔜 |
 | Strategy selection within profiles (test-first, spike-then-build, migration-first) based on signals | 🔜 |
 | Stronger verification: coverage-delta checks, changed-files-to-tests mapping, migration dry runs | 🔜 |
-| Optional hooks that block completion claims when required evidence is missing | 🔜 |
+| Optional hooks that block completion claims when required evidence is missing | ✅ (v0.2, `--enforce`) |
+| Settings-scoped enforcement option, so gates also apply in resumed sessions and compaction recovery works without a manual snippet ([#29](https://github.com/Breadstick-Crumbs/devroute/issues/29)) | 🔜 |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.
 

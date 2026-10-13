@@ -38,9 +38,33 @@ def test_reviewer_is_read_only():
 
 
 def test_repository_dogfood_copies_match_templates():
-    for target in targets(with_agents=True):
-        if not target.path.startswith(".claude/"):
+    variants: dict[str, set[str]] = {}
+    for enforce in (False, True):
+        for target in targets(with_agents=True, enforce=enforce):
+            variants.setdefault(target.path, set()).add(target.content)
+    for path, contents in variants.items():
+        if not path.startswith(".claude/"):
             continue
-        repo_copy = REPO / target.path
-        assert repo_copy.is_file(), f"{target.path} missing; run `devroute init` in the repository"
-        assert repo_copy.read_text(encoding="utf-8") == target.content, f"{target.path} is out of sync"
+        repo_copy = REPO / path
+        assert repo_copy.is_file(), f"{path} missing; run `devroute init` in the repository"
+        assert repo_copy.read_text(encoding="utf-8") in contents, (
+            f"{path} is out of sync; run `devroute init`"
+        )
+
+
+def test_enforcement_variant_registers_hooks_in_frontmatter():
+    from devroute.adapters.claude_code.installer import skill_template
+
+    plain, enforced = skill_template(False), skill_template(True)
+    assert "hooks:" not in plain
+    meta = parse_frontmatter(enforced)
+    assert meta["name"] == "devroute" and "hooks" in meta
+    frontmatter_end = enforced.index("\n---\n", 3)
+    for event in ("pre-tool-use", "stop"):
+        assert f"devroute hook {event}" in enforced[:frontmatter_end]
+    # Claude Code 2.1.296 does not fire SessionStart or PostCompact hooks declared by a skill
+    # (scripts/live_enforcement_check.py); compaction recovery is a settings snippet instead.
+    for event in ("session-start", "post-compact"):
+        assert f"devroute hook {event}" not in enforced
+    # Everything except the hook block is identical.
+    assert enforced.replace(enforced[enforced.index("hooks:") : frontmatter_end + 1], "") == plain
