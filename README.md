@@ -28,7 +28,7 @@
   <br><sub>Real <code>susanoo route</code> results, condensed. Regenerate with <code>python scripts/make_demo_svg.py</code>.</sub>
 </p>
 
-*Formerly DevRoute. Named after Susanoo, the storm god of Japanese myth who slew the eight-headed serpent Orochi.*
+*Named after Susanoo, the storm god of Japanese myth who slew the eight-headed serpent Orochi.*
 
 ## Why
 
