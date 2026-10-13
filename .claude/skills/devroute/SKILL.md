@@ -16,17 +16,6 @@ hooks:
         - type: command
           command: "devroute hook stop"
           timeout: 30
-  SessionStart:
-    - matcher: "compact"
-      hooks:
-        - type: command
-          command: "devroute hook session-start"
-          timeout: 30
-  PostCompact:
-    - hooks:
-        - type: command
-          command: "devroute hook post-compact"
-          timeout: 30
 ---
 
 # DevRoute

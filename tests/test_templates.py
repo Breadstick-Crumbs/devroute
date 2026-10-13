@@ -60,7 +60,11 @@ def test_enforcement_variant_registers_hooks_in_frontmatter():
     meta = parse_frontmatter(enforced)
     assert meta["name"] == "devroute" and "hooks" in meta
     frontmatter_end = enforced.index("\n---\n", 3)
-    for event in ("pre-tool-use", "stop", "session-start", "post-compact"):
+    for event in ("pre-tool-use", "stop"):
         assert f"devroute hook {event}" in enforced[:frontmatter_end]
+    # Claude Code 2.1.296 does not fire SessionStart or PostCompact hooks declared by a skill
+    # (scripts/live_enforcement_check.py); compaction recovery is a settings snippet instead.
+    for event in ("session-start", "post-compact"):
+        assert f"devroute hook {event}" not in enforced
     # Everything except the hook block is identical.
     assert enforced.replace(enforced[enforced.index("hooks:") : frontmatter_end + 1], "") == plain

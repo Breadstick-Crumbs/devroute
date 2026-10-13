@@ -136,7 +136,8 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
         output = {"hookEventName": "SessionStart", "additionalContext": decision.context}
         return 0, json.dumps({"hookSpecificOutput": output})
 
-    # post-compact
+    # post-compact: only reachable from a user-added settings hook, since Claude Code does not
+    # fire PostCompact for skill hooks. The skill's PreToolUse hook then carries the summary.
     record["compacted"] = True
     hook_state.save()
     _log(store, state, event_name, gates.Decision(notes=["compaction observed"]))

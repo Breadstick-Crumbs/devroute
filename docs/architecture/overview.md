@@ -113,7 +113,7 @@ DevRoute reuses Claude Code's own mechanisms (skills, subagents, plan mode, `--w
 
 ### Enforcement (`enforcement/`, opt-in)
 
-`gates.py` contains pure functions that take a hook event and the session's route state and return a decision: deny or ask on tool use, block on stop, or extra context. `state.py` derives the route state from records: active route for a session, approval, and missing or failing evidence. `hooks.py` translates between Claude Code's hook JSON and those decisions, and logs every intervention. The hooks are declared in the `/devroute` skill's frontmatter, so they exist only in sessions that invoked the skill. See [enforcement.md](../enforcement.md).
+`gates.py` contains pure functions that take a hook event and the session's route state and return a decision: deny or ask on tool use, block on stop, or extra context. `state.py` derives the route state from records: active route for a session, approval, and missing or failing evidence. `hooks.py` translates between Claude Code's hook JSON and those decisions, and logs every intervention. The hooks are declared in the `/devroute` skill's frontmatter, so they exist only in the Claude Code process that invoked the skill, not in a session resumed later. Compaction recovery (`session-start`) is wired through a settings hook instead, because Claude Code does not fire compaction events for skill hooks. See [enforcement.md](../enforcement.md).
 
 ## Data flow of `devroute route`
 

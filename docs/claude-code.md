@@ -41,7 +41,7 @@ What happens:
 
 ## Enforcement (optional)
 
-`devroute init --enforce` adds hooks to the skill so that plan approval, verification evidence, and irreversible actions are checked deterministically rather than left to instructions. See [enforcement.md](enforcement.md). When you approve a plan, Claude records it with `devroute approve`, which always asks for your confirmation.
+`devroute init --enforce` adds hooks to the skill so that plan approval, verification evidence, and irreversible actions are checked deterministically rather than left to instructions. The hooks apply in the Claude Code process where you ran `/devroute`; a session resumed later in a new process is not enforced. See [enforcement.md](enforcement.md) for this and the other limits. When you approve a plan, Claude records it with `devroute approve`, which always asks for your confirmation.
 
 ## Permissions
 

@@ -9,7 +9,8 @@ Code applies through hooks:
 - irreversible-action gate: risky shell commands ask for confirmation while the
   ``irreversible-action-gate`` control is active;
 - evidence gate: the turn cannot end while required verification lacks evidence;
-- compaction recovery: a short route summary is re-injected after context compaction.
+- compaction recovery: a short route summary is re-injected after context compaction
+  (needs a settings hook; Claude Code does not fire compaction events for skill hooks).
 
 Gates are guardrails against drift, not a security boundary against a hostile agent.
 """

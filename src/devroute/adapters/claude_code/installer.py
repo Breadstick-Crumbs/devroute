@@ -54,8 +54,8 @@ def skill_template(enforce: bool = False) -> str:
     """The /devroute skill; with ``enforce`` its frontmatter also registers the enforcement hooks.
 
     Hooks declared in skill frontmatter are registered when the skill is invoked and stay
-    active for the rest of that session, so enforcement only applies to /devroute sessions
-    and no settings file has to change.
+    active while that Claude Code process runs (not after a later ``claude --resume``), so
+    enforcement only applies to /devroute sessions and no settings file has to change.
     """
     text = read_data_text("templates", "skills", "devroute", "SKILL.md")
     if not enforce:

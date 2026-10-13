@@ -37,7 +37,7 @@ DevRoute keeps **complexity and risk as separate dimensions**, so a small change
 | **Verification Intelligence** | Selects checks by profile and risk, runs the ready ones with `devroute verify --execute`, and stores machine-readable evidence. Results DevRoute executed itself are kept separate from results an agent reported. |
 | **Evaluation & Learning** | Local JSONL records of routes, outcomes (completion, time, interventions, tokens, cost, regressions), and evidence. Per-profile summaries. Recommendations for human review, only with enough data. A deterministic routing evaluation suite. |
 | **Claude Code integration** | A `/devroute` project skill and two subagents (`devroute-reviewer`, `devroute-researcher`), installed without touching your settings, `CLAUDE.md`, or MCP configuration. |
-| **Workflow enforcement (opt-in)** | `devroute init --enforce` adds hooks to the skill that turn the critical steps into hard checks. File edits wait for your plan approval, Claude cannot approve its own plan, irreversible commands need confirmation, the turn cannot end without verification evidence, and the route is re-injected after context compaction. Only sessions that use `/devroute` are affected. See [docs/enforcement.md](docs/enforcement.md). |
+| **Workflow enforcement (opt-in)** | `devroute init --enforce` adds hooks to the skill that turn the critical steps into hard checks. File edits wait for your plan approval, Claude cannot approve its own plan, irreversible commands need confirmation, and the turn cannot end without verification evidence. Only sessions that use `/devroute` are affected, and resumed sessions are not enforced. See [docs/enforcement.md](docs/enforcement.md). |
 | **Code navigation** | Size-aware choice between built-in search and code-graph tools (for example a codebase-memory MCP server or its skills and agents). In large repositories the investigation phase names the graph tool. |
 
 ## Install
@@ -147,7 +147,7 @@ DevRoute v0.1 is an honest first slice. Know where its edges are:
 - **Discovery is mostly read-only.** "Installed" means found, not exercised. `--verify` runs `--version` checks only. MCP servers are never started and remote servers are never contacted.
 - **Research is local.** Candidate tools come from a curated registry. There is no autonomous internet-wide discovery. Use the `devroute-researcher` subagent for manual research.
 - **Learning is advisory.** `devroute report` suggests changes for you to review. Nothing adjusts configuration automatically.
-- **Claude Code integration is instruction-based unless enforcement is on.** Without `--enforce`, the skill guides Claude but cannot force every step. With it, plan approval, evidence, and irreversible actions are checked by hooks. Those are guardrails against drift, not a sandbox, and their behavior in live sessions is less tested than their logic (see [docs/enforcement.md](docs/enforcement.md#limits)).
+- **Claude Code integration is instruction-based unless enforcement is on.** Without `--enforce`, the skill guides Claude but cannot force every step. With it, plan approval, evidence, and irreversible actions are checked by hooks. Those are guardrails against drift, not a sandbox. The main gates pass single live runs on Claude Code 2.1.296, but sessions resumed in a new process are not enforced and compaction recovery needs a settings snippet (see [docs/enforcement.md](docs/enforcement.md#limits)).
 
 ## Roadmap
 
