@@ -199,6 +199,12 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
         verify_tools=ctx.args.verify_tools,
         floor=floor,
     )
+    if state is not None and not set(state.controls) <= {c.id for c in plan.decision.controls}:
+        raise CLIError(
+            f"refusing to route: route {state.record_id} has safety controls this route would lose "
+            f"({', '.join(sorted(set(state.controls) - {c.id for c in plan.decision.controls}))}). Record its "
+            "outcome first if that task is finished."
+        )
     recommended = plan.decision.recommended
     raw_named = message.get("named")
     named: list[Any] = raw_named if isinstance(raw_named, list) else []
@@ -253,12 +259,23 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
     return EXIT_OK
 
 
+def _refuse_extra_config(ctx: Context) -> None:
+    """In a session with automatic routing, `--config` could switch off controls or signals."""
+    if getattr(ctx.args, "config", None):
+        raise CLIError(
+            "--config is not accepted in a Claude Code session with automatic routing: it could weaken "
+            "the route's safety controls. Change the project's .susanoo/config.toml instead."
+        )
+
+
 def cmd_route(ctx: Context, stdin: TextIO) -> int:
     task = _task_text(ctx.args, stdin)
     session = ctx.args.session or os.environ.get("CLAUDE_CODE_SESSION_ID")
-    message = prompt_state.load(ctx.root, session) if session and auto_settings(ctx.root) else None
-    if session and message is not None:
-        return _session_route(ctx, task, session, message)
+    if session and auto_settings(ctx.root):
+        # Every route in such a session goes through the floors, even when the prompt record is
+        # missing or unreadable (then only the open route is a floor and no profile is named).
+        _refuse_extra_config(ctx)
+        return _session_route(ctx, task, session, prompt_state.load(ctx.root, session) or {})
     plan = plan_task(
         task, ctx.root, ctx.config, override=ctx.args.profile, verify_tools=ctx.args.verify_tools
     )
@@ -845,6 +862,8 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     """
     store = _require_initialized(ctx)
     session = ctx.args.session or _session()
+    if session and auto_settings(ctx.root):
+        _refuse_extra_config(ctx)
     state = active_route(store, session) if session else None
     if not session or state is None:
         raise CLIError("no open route in this Claude Code session to raise (route the task first)")
@@ -880,14 +899,15 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
     close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}")
-    # The same task with more process: checks already run still count, and so does approval,
-    # unless the reason adds a safety control the user has not seen. Autonomy asked for in the
-    # user's own words always carries over.
+    # The same task with more process: checks already run still count. A plan approval covers
+    # the plan the user saw, so it carries over only when the profile and controls are unchanged
+    # (a stricter profile adds phases). Autonomy asked for in the user's own words always carries.
     for item in store.read("evidence"):
         if item.get("record_id") == old:
             store.append("evidence", {**item, "record_id": plan.record_id, "carried_from": old})
     for item in store.read("approvals"):
-        if item.get("record_id") == old and (not added or item.get("checkpoint") == "autonomy"):
+        same_plan = not added and target == state.profile
+        if item.get("record_id") == old and (same_plan or item.get("checkpoint") == "autonomy"):
             store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
     hook_state = SessionState(ctx.root, session)
     if hook_state.data.get("record_id") == old:
@@ -899,9 +919,9 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     header = f"Raised route {old} from {state.profile.upper()} to {target.upper()}: {reason}"
     approved = any(a.get("record_id") == plan.record_id for a in store.read("approvals"))
     if added:
-        header += f"\nNew safety controls: {', '.join(added)}." + (
-            "" if approved else " The plan needs the user's approval again."
-        )
+        header += f"\nNew safety controls: {', '.join(added)}."
+    if not approved and target in set(ctx.config.get("enforcement", {}).get("approval_profiles", [])):
+        header += " The plan needs the user's approval again."
     if state.route.get("auto") is True:
         modes = set(ctx.config.get("enforcement", {}).get("autonomous_modes", []))
         message = prompt_state.load(ctx.root, session) or {}

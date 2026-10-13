@@ -30,12 +30,15 @@ _NAMED = re.compile(
     r"|\b(?:workflow|profile)\s*[:=]\s*(fast|standard|deep)\b",
     re.IGNORECASE,
 )
-# "don't ever use the fast workflow", "avoid the fast workflow", "deep instead of the fast
-# workflow": a negated name does not count.
+# A name in a clause with a negation before it does not count: "I don't think we should use the
+# fast workflow", "avoid the fast workflow", "deep instead of the fast workflow". Erring this way
+# only means Claude asks the user once more.
 _NEGATED = re.compile(
-    r"\b(?:not|never|no|don.?t|without|avoid|skip|instead of|rather than|no need for)\s+(?:\w+\s+){0,3}$",
+    r"\b(?:not|never|no|cannot|(?:do|does|did|wo|would|should|can|could|is|are|must)n.?t|without|avoid|skip"
+    r"|instead of|rather than)\b",
     re.IGNORECASE,
 )
+_CLAUSE_END = re.compile(r"[.,;:!?\n]")
 
 
 def session_file(root: Path, session: str, suffix: str = "") -> Path:
@@ -47,7 +50,7 @@ def named_profiles(message: str) -> list[str]:
     """Workflows the user named in ``message`` (lowercase, in order, without repeats)."""
     found: list[str] = []
     for m in _NAMED.finditer(message):
-        if _NEGATED.search(message[max(0, m.start() - 40) : m.start()]):
+        if _NEGATED.search(_CLAUSE_END.split(message[: m.start()])[-1]):
             continue
         name = next(g for g in m.groups() if g).lower()
         if name not in found:

@@ -51,7 +51,7 @@ Show the user a compact summary: mode and why, complexity / risk / uncertainty, 
 - Otherwise, stop at every checkpoint listed in the brief and wait for the user's explicit approval. Present the plan before editing files in STANDARD and DEEP.
 - When the user approves the plan, record it with `susanoo approve` (the user may be asked to confirm the command). Never run it without the user's approval.
 - Mandatory safety controls always apply, whatever profile was chosen.
-- If the brief understates the task (data loss, security, payments, production, or a wider change than it says), raise the route: `susanoo raise standard|deep --reason "<the risk you found>"`. It keeps the evidence already recorded, and the approval unless the reason adds a safety control; then present the plan again. Never pick a lighter profile than the brief unless the user asked for it.
+- If the brief understates the task (data loss, security, payments, production, or a wider change than it says), raise the route: `susanoo raise standard|deep --reason "<the risk you found>"`. It keeps the evidence already recorded. The approval carries over only when the profile and controls stay the same; otherwise present the plan again. Never pick a lighter profile than the brief unless the user asked for it.
 - If a Susanoo hook blocks or questions an action, follow its message. Do not work around it.
 
 ## 4. Execute the selected profile

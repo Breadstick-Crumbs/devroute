@@ -320,21 +320,51 @@ def _approved_route(root: Path, prompt: str) -> dict[str, object]:
     return old
 
 
-def test_raise_keeps_approval_evidence_and_hook_state(tmp_path: Path):
+def test_raise_keeps_evidence_and_hook_state(tmp_path: Path):
     root = _project(tmp_path)
     old = _approved_route(root, "Add pagination to the /users API endpoint")
     assert old["profile"] == "standard"
     code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
     assert code == 0, err
-    assert "from STANDARD to DEEP" in out and "approval again" not in out
+    assert "from STANDARD to DEEP" in out
     store = RecordStore(root)
     new = store.read("routes")[-1]
     assert new["profile"] == "deep" and new["raised_from"] == old["id"] and new["auto"] is True
     assert new["task"] == old["task"] and new["controls"] == old["controls"]
     assert [o["record_id"] for o in store.read("outcomes")] == [old["id"]]
-    assert {a["record_id"] for a in store.read("approvals")} == {old["id"], new["id"]}
     assert [e["record_id"] for e in store.read("evidence")] == [old["id"], new["id"]]
     assert SessionState(root, SESSION).data == {"record_id": new["id"], "work_started": True}
+
+
+def test_raise_to_a_stricter_profile_needs_the_plan_approved_again(tmp_path: Path):
+    """DEEP adds phases the user never approved; only autonomy given in words carries over."""
+    root = _project(tmp_path)
+    old = _approved_route(root, "Add pagination to the /users API endpoint")
+    code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
+    assert code == 0, err
+    assert "approval again" in out
+    assert [a["record_id"] for a in RecordStore(root).read("approvals")] == [old["id"]]
+
+
+def test_raise_to_the_same_profile_keeps_the_plan_approval(tmp_path: Path):
+    root = _project(tmp_path)
+    old = _approved_route(root, "Redesign the plugin architecture across the api, ui, and worker modules")
+    assert old["profile"] == "deep"
+    code, out, err = run(root, "raise", "deep", "--reason", "it also touches the payments module")
+    assert code == 0, err
+    store = RecordStore(root)
+    new = store.read("routes")[-1]
+    if set(new["controls"]) == set(old["controls"]):
+        assert {a["record_id"] for a in store.read("approvals")} == {old["id"], new["id"]}
+    else:
+        assert [a["record_id"] for a in store.read("approvals")] == [old["id"]]
+
+
+def test_raise_rejects_no_record(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "Add pagination to the /users API endpoint")
+    with pytest.raises(SystemExit):
+        run(root, "raise", "deep", "--reason", "wider", "--no-record")
 
 
 def test_raise_reason_adds_controls_and_asks_for_approval_again(tmp_path: Path):
@@ -430,8 +460,11 @@ def test_negated_profile_names_do_not_count():
         "use deep instead of the fast workflow",
         "please don't ever use the fast workflow",
         "rather than the fast workflow use deep",
+        "I don't think we should use the fast workflow",
     ):
         assert "fast" not in prompt_state.named_profiles(message), message
+    assert prompt_state.named_profiles("I want the fast workflow") == ["fast"]
+    assert prompt_state.named_profiles("not the deep profile, use the fast workflow") == ["fast"]
 
 
 def test_no_profile_check_without_automatic_routing(tmp_path: Path):
@@ -523,3 +556,44 @@ def test_raise_with_autonomy_does_not_ask_for_approval_again(tmp_path: Path):
     assert code == 0, err
     assert "New safety controls" in out and "approval again" not in out
     assert "do not wait for approval" in out
+
+
+# --- no way around the floors in a session ----------------------------------------------------
+
+
+def _deep_route(root: Path) -> dict[str, object]:
+    _prompt(root, "Drop the legacy_orders table in production, work autonomously")
+    deep = RecordStore(root).read("routes")[-1]
+    assert {"data-safety", "irreversible-action-gate"} <= set(deep["controls"])
+    return deep
+
+
+def test_extra_config_is_refused_in_a_session(tmp_path: Path):
+    root = _project(tmp_path)
+    _deep_route(root)
+    _prompt(root, "ok")
+    evil = write(tmp_path, "evil.toml", '[[controls]]\nid = "irreversible-action-gate"\nenabled = false\n')
+    routes = RecordStore(root).read("routes")
+    code, _, err = run(root, "route", "--config", str(evil), "Tidy the footer docstrings")
+    assert code != 0 and "--config is not accepted" in err
+    code, _, err = run(root, "raise", "deep", "--config", str(evil), "--reason", "wider")
+    assert code != 0 and "--config is not accepted" in err
+    assert RecordStore(root).read("routes") == routes
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt"])
+def test_a_lost_prompt_record_keeps_the_open_route_floor(tmp_path: Path, damage: str):
+    root = _project(tmp_path)
+    deep = _deep_route(root)
+    _prompt(root, "ok")
+    path = prompt_state.session_file(root, SESSION, ".prompt")
+    if damage == "missing":
+        path.unlink()
+    else:
+        path.write_bytes(b"\xff{")
+    code, _, err = run(root, "route", "--profile", "fast", "Tidy the footer docstrings")
+    assert code != 0 and "lighter workflow" in err
+    code, _, err = run(root, "route", "Tidy the footer docstrings")
+    assert code == 0, err
+    new = RecordStore(root).read("routes")[-1]
+    assert new["profile"] == "deep" and set(deep["controls"]) <= set(new["controls"])
