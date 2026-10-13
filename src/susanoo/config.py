@@ -166,6 +166,15 @@ def _check_patterns(where: str, patterns: Any) -> None:
 def validate(config: Config) -> None:
     """Validate the merged configuration, raising ``ConfigError`` with a precise message."""
     _require(config.get("schema_version") == 1, "unsupported or missing schema_version (expected 1)")
+    # A string such as "false" would be truthy and silently mean hands-off.
+    _require(
+        isinstance(config.get("enforcement", {}).get("hands_off", True), bool),
+        "[enforcement] hands_off must be true or false",
+    )
+    _require(
+        isinstance(config.get("selection", {}).get("default_package_manager", "npm"), str),
+        "[selection] default_package_manager must be a string (npm, pnpm, yarn, or bun)",
+    )
 
     weights = config.get("complexity", {}).get("weights", {})
     _require(bool(weights), "[complexity] weights must not be empty")
@@ -247,7 +256,20 @@ def validate(config: Config) -> None:
         for profile, level in rule.get("levels", {}).items():
             _require(profile in PROFILE_ORDER, f"verification '{rid}': unknown profile '{profile}'")
             _require(level in REQUIREMENT_LEVELS, f"verification '{rid}': unknown level '{level}'")
+        signal_ids = {s.get("id") for s in config.get("signals", [])}
         for esc in rule.get("escalate", []):
-            _require(esc.get("dimension") in DIMENSIONS, f"verification '{rid}': unknown escalate dimension")
-            _check_level(f"verification '{rid}' escalate.min", esc.get("min"))
+            if "signal" in esc:
+                _require(
+                    isinstance(esc["signal"], str) and esc["signal"] in signal_ids,
+                    f"verification '{rid}': unknown escalate signal",
+                )
+                _require(
+                    "dimension" not in esc and "min" not in esc,
+                    f"verification '{rid}': an escalate entry uses either 'signal' or 'dimension'/'min'",
+                )
+            else:
+                _require(
+                    esc.get("dimension") in DIMENSIONS, f"verification '{rid}': unknown escalate dimension"
+                )
+                _check_level(f"verification '{rid}' escalate.min", esc.get("min"))
             _require(esc.get("level") in REQUIREMENT_LEVELS, f"verification '{rid}': unknown escalate level")

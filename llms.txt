@@ -1,6 +1,6 @@
 # Susanoo
 
-> Susanoo is an open-source workflow layer for Claude Code. It reads a coding task, rates its complexity and risk, and routes it to a FAST, STANDARD, or DEEP workflow with mandatory safety controls. With `susanoo init --enforce`, Claude Code hooks deny file edits until the user approves the plan, stop Claude from approving its own plan, and block the end of a turn until required checks have passing, recorded evidence.
+> Susanoo is an open-source workflow layer for Claude Code. It reads a coding task, rates its complexity and risk, and routes it to a FAST, STANDARD, or DEEP workflow with mandatory safety controls. With `susanoo init --enforce`, Claude Code hooks block the end of a turn until required checks have passing, recorded evidence; it is hands-off by default, and with `hands_off = false` the hooks also deny file edits until the user approves the plan and stop Claude from approving its own plan.
 
 Key facts:
 
@@ -8,10 +8,10 @@ Key facts:
 - Deterministic: routing uses configurable keyword and rule heuristics in TOML, not a model. Every score lists the reasons that produced it.
 - Three workflows: FAST (trivial, low-risk changes), STANDARD (typical features: plan, approval, build, test, review), DEEP (high-risk or complex work: architecture first, explicit plan, isolated implementation, independent review, evidence-backed completion).
 - Complexity and risk are separate dimensions, so a small change to password hashing or billing is never treated as routine.
-- Mandatory safety controls (security review, data safety, irreversible-action confirmation, sandbox credentials) still apply when a user overrides the workflow.
+- Mandatory safety controls (security review, data safety, sandbox credentials, and irreversible-action confirmation when `hands_off = false`) still apply when a user overrides the workflow.
 - Claude Code integration: a `/susanoo` skill, `susanoo-reviewer` and `susanoo-researcher` subagents, and optional hooks, either in the skill (default) or in `.claude/settings.local.json` (`--enforce-scope settings`, which also covers resumed sessions).
-- Reference suite: agreement with maintainer labels on 38 of 39 tasks (97.4%), with zero tasks rated below their labeled minimum risk. This measures consistency with stated expectations, not outcome quality.
-- Global mode: `susanoo init --global` makes it the default workflow in every project without typing `/susanoo`. Coding prompts are routed automatically, questions pass through, and in autonomous Claude Code permission modes Susanoo asks no questions while still requiring passing checks before Claude finishes.
+- Reference suite: agreement with maintainer labels on 42 of 44 tasks (95.5%), with zero tasks rated below their labeled minimum risk. This measures consistency with stated expectations, not outcome quality.
+- Global mode: `susanoo init --global` makes it the default workflow in every project without typing `/susanoo`. Coding prompts are routed automatically, questions pass through, and Susanoo asks no questions by default while still requiring passing checks before Claude finishes. Briefs name installed skills, subagents, and MCP servers that fit the task, and commands and install hints follow the project's package manager (npm, pnpm, yarn, bun).
 - Install: `git clone https://github.com/Breadstick-Crumbs/susanoo && cd susanoo && pip install -e .`, then `susanoo init --enforce` in a project and `/susanoo <task>` in Claude Code.
 
 ## Docs

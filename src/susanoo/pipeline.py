@@ -30,6 +30,7 @@ class TaskPlan:
     verification: VerificationPlan
     not_required: list[str]
     record_id: str | None = None
+    hands_off: bool = False  # `[enforcement] hands_off`: checkpoints are reported, not waited at
 
     def to_dict(self, include_inventory: bool = False) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -52,6 +53,7 @@ class TaskPlan:
             "gaps": [g.to_dict() for g in self.gaps],
             "verification": self.verification.to_dict(),
             "not_required": self.not_required,
+            "hands_off": self.hands_off,
             "environment": {
                 "root": self.inventory.root,
                 "languages": self.inventory.languages,
@@ -115,7 +117,9 @@ def plan_task(
     requirements = merge_requirements(
         assessment.requirements, profile_reqs, verification_requirements(selected_steps)
     )
-    recommendations = recommend(requirements, inventory, registry, SelectionContext.from_config(config))
+    recommendations = recommend(
+        requirements, inventory, registry, SelectionContext.from_config(config, task=task)
+    )
     gaps = analyze_gaps(recommendations)
     verification = build_plan(decision.profile, selected_steps, recommendations)
     needed = {r.capability for r in requirements}
@@ -130,6 +134,7 @@ def plan_task(
         gaps=gaps,
         verification=verification,
         not_required=not_required,
+        hands_off=bool(config.get("enforcement", {}).get("hands_off", False)),
     )
 
 

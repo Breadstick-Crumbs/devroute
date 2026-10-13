@@ -37,6 +37,10 @@ class ToolSpec:
     mcp_patterns: tuple[str, ...] = ()
     env: tuple[str, ...] = ()
     version_args: tuple[str, ...] = ()
+    # Only applies when the project uses one of these JavaScript package managers.
+    package_managers: tuple[str, ...] = ()
+    # Words in the task that make this tool the better pick ("postgres" -> psql).
+    task_keywords: tuple[str, ...] = ()
     run: dict[str, tuple[str, ...]] = field(default_factory=dict)
     reliability: int = 2
     context_cost: int = 2
@@ -63,11 +67,23 @@ class EnvironmentSpec:
     unless_markers: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class PackageManagerSpec:
+    """A JavaScript package manager: how to recognize it and how its commands are spelled."""
+
+    id: str
+    markers: tuple[str, ...]
+    add_dev: str
+    run: tuple[str, ...]
+    create: str = ""
+
+
 @dataclass
 class Registry:
     tools: dict[str, ToolSpec]
     capabilities: dict[str, CapabilitySpec]
     environments: tuple[EnvironmentSpec, ...] = ()
+    package_managers: dict[str, PackageManagerSpec] = field(default_factory=dict)
 
     def tools_for(self, capability: str) -> list[ToolSpec]:
         return [t for t in self.tools.values() if capability in t.capabilities]
@@ -90,6 +106,8 @@ _TUPLE_FIELDS = (
     "mcp_patterns",
     "env",
     "version_args",
+    "package_managers",
+    "task_keywords",
 )
 _INT_FIELDS = ("reliability", "context_cost", "setup_cost", "security_exposure")
 
@@ -149,11 +167,32 @@ def _environment_from_dict(entry: dict[str, Any]) -> EnvironmentSpec:
     return EnvironmentSpec(id=eid, name=str(entry.get("name", eid)), binary=binary, **lists)
 
 
+def _package_manager_from_dict(entry: dict[str, Any]) -> PackageManagerSpec:
+    pid = entry.get("id")
+    markers, run, add_dev = entry.get("markers"), entry.get("run"), entry.get("add_dev")
+    if not isinstance(pid, str) or not pid:
+        raise ConfigError("every [[package_managers]] entry needs a string 'id'")
+    if not isinstance(markers, list) or not all(isinstance(m, str) for m in markers):
+        raise ConfigError(f"package manager '{pid}': 'markers' must be a list of strings")
+    if not isinstance(run, list) or not run or not all(isinstance(a, str) for a in run):
+        raise ConfigError(f"package manager '{pid}': 'run' must be a non-empty list of strings")
+    if not isinstance(add_dev, str) or not add_dev:
+        raise ConfigError(f"package manager '{pid}': 'add_dev' must be a non-empty string")
+    create = entry.get("create", "")
+    if not isinstance(create, str):
+        raise ConfigError(f"package manager '{pid}': 'create' must be a string")
+    return PackageManagerSpec(id=pid, markers=tuple(markers), add_dev=add_dev, run=tuple(run), create=create)
+
+
 def load_registry(root: Path | None = None) -> Registry:
     """Load the packaged registry; ``.susanoo/tools.toml`` may add or replace tools by id."""
     packaged = load_toml_data("tools.toml")
     tool_entries: dict[str, tuple[dict[str, Any], str]] = {
         t["id"]: (t, "packaged") for t in packaged.get("tools", [])
+    }
+    # Only the packaged catalog defines package managers: their commands end up in `verify`.
+    package_managers = {
+        pm.id: pm for pm in (_package_manager_from_dict(e) for e in packaged.get("package_managers", []))
     }
     # Packaged only: a run prefix decides what `verify --execute` runs, so a repository
     # cannot supply its own.
@@ -183,4 +222,9 @@ def load_registry(root: Path | None = None) -> Registry:
         for capability in tool.capabilities:
             if capability not in capabilities:
                 raise ConfigError(f"tool '{tool.id}' references unknown capability '{capability}'")
-    return Registry(tools=tools, capabilities=capabilities, environments=environments)
+    return Registry(
+        tools=tools,
+        capabilities=capabilities,
+        environments=environments,
+        package_managers=package_managers,
+    )

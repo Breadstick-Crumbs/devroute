@@ -15,10 +15,10 @@ from susanoo.adapters.claude_code.installer import (
     skill_template,
 )
 from susanoo.cli import main
-from susanoo.config import load_config
 from susanoo.enforcement import gates
 from susanoo.enforcement.state import RouteState, evidence_status
 from susanoo.evaluation import RecordStore
+from tests.conftest import GATED_TOML, gated_config
 
 SESSION = "session-123"
 
@@ -54,7 +54,8 @@ def state(profile: str = "standard", approved: bool = False, controls=None, miss
 
 @pytest.fixture(scope="module")
 def cfg():
-    return load_config()
+    # These tests exercise the gates themselves; by default (hands-off) Susanoo asks nothing.
+    return gated_config()
 
 
 def edit_event(path: str) -> dict:
@@ -231,6 +232,8 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     out = io.StringIO()
     assert main(["init", "--enforce", "--path", str(root)], stdout=out, stderr=io.StringIO()) == 0
+    with (root / ".susanoo" / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write(GATED_TOML)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
     assert (
         main(

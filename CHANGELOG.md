@@ -4,8 +4,21 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- **Hands-off by default:** `[enforcement] hands_off = true` turns off Susanoo's own approvals and confirmations (plan approval, shell writes before approval, irreversible actions, route integrity) in every Claude Code permission mode; Claude Code's permission settings decide what needs confirmation. The evidence gate stays. `susanoo approve` no longer asks (no approval is needed), and `--accept-missing-evidence` is refused instead of asked about. Briefs title the section "Checkpoints" and mark phases `[checkpoint]`, and the skill and playbook report checkpoints instead of stopping at them. Set `hands_off = false` for the previous behavior.
+- The package.json test script runs as `<manager> run test` (was `npm test`) and is listed as "package.json test script".
+
+### Added
+- Briefs name installed skills, subagents, and MCP servers that fit each capability, one of each kind first ("also installed: ..."), including the short brief that automatic routing adds; previously only the top-ranked tool was shown, so a configured code-graph skill or MCP server went unmentioned.
+- JavaScript package managers: the project's manager (package.json `packageManager`, else its lockfile) decides how commands are spelled. The test script runs as `pnpm run test`, `bun run test`, `yarn run test`, or `npm run test`; install hints use `pnpm add -D`, `bun add -d`, and so on; `[selection] default_package_manager` covers projects without either. New `pnpm audit` and `bun audit` registry entries.
+- Task keywords in the tool registry: a tool the task names, or whose technology it names, is preferred among comparable options ("postgres" suggests psql, "sqlite" sqlite3). `[selection] task_keyword_bonus`.
+- Gap suggestions include the install hint ("consider Gitleaks (cli), install: ...").
+- `dependency-change` and `dependency-upgrade-broad` signals: adding, removing, or bumping packages recommends a dependency audit; upgrading many packages or major versions also raises uncertainty and testing difficulty. Verification `escalate` entries can name a `signal`. "install", "uninstall", "pin", and "unpin" start a task in automatic routing ("install docker" and "install the project dependencies" do not). Five routing-suite cases for dependency changes, labeled before the signals were written; one ("Replace moment with date-fns across the codebase") still routes FAST instead of STANDARD, because keywords cannot tell that `moment` is a library.
+
 ### Fixed
 - Python checks in Poetry and Pipenv projects no longer run with the wrong interpreter. These managers keep the virtualenv outside the project by default, so `pytest`, `ruff`, `mypy` and other Python tools were planned (and, with `verify --execute`, run) from PATH without the project's dependencies, and the result was recorded as executed evidence. When such a project has no in-project environment (`.venv`, `venv`, `env`) and no `uv.lock`, Python tools and scripts (including the Django migration check) now run through `poetry run` / `pipenv run`, and tools declared in the project's dependencies (`pyproject.toml`, requirements files, and now `Pipfile` `[packages]` / `[dev-packages]`) count as installed even though they are not on PATH. If the manager is not on PATH, those checks are not run by Susanoo: a tool found on PATH becomes a manual step, a tool found nowhere stays a gap, and either way the reason is shown in the brief, `susanoo verify` and the skipped evidence note (and, for manual steps, the auto-mode brief); a runnable alternative such as `make test` is preferred. Managers are data (`[[environments]]` in the packaged `tools.toml`); `susanoo inventory` lists the detected one. Wrapped commands need the Poetry or Pipenv environment: `poetry run` / `pipenv run` may create it during `verify --execute`. The managers resolve the tool inside their environment first; a tool that is not installed there still falls back to PATH.
+- `npm audit` was selected in pnpm and Bun projects whenever npm was on PATH, and failed there without a package-lock.json; it now applies only to npm projects.
+- `bun.lock` (Bun 1.2 and later) is recognized as a Bun project.
 
 ## [0.6.0] - 2026-10-13
 

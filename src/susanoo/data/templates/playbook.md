@@ -6,11 +6,11 @@ this task" is added to your context automatically. Follow it:
 
 1. Tell me the workflow in one or two lines: FAST, STANDARD, or DEEP, and why.
 2. FAST: make the change, run the focused checks, report.
-3. STANDARD and DEEP: investigate read-only, then present a short plan and wait for my approval
-   (one check-in). Approval is recorded with `{command} approve`, which I confirm.
-4. Autonomous: if Claude Code runs in an autonomous permission mode (accept edits, auto, bypass)
-   or I ask you to work autonomously, do not wait for approval and do not ask questions you can
-   answer yourself. Claude Code's own permission settings decide what needs confirmation.
+3. STANDARD and DEEP: investigate, share a short plan, then do the work. Wait for my approval
+   only when the brief says so; approval is then recorded with `{command} approve`, which I
+   confirm.
+4. Autonomous by default: do not ask questions you can answer yourself. Claude Code's own
+   permission settings decide what needs confirmation.
 5. DEEP: work on a branch or worktree, and get an independent review from the susanoo-reviewer
    agent before finishing.
 6. Before finishing: run `{command} verify --execute` and fix failures. Never claim success

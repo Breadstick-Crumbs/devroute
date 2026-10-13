@@ -92,6 +92,7 @@ BUILD_FILES: dict[str, str] = {
     "package.json": "Node.js (npm)",
     "pnpm-lock.yaml": "pnpm",
     "yarn.lock": "Yarn",
+    "bun.lock": "Bun",
     "bun.lockb": "Bun",
     "Cargo.toml": "Cargo",
     "go.mod": "Go modules",
@@ -126,6 +127,9 @@ class ProjectFacts:
     python_packages: set[str] = field(default_factory=set)
     npm_packages: set[str] = field(default_factory=set)
     npm_scripts: dict[str, str] = field(default_factory=dict)
+    # package.json "packageManager" ("pnpm@9.1.0" -> "pnpm"), and the manager the project uses.
+    declared_package_manager: str = ""
+    package_manager: str | None = None
     make_targets: set[str] = field(default_factory=set)
     pyproject_tools: set[str] = field(default_factory=set)
     is_git_repo: bool = False
@@ -269,6 +273,9 @@ def _parse_package_json(facts: ProjectFacts) -> None:
     scripts = data.get("scripts")
     if isinstance(scripts, dict):
         facts.npm_scripts = {k: str(v) for k, v in scripts.items()}
+    declared = data.get("packageManager")
+    if isinstance(declared, str):
+        facts.declared_package_manager = declared.split("@", 1)[0].strip().lower()
     if (
         "typescript" in facts.npm_packages
         and "typescript" not in facts.languages

@@ -15,7 +15,7 @@ Output:
 
 Fix the typo in the OutOfStockError message
 
-Detected signals: defect fix, small, contained change
+Detected signals: defect fix, small, contained change, clearly trivial edit
 
 ## Assessment
 
@@ -75,7 +75,7 @@ Missing capabilities: none for this task.
 
 Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.
 
-## Approval checkpoints
+## Checkpoints
 
 - None required by Susanoo for this task. Normal judgment still applies.
 

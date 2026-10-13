@@ -82,6 +82,7 @@ from susanoo.render import (
 )
 from susanoo.research import research
 from susanoo.router import load_profiles
+from susanoo.selection import SelectionContext
 from susanoo.verification import EVIDENCE_STATUSES, execute_plan, reported_evidence
 
 EXIT_OK = 0
@@ -761,7 +762,8 @@ def cmd_research(ctx: Context, stdin: TextIO) -> int:
         return EXIT_OK
     inventory = build_inventory(ctx.root, registry)
     try:
-        report = research(ctx.args.capability, inventory, registry, task=ctx.args.task)
+        context = SelectionContext.from_config(ctx.config, task=ctx.args.task or "")
+        report = research(ctx.args.capability, inventory, registry, task=ctx.args.task, context=context)
     except ValueError as exc:
         raise CLIError(str(exc)) from exc
     if not ctx.args.no_record and is_initialized(ctx.root):

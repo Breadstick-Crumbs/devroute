@@ -23,6 +23,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Read-only discovery of languages, manifests, tools, skills, subagents, commands, MCP servers, plugins | ✅ |
 | Five-state capability status, opt-in version verification | ✅ |
 | Registry-based tool selection that prefers CLI and native tools over MCP servers | ✅ |
+| Briefs name installed skills, subagents, and MCP servers per capability; task keywords and the project's JavaScript package manager shape tool choice and commands | ✅ (unreleased) |
 | Discovery of plugin-provided skills and agents (inside installed plugin directories) | 🔜 |
 | Monorepo awareness: per-package inventories and task-to-package scoping | 🔜 |
 | Integration validation: safe smoke checks per tool beyond `--version` (e.g. `pytest --collect-only`) | 🔜 |
