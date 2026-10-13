@@ -22,7 +22,6 @@ import sys
 from pathlib import Path
 
 STATE_DIR = ".susanoo"
-LEGACY_STATE_DIR = ".devroute"  # DevRoute, before the rename; still marks a project root
 OFF_FILE = ".susanoo-off"
 
 
@@ -72,16 +71,14 @@ def _is_global_state(path: Path) -> bool:
 
 
 def find_project_root(start: Path | None = None) -> Path:
-    """Return the nearest ancestor containing ``.susanoo``, ``.devroute``, or ``.git``, else ``start``.
+    """Return the nearest ancestor containing ``.susanoo`` or ``.git``, else ``start``.
 
     The global state directory (``~/.susanoo``) does not make the home directory a project.
     """
     origin = (start or Path.cwd()).resolve()
     for candidate in (origin, *origin.parents):
         state = candidate / STATE_DIR
-        if (state.is_dir() and not _is_global_state(state)) or (
-            (candidate / LEGACY_STATE_DIR).is_dir() or (candidate / ".git").exists()
-        ):
+        if (state.is_dir() and not _is_global_state(state)) or (candidate / ".git").exists():
             return candidate
     return origin
 

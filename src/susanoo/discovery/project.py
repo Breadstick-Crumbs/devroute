@@ -81,7 +81,6 @@ SKIP_DIRS = frozenset(
         ".terraform",
         "site-packages",
         ".susanoo",
-        ".devroute",
         ".claude",
     }
 )

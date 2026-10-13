@@ -3,7 +3,7 @@ message: "If you use Susanoo in your work, please cite it as below."
 type: software
 title: "Susanoo: adaptive workflows and guardrails for Claude Code"
 abstract: >-
-  Susanoo (formerly DevRoute) is an open-source workflow layer for Claude Code. It rates a
+  Susanoo is an open-source workflow layer for Claude Code. It rates a
   coding task's complexity and risk with deterministic, explainable heuristics, routes it to a
   FAST, STANDARD, or DEEP workflow with mandatory safety controls, and can enforce plan approval
   and verified test evidence through Claude Code hooks.

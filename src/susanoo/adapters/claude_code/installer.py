@@ -39,7 +39,7 @@ class Target:
 @dataclass
 class FileAction:
     path: str
-    # create | update | unchanged | conflict | overwrite | remove | keep-modified | absent | migrate
+    # create | update | unchanged | conflict | overwrite | remove | keep-modified | absent
     action: str
     note: str = ""
 
@@ -139,15 +139,12 @@ def plan_install(
     force: bool = False,
     with_agents: bool = True,
     enforce: bool = False,
-    manifest_files: dict[str, str] | None = None,
-    read_from: dict[str, Path] | None = None,
 ) -> list[FileAction]:
-    """Plan an install. ``manifest_files`` and ``read_from`` let a dry run preview a migration."""
-    manifest = read_manifest(root)["files"] if manifest_files is None else manifest_files
-    sources = read_from or {}
+    """Plan an install."""
+    manifest = read_manifest(root)["files"]
     actions: list[FileAction] = []
     for target in targets(with_agents, enforce):
-        current = _read(sources.get(target.path, root / target.path))
+        current = _read(root / target.path)
         if current is None:
             actions.append(FileAction(target.path, "create"))
         elif current == UNREADABLE:

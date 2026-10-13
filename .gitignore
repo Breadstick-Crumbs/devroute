@@ -41,8 +41,3 @@ Thumbs.db
 
 # Local session handoff notes
 HANDOFF.md
-
-# Pre-rename DevRoute state; `susanoo init` migrates it. Kept ignored for one release.
-.devroute/records/
-.devroute/install.json
-**/.devroute/records/

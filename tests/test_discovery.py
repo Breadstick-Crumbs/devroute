@@ -218,16 +218,3 @@ def test_declared_capabilities_override_inference(tmp_path: Path, home: Path, re
     [agent] = build_inventory(root, registry, home=home, env={}).by_kind("agent")
     assert agent.capabilities == ["web_research"]
     assert any("not_a_capability" in e for e in agent.evidence)
-
-
-def test_devroute_capabilities_key_is_still_honored(tmp_path: Path, home: Path, registry):
-    root = tmp_path / "proj"
-    write(
-        root,
-        ".claude/agents/researcher.md",
-        "---\nname: researcher\ndescription: Researches browser testing and payment tools\n"
-        "devroute-capabilities: web_research\n---\nx",
-    )
-    [agent] = build_inventory(root, registry, home=home, env={}).by_kind("agent")
-    assert agent.capabilities == ["web_research"]
-    assert any("devroute-capabilities" in e for e in agent.evidence)

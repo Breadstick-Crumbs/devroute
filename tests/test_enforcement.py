@@ -25,7 +25,7 @@ SESSION = "session-123"
 
 def route(profile: str = "standard", controls: list[str] | None = None, **extra) -> dict:
     data = {
-        "id": "dr-1",
+        "id": "su-1",
         "profile": profile,
         "session_id": SESSION,
         "controls": controls or [],
@@ -72,17 +72,17 @@ def test_evidence_status_rules():
     r = route()
     assert evidence_status(r, []) == (["unit_tests", "independent_review"], [])
     ev = [
-        {"record_id": "dr-1", "step": "unit_tests", "source": "reported", "status": "passed"},
-        {"record_id": "dr-1", "step": "independent_review", "source": "reported", "status": "passed"},
+        {"record_id": "su-1", "step": "unit_tests", "source": "reported", "status": "passed"},
+        {"record_id": "su-1", "step": "independent_review", "source": "reported", "status": "passed"},
     ]
     # A reported result does not satisfy a runnable (ready) step.
     assert evidence_status(r, ev) == (["unit_tests"], [])
-    ev.append({"record_id": "dr-1", "step": "unit_tests", "source": "executed", "status": "failed"})
+    ev.append({"record_id": "su-1", "step": "unit_tests", "source": "executed", "status": "failed"})
     assert evidence_status(r, ev) == ([], ["unit_tests"])
-    ev.append({"record_id": "dr-1", "step": "unit_tests", "source": "executed", "status": "passed"})
+    ev.append({"record_id": "su-1", "step": "unit_tests", "source": "executed", "status": "passed"})
     assert evidence_status(r, ev) == ([], [])
     # Evidence for other records never counts.
-    assert evidence_status(route(), [{**e, "record_id": "dr-2"} for e in ev])[0]
+    assert evidence_status(route(), [{**e, "record_id": "su-2"} for e in ev])[0]
 
 
 # --- plan-approval gate -------------------------------------------------------------
@@ -113,7 +113,7 @@ def test_edits_outside_the_project_are_not_gated(tmp_path: Path, cfg):
 
 
 def test_approval_command_always_requires_user_prompt(tmp_path: Path, cfg):
-    for command in ("susanoo approve", "python -m susanoo approve latest", "cd x && susanoo approve dr-1"):
+    for command in ("susanoo approve", "python -m susanoo approve latest", "cd x && susanoo approve su-1"):
         assert gates.pre_tool_use(bash_event(command), None, tmp_path, cfg).permission == "ask"
     assert (
         gates.pre_tool_use(
@@ -331,11 +331,11 @@ def test_enforce_choice_persists_across_init(tmp_path: Path):
 def test_reported_failures_are_not_passing_evidence():
     r = route()
     ev = [
-        {"record_id": "dr-1", "step": "unit_tests", "source": "executed", "status": "passed"},
-        {"record_id": "dr-1", "step": "independent_review", "source": "reported", "status": "failed"},
+        {"record_id": "su-1", "step": "unit_tests", "source": "executed", "status": "passed"},
+        {"record_id": "su-1", "step": "independent_review", "source": "reported", "status": "failed"},
     ]
     assert evidence_status(r, ev) == ([], ["independent_review"])
-    ev.append({"record_id": "dr-1", "step": "independent_review", "source": "reported", "status": "skipped"})
+    ev.append({"record_id": "su-1", "step": "independent_review", "source": "reported", "status": "skipped"})
     assert evidence_status(r, ev) == ([], [])
 
 
