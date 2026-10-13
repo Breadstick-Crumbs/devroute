@@ -92,7 +92,21 @@ def _inside(file_path: str, root: Path) -> bool:
     return a == b or a.startswith(b.rstrip("\\/") + os.sep)
 
 
-def _needs_approval(state: RouteState, cfg: dict[str, Any]) -> bool:
+def autonomous(event: dict[str, Any], state: RouteState | None, cfg: dict[str, Any]) -> bool:
+    """Whether Claude Code runs in one of ``autonomous_modes`` (read live from each hook event,
+    so switching modes mid-task takes effect immediately).
+
+    Susanoo then adds no approval and no questions of its own; Claude Code's permission settings
+    decide. The evidence gate stays, because it never asks the user anything. (A task that asks
+    for autonomy in words is recorded as an approval instead, which keeps the irreversible-action
+    gate; see ``susanoo.enforcement.auto``.)
+    """
+    return str(event.get("permission_mode", "")) in set(cfg.get("autonomous_modes", []))
+
+
+def _needs_approval(state: RouteState, cfg: dict[str, Any], hands_off: bool = False) -> bool:
+    if hands_off:
+        return False
     return state.profile in set(cfg.get("approval_profiles", [])) and not state.approved
 
 
@@ -137,6 +151,18 @@ def pre_tool_use(event: dict[str, Any], state: RouteState | None, root: Path, co
     tool = str(event.get("tool_name", ""))
     raw_input = event.get("tool_input")
     tool_input: dict[str, Any] = raw_input if isinstance(raw_input, dict) else {}
+    if autonomous(event, state, cfg):
+        # Hands-off: Claude Code's own permission settings decide; Susanoo asks nothing. Recording
+        # "completed" without evidence would defeat the evidence gate, so that is refused outright
+        # instead of asked about.
+        command = str(tool_input.get("command", "")) if tool in ("Bash", "PowerShell") else ""
+        if _ACCEPT_MISSING.search(command):
+            return Decision(
+                permission="deny",
+                reason="Susanoo: in autonomous mode a task cannot be recorded as completed without passing "
+                "evidence. Run the required checks, or record the outcome as partial.",
+            )
+        return Decision()
 
     if tool in ("Bash", "PowerShell"):
         command = str(tool_input.get("command", ""))
@@ -223,7 +249,7 @@ def stop(
     cfg = config.get("enforcement", {})
     if state is None or state.profile not in set(cfg.get("evidence_profiles", [])):
         return Decision()
-    if not work_started or _needs_approval(state, cfg):
+    if not work_started or _needs_approval(state, cfg, autonomous(event, state, cfg)):
         return Decision()
     if not state.missing and not state.failing:
         return Decision()

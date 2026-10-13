@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-susanoo = "susanoo.cli:main"
+susanoo = "susanoo.entry:main"
 
 [project.urls]
 Homepage = "https://github.com/Breadstick-Crumbs/susanoo"

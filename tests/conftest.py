@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,19 @@ import pytest
 from susanoo.config import Config, load_config
 from susanoo.registry import Registry, load_registry
 from susanoo.router import Profile, load_profiles
+
+# Never read or write the developer's real global install (~/.susanoo). The location is read
+# when used, so setting it here also covers session-scoped fixtures.
+os.environ["SUSANOO_HOME"] = tempfile.mkdtemp(prefix="susanoo-test-home-")
+
+
+@pytest.fixture(autouse=True)
+def isolated_susanoo_home(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A fresh, empty global state directory for every test."""
+    path = tmp_path_factory.mktemp("susanoo-home")
+    monkeypatch.setenv("SUSANOO_HOME", str(path))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(path / "claude-config"))
+    return path
 
 
 @pytest.fixture(scope="session")

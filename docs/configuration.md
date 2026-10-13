@@ -7,10 +7,13 @@ Susanoo works with no configuration. Everything below is optional.
 | File | Purpose |
 |---|---|
 | `src/susanoo/data/defaults.toml` (packaged) | All default heuristics: signals, weights, thresholds, controls, verification rules |
-| `.susanoo/config.toml` | Project overrides, deep-merged over the defaults |
+| `~/.susanoo/config.toml` | Your overrides for every project (global mode), merged after the defaults |
+| `.susanoo/config.toml` | Project overrides, merged after your user overrides |
 | `--config <file>` | Extra overrides for one command (merged last) |
 | `.susanoo/tools.toml` | Add or replace tool registry entries (`[[tools]]`, matched by `id`; `enabled = false` removes one) |
 | `.susanoo/profiles/<fast\|standard\|deep>.toml` | Override fields of a workflow profile |
+
+`SUSANOO_HOME` moves `~/.susanoo` (global install manifest, user configuration, and global-mode records), and `CLAUDE_CONFIG_DIR` moves the Claude Code configuration directory that `susanoo init --global` writes to.
 
 **Merge rules:** tables merge recursively. `[[signals]]`, `[[controls]]`, and `[[verification]]` merge **by `id`**, so you can change one entry without copying the catalog. An entry with `enabled = false` removes the default with that id. Other arrays are replaced. `susanoo doctor` validates the merged result and reports the exact offending key.
 
@@ -128,7 +131,10 @@ Keep this narrow. Ignoring text can only lower risk.
 Run `susanoo research --list`.
 
 ### `[enforcement]`
-Settings for opt-in hook enforcement: `approval_profiles`, `evidence_profiles`, `max_stop_blocks`, `edit_tools`, `shell_write_patterns`, and `irreversible_commands`. See [enforcement.md](enforcement.md).
+Settings for opt-in hook enforcement: `approval_profiles`, `evidence_profiles`, `max_stop_blocks`, `edit_tools`, `shell_write_patterns`, `irreversible_commands`, and `autonomous_modes` (Claude Code permission modes in which Susanoo adds no approvals or questions; default: acceptEdits, auto, dontAsk, bypassPermissions; set it to `[]` to keep every gate in every mode). See [enforcement.md](enforcement.md).
+
+### `[auto]`
+Automatic routing of prompts (`susanoo init --global`, or `--auto` with the settings scope). A prompt is a task when, after leading `polite` phrases ("please", "can you", "ok now", ...), it starts with one of `task_verbs` and has at least `min_words` words; it is a question when it starts with one of `question_starts`; anything else is ambiguous and is not routed. `skip_prefix` (default `?`) marks a prompt as never routed, and a task containing an `autonomy` phrase ("work autonomously", "don't ask") runs hands-off. All entries are regular expressions.
 
 ### `[selection]`
 `code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers.

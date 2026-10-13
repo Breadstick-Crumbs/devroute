@@ -20,7 +20,7 @@ from susanoo.enforcement.state import RouteState, active_route
 from susanoo.evaluation.store import RecordStore
 from susanoo.paths import find_project_root, is_initialized, records_dir
 
-HOOK_EVENTS = ("pre-tool-use", "stop", "session-start", "post-compact")
+HOOK_EVENTS = ("pre-tool-use", "stop", "session-start", "post-compact", "user-prompt-submit")
 
 
 def _now() -> str:
@@ -84,6 +84,15 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
     store = RecordStore(root)
     session = str(event.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "")
     state = active_route(store, session)
+    if event_name == "user-prompt-submit":
+        from susanoo.enforcement import auto  # heavy (routing pipeline); only prompts need it
+
+        context = auto.on_prompt(event, root, config, store, state, session)
+        if not context:
+            return 0, ""
+        return 0, json.dumps(
+            {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
+        )
     if state is None:
         # Approval integrity applies even without an active route.
         if event_name == "pre-tool-use":
@@ -93,6 +102,7 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
 
     hook_state = SessionState(root, session)
     record = hook_state.for_record(state.record_id)
+    record["last_seen"] = _now()  # automatic routing measures follow-ups from the last activity
 
     if event_name == "pre-tool-use":
         decision = gates.pre_tool_use(event, state, root, config)

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from susanoo.paths import records_dir
+from susanoo.paths import home_state, records_dir
 
 RECORD_KINDS = ("routes", "outcomes", "evidence", "research", "approvals", "enforcement")
 
@@ -26,8 +26,15 @@ class RecordStore:
     """Append-only JSONL files, one per record kind. Corrupt lines are skipped and counted."""
 
     def __init__(self, root: Path) -> None:
+        self.root = root
         self.directory = records_dir(root)
         self.skipped_lines = 0
+
+    def _note_global_project(self) -> None:
+        """In global mode, remember which project a records folder belongs to."""
+        meta = self.directory.parent / "project.json"
+        if self.directory.parent.parent == home_state() / "projects" and not meta.exists():
+            meta.write_text(json.dumps({"path": str(self.root.resolve())}) + "\n", encoding="utf-8")
 
     def path(self, kind: str) -> Path:
         if kind not in RECORD_KINDS:
@@ -37,6 +44,7 @@ class RecordStore:
     def append(self, kind: str, data: dict[str, Any]) -> None:
         path = self.path(kind)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self._note_global_project()
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(data, sort_keys=True, ensure_ascii=False) + "\n")
 

@@ -66,7 +66,16 @@ And in Claude Code:
 /susanoo Add a low-stock alert that emails the warehouse when a SKU drops below its reorder level
 ```
 
-Claude runs Susanoo and presents the execution brief. For STANDARD and DEEP it waits for your approval at each checkpoint, works through the workflow, runs the required verification, records evidence, and reports what ran and what did not. To force a workflow, use `/susanoo --profile fast <task>`; mandatory safety controls still apply.
+To make Susanoo your default workflow in **every** project, so you never have to mention it, use the global install instead:
+
+```bash
+python -m pip install --user -e .   # from the susanoo folder, so `susanoo` works everywhere
+susanoo init --global              # playbook, skill, subagents, and hooks in ~/.claude
+```
+
+Coding prompts are then routed automatically, questions pass through, and Susanoo follows your Claude Code autonomy setting: one plan check-in at most in normal mode, none in accept-edits, auto, or bypass mode. See [docs/claude-code.md](docs/claude-code.md#as-your-default-workflow-every-project).
+
+With `/susanoo`, Claude runs Susanoo and presents the execution brief. For STANDARD and DEEP it waits for your approval at each checkpoint, works through the workflow, runs the required verification, records evidence, and reports what ran and what did not. To force a workflow, use `/susanoo --profile fast <task>`; mandatory safety controls still apply.
 
 `susanoo init` never overwrites files it did not create: it reports conflicts, `--force` writes a backup first, and `susanoo init --uninstall` removes only files that are still unmodified. Leave out `--enforce` for the instruction-only workflow, or add `--enforce-scope settings` to also cover resumed sessions (see [enforcement](docs/enforcement.md#how-it-is-wired)).
 
@@ -164,11 +173,17 @@ Run `susanoo init --enforce` and start the task with `/susanoo <task>`. For STAN
 **How do I make Claude Code run the tests before it says it is done?**
 With enforcement on, a `Stop` hook blocks the end of the turn while required verification lacks passing evidence. Runnable checks count only when Susanoo executed them itself (`susanoo verify --execute`), and a reported failure never counts as evidence.
 
+**Can Susanoo run automatically, without typing `/susanoo`?**
+Yes. `susanoo init --global` installs a hook that classifies every prompt in every project. Clear coding tasks ("add ...", "can you fix ...") are routed and a short brief is added to Claude's context; questions and ambiguous prompts pass through, and a prompt starting with `?` is never routed. Records go to `~/.susanoo/projects/`, so nothing is added to your repositories.
+
+**Will it keep asking me questions?**
+No more than you allow. In Claude Code's normal mode, a STANDARD or DEEP task has one check-in: approving the plan (plus a confirmation for irreversible commands such as deploys while that safety control is active). In accept-edits, auto, dontAsk, or bypass mode, Susanoo asks nothing and Claude Code's own permissions decide; saying "work autonomously" or "don't ask" in a task counts as approving its plan. In every mode, Claude still cannot finish without passing checks.
+
 **Does Susanoo use an AI model to make decisions?**
 No. Assessment and routing are deterministic keyword and rule heuristics configured in TOML. The same task and configuration always produce the same result, and every score comes with the reasons that produced it.
 
 **Will it change my Claude Code settings or `CLAUDE.md`?**
-No. It installs only its own skill, subagents, and `.susanoo/` folder, and it never overwrites a file it did not create. The one opt-in exception is `--enforce-scope settings`, which adds only Susanoo's own hook entries to `.claude/settings.local.json`.
+Not unless you ask it to. A project install adds only its own skill, subagents, and `.susanoo/` folder, and never overwrites a file it did not create; `--enforce-scope settings` adds only Susanoo's own hook entries to `.claude/settings.local.json`. The opt-in global install (`susanoo init --global`) writes to `~/.claude`: Susanoo's hook entries in `settings.json` (other hooks and settings are kept) and a marked workflow block in `CLAUDE.md` (your own text is never changed, and a backup is written first). `--uninstall` removes what it added.
 
 **How accurate is the routing?**
 On the bundled reference suite of 39 labeled tasks, it agrees with the maintainers' labels on 38 (97.4%) and never rates a task below its labeled minimum risk. That measures consistency with stated expectations, not whether a workflow produces better software. The heuristics are hand-tuned starting points, not validated measurements. See [docs/evaluation.md](docs/evaluation.md).

@@ -1,3 +1,3 @@
-from susanoo.cli import main
+from susanoo.entry import main
 
 raise SystemExit(main())

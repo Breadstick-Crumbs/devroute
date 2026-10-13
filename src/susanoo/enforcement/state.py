@@ -56,6 +56,8 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     for step in route.get("verification", []):
         if step.get("level") != "required":
             continue
+        if route.get("auto") is True and step.get("mode") == "unavailable":
+            continue  # automatic routes: a check whose tool is missing is reported, not demanded
         step_id = str(step.get("id"))
         # Runnable steps need a passing run that Susanoo observed; others need a reported
         # result that is passing or an explicit, explained skip.
