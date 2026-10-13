@@ -79,13 +79,6 @@ With `/susanoo`, Claude runs Susanoo and presents the execution brief. For STAND
 
 `susanoo init` never overwrites files it did not create: it reports conflicts, `--force` writes a backup first, and `susanoo init --uninstall` removes only files that are still unmodified. Leave out `--enforce` for the instruction-only workflow, or add `--enforce-scope settings` to also cover resumed sessions (see [enforcement](docs/enforcement.md#how-it-is-wired)).
 
-<details>
-<summary><b>Upgrading from DevRoute</b></summary>
-
-Uninstall the old package (`pip uninstall devroute`), install Susanoo, and run `susanoo init` in each project. It moves `.devroute/` (records and configuration) to `.susanoo/`, keeps your enforcement choice, and replaces the `/devroute` skill and `devroute-*` subagents if you have not modified them. Modified files are left in place and listed. In a team, commit the result once; teammates who pull it and run `susanoo init` get their local records merged into `.susanoo/`. If you added the compaction hook to your settings, change `devroute hook` to `susanoo hook` there; `susanoo doctor` points out any you missed.
-
-</details>
-
 ### On the command line
 
 The CLI works without Claude Code and without a model:
@@ -165,7 +158,7 @@ See [`examples/`](examples/) for a simple (FAST), moderate (STANDARD), and compl
 ## FAQ
 
 **What is Susanoo?**
-An open-source, deterministic Python CLI and Claude Code integration (a skill, two subagents, and optional hooks) that sizes the engineering workflow to each coding task. It routes a task to FAST, STANDARD, or DEEP based on its complexity and risk, applies mandatory safety controls, and records verification evidence. It was called DevRoute before v0.3.
+An open-source, deterministic Python CLI and Claude Code integration (a skill, two subagents, and optional hooks) that sizes the engineering workflow to each coding task. It routes a task to FAST, STANDARD, or DEEP based on its complexity and risk, applies mandatory safety controls, and records verification evidence.
 
 **How do I stop Claude Code from editing files before I approve a plan?**
 Run `susanoo init --enforce` and start the task with `/susanoo <task>`. For STANDARD and DEEP tasks, a `PreToolUse` hook denies Edit and Write until you approve the plan, and `susanoo approve` always asks you to confirm, so Claude cannot approve its own plan. See [docs/enforcement.md](docs/enforcement.md).

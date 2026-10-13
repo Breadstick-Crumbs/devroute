@@ -1,6 +1,6 @@
 # Susanoo
 
-> Susanoo (formerly DevRoute) is an open-source workflow layer for Claude Code. It reads a coding task, rates its complexity and risk, and routes it to a FAST, STANDARD, or DEEP workflow with mandatory safety controls. With `susanoo init --enforce`, Claude Code hooks deny file edits until the user approves the plan, stop Claude from approving its own plan, and block the end of a turn until required checks have passing, recorded evidence.
+> Susanoo is an open-source workflow layer for Claude Code. It reads a coding task, rates its complexity and risk, and routes it to a FAST, STANDARD, or DEEP workflow with mandatory safety controls. With `susanoo init --enforce`, Claude Code hooks deny file edits until the user approves the plan, stop Claude from approving its own plan, and block the end of a turn until required checks have passing, recorded evidence.
 
 Key facts:
 
