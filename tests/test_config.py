@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from devroute.config import ConfigError, load_config, merge, validate
+from susanoo.config import ConfigError, load_config, merge, validate
 from tests.conftest import write
 
 
@@ -17,7 +17,7 @@ def test_defaults_are_valid(config):
 def test_project_override_merges_tables_and_signals_by_id(tmp_path: Path):
     write(
         tmp_path,
-        ".devroute/config.toml",
+        ".susanoo/config.toml",
         (
             "schema_version = 1\n"
             "[risk]\nthresholds = { moderate = 0.2, high = 0.5, critical = 0.8 }\n"
@@ -61,12 +61,12 @@ def test_merge_does_not_mutate_inputs():
     ],
 )
 def test_invalid_overrides_are_rejected(tmp_path: Path, snippet: str, message: str):
-    write(tmp_path, ".devroute/config.toml", "schema_version = 1\n" + snippet)
+    write(tmp_path, ".susanoo/config.toml", "schema_version = 1\n" + snippet)
     with pytest.raises(ConfigError, match=message):
         load_config(tmp_path)
 
 
 def test_invalid_toml_reports_path(tmp_path: Path):
-    write(tmp_path, ".devroute/config.toml", "this is = = not toml")
+    write(tmp_path, ".susanoo/config.toml", "this is = = not toml")
     with pytest.raises(ConfigError, match="invalid TOML"):
         load_config(tmp_path)

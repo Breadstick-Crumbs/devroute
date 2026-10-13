@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from devroute.analyzer import ProjectContext, assess
-from devroute.config import DIMENSIONS
+from susanoo.analyzer import ProjectContext, assess
+from susanoo.config import DIMENSIONS
 
 
 def test_all_ten_dimensions_are_scored(config):

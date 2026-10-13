@@ -3,14 +3,14 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "devroute"
-version = "0.2.0"
+name = "susanoo"
+version = "0.3.0"
 description = "Adaptive AI-native engineering framework. The right workflow, tools, and agents for every development task."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "DevRoute contributors" }]
+authors = [{ name = "Susanoo contributors" }]
 keywords = ["claude-code", "ai-agents", "developer-tools", "workflow", "software-engineering"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Typing :: Typed",
 ]
-# DevRoute has no runtime dependencies by design (see docs/decisions/0001).
+# Susanoo has no runtime dependencies by design (see docs/decisions/0001).
 dependencies = []
 
 [project.optional-dependencies]
@@ -39,26 +39,26 @@ dev = [
 ]
 
 [project.scripts]
-devroute = "devroute.cli:main"
+susanoo = "susanoo.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Breadstick-Crumbs/devroute"
-Documentation = "https://github.com/Breadstick-Crumbs/devroute/tree/main/docs"
-Issues = "https://github.com/Breadstick-Crumbs/devroute/issues"
-Changelog = "https://github.com/Breadstick-Crumbs/devroute/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Breadstick-Crumbs/susanoo"
+Documentation = "https://github.com/Breadstick-Crumbs/susanoo/tree/main/docs"
+Issues = "https://github.com/Breadstick-Crumbs/susanoo/issues"
+Changelog = "https://github.com/Breadstick-Crumbs/susanoo/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/devroute"]
+packages = ["src/susanoo"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/devroute", "tests", "docs", "examples", "README.md", "LICENSE", "CHANGELOG.md"]
+include = ["src/susanoo", "tests", "docs", "examples", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
 
 [tool.coverage.run]
-source = ["devroute"]
+source = ["susanoo"]
 branch = true
 
 [tool.ruff]
@@ -69,7 +69,7 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "C4"]
 ignore = [
-    "S603",  # subprocess calls use argv lists built from DevRoute's own registry; see verification/executor.py
+    "S603",  # subprocess calls use argv lists built from Susanoo's own registry; see verification/executor.py
     "RUF001",
 ]
 
@@ -84,7 +84,7 @@ max-line-length = 130
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src/devroute"]
+files = ["src/susanoo"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from devroute.adapters.claude_code.discovery import parse_frontmatter
-from devroute.adapters.claude_code.installer import targets
+from susanoo.adapters.claude_code.discovery import parse_frontmatter
+from susanoo.adapters.claude_code.installer import targets
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -22,17 +22,17 @@ def test_templates_have_valid_frontmatter():
 def test_skill_uses_arguments_and_records_evidence():
     [skill] = [t for t in targets() if t.path.endswith("SKILL.md")]
     meta = parse_frontmatter(skill.content)
-    assert meta["name"] == "devroute"
+    assert meta["name"] == "susanoo"
     assert meta["disable-model-invocation"] == "true"
     assert "$ARGUMENTS" in skill.content
-    assert "devroute route --stdin" in skill.content
-    assert "devroute verify --execute" in skill.content
+    assert "susanoo route --stdin" in skill.content
+    assert "susanoo verify --execute" in skill.content
     # The skill must not pre-approve running project commands.
-    assert "devroute verify" not in meta["allowed-tools"]
+    assert "susanoo verify" not in meta["allowed-tools"]
 
 
 def test_reviewer_is_read_only():
-    [reviewer] = [t for t in targets() if t.path.endswith("devroute-reviewer.md")]
+    [reviewer] = [t for t in targets() if t.path.endswith("susanoo-reviewer.md")]
     meta = parse_frontmatter(reviewer.content)
     assert "Edit" not in meta["tools"] and "Write" not in meta["tools"]
 
@@ -46,25 +46,23 @@ def test_repository_dogfood_copies_match_templates():
         if not path.startswith(".claude/"):
             continue
         repo_copy = REPO / path
-        assert repo_copy.is_file(), f"{path} missing; run `devroute init` in the repository"
-        assert repo_copy.read_text(encoding="utf-8") in contents, (
-            f"{path} is out of sync; run `devroute init`"
-        )
+        assert repo_copy.is_file(), f"{path} missing; run `susanoo init` in the repository"
+        assert repo_copy.read_text(encoding="utf-8") in contents, f"{path} is out of sync; run `susanoo init`"
 
 
 def test_enforcement_variant_registers_hooks_in_frontmatter():
-    from devroute.adapters.claude_code.installer import skill_template
+    from susanoo.adapters.claude_code.installer import skill_template
 
     plain, enforced = skill_template(False), skill_template(True)
     assert "hooks:" not in plain
     meta = parse_frontmatter(enforced)
-    assert meta["name"] == "devroute" and "hooks" in meta
+    assert meta["name"] == "susanoo" and "hooks" in meta
     frontmatter_end = enforced.index("\n---\n", 3)
     for event in ("pre-tool-use", "stop"):
-        assert f"devroute hook {event}" in enforced[:frontmatter_end]
+        assert f"susanoo hook {event}" in enforced[:frontmatter_end]
     # Claude Code 2.1.296 does not fire SessionStart or PostCompact hooks declared by a skill
     # (scripts/live_enforcement_check.py); compaction recovery is a settings snippet instead.
     for event in ("session-start", "post-compact"):
-        assert f"devroute hook {event}" not in enforced
+        assert f"susanoo hook {event}" not in enforced
     # Everything except the hook block is identical.
     assert enforced.replace(enforced[enforced.index("hooks:") : frontmatter_end + 1], "") == plain

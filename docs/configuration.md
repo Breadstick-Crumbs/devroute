@@ -1,18 +1,18 @@
 # Configuration
 
-DevRoute works with no configuration. Everything below is optional.
+Susanoo works with no configuration. Everything below is optional.
 
 ## Files and precedence
 
 | File | Purpose |
 |---|---|
-| `src/devroute/data/defaults.toml` (packaged) | All default heuristics: signals, weights, thresholds, controls, verification rules |
-| `.devroute/config.toml` | Project overrides, deep-merged over the defaults |
+| `src/susanoo/data/defaults.toml` (packaged) | All default heuristics: signals, weights, thresholds, controls, verification rules |
+| `.susanoo/config.toml` | Project overrides, deep-merged over the defaults |
 | `--config <file>` | Extra overrides for one command (merged last) |
-| `.devroute/tools.toml` | Add or replace tool registry entries (`[[tools]]`, matched by `id`; `enabled = false` removes one) |
-| `.devroute/profiles/<fast\|standard\|deep>.toml` | Override fields of a workflow profile |
+| `.susanoo/tools.toml` | Add or replace tool registry entries (`[[tools]]`, matched by `id`; `enabled = false` removes one) |
+| `.susanoo/profiles/<fast\|standard\|deep>.toml` | Override fields of a workflow profile |
 
-**Merge rules:** tables merge recursively. `[[signals]]`, `[[controls]]`, and `[[verification]]` merge **by `id`**, so you can change one entry without copying the catalog. An entry with `enabled = false` removes the default with that id. Other arrays are replaced. `devroute doctor` validates the merged result and reports the exact offending key.
+**Merge rules:** tables merge recursively. `[[signals]]`, `[[controls]]`, and `[[verification]]` merge **by `id`**, so you can change one entry without copying the catalog. An entry with `enabled = false` removes the default with that id. Other arrays are replaced. `susanoo doctor` validates the merged result and reports the exact offending key.
 
 ## Common changes
 
@@ -28,7 +28,7 @@ thresholds = { moderate = 0.25, high = 0.50, critical = 0.80 }
 critical_risk_floor = "deep"   # overrides can never go below DEEP when risk is critical
 ```
 
-### Teach DevRoute your domain
+### Teach Susanoo your domain
 
 ```toml
 [[signals]]
@@ -64,7 +64,7 @@ levels = { fast = "required", standard = "required", deep = "required" }
 
 ### Register an in-house tool
 
-`.devroute/tools.toml`:
+`.susanoo/tools.toml`:
 
 ```toml
 [[tools]]
@@ -80,7 +80,7 @@ setup_cost = 1
 security_exposure = 1
 ```
 
-Project tool entries are repository-controlled. DevRoute ignores their `version_args`, so `--verify` never runs them. Their `run` commands do execute under `devroute verify --execute`, just like the project's own test scripts.
+Project tool entries are repository-controlled. Susanoo ignores their `version_args`, so `--verify` never runs them. Their `run` commands do execute under `susanoo verify --execute`, just like the project's own test scripts.
 
 ### Keep task text out of records
 
@@ -115,7 +115,7 @@ store_task_text = false   # only a SHA-256 of the task is stored
 `implementation_complexity`, `architectural_complexity`, `affected_components`, `technical_uncertainty`, `external_dependencies`, `security_privacy`, `data_integrity`, `irreversibility`, `testing_difficulty`, `parallelization`.
 
 ### Capabilities
-Run `devroute research --list`.
+Run `susanoo research --list`.
 
 ### `[enforcement]`
 Settings for opt-in hook enforcement: `approval_profiles`, `evidence_profiles`, `max_stop_blocks`, `edit_tools`, `shell_write_patterns`, and `irreversible_commands`. See [enforcement.md](enforcement.md).
@@ -126,8 +126,8 @@ Settings for opt-in hook enforcement: `approval_profiles`, `evidence_profiles`, 
 ## Checking the effect of a change
 
 ```bash
-devroute doctor                 # validates configuration
-devroute eval                   # routing on the bundled suite
-devroute eval --suite my.toml   # your own labeled tasks
-devroute assess --json "..."    # inspect individual scores and reasons
+susanoo doctor                 # validates configuration
+susanoo eval                   # routing on the bundled suite
+susanoo eval --suite my.toml   # your own labeled tasks
+susanoo assess --json "..."    # inspect individual scores and reasons
 ```

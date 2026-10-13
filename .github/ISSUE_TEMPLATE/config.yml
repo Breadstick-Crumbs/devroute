@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/Breadstick-Crumbs/devroute/security/advisories/new
+    url: https://github.com/Breadstick-Crumbs/susanoo/security/advisories/new
     about: Please report security issues privately, not as public issues.

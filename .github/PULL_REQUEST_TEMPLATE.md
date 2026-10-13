@@ -9,7 +9,7 @@
 - [ ] `pytest`
 - [ ] `ruff check . && ruff format --check .`
 - [ ] `mypy`
-- [ ] `devroute eval` (required if signals, thresholds, profiles, or controls changed: no agreement drop, 0 risk-floor violations)
+- [ ] `susanoo eval` (required if signals, thresholds, profiles, or controls changed: no agreement drop, 0 risk-floor violations)
 
 ## Checklist
 
@@ -17,4 +17,4 @@
 - [ ] Docs and `CHANGELOG.md` (*Unreleased*) updated
 - [ ] No new runtime dependencies (or an ADR explains why)
 - [ ] Discovery remains read-only; no secrets are read into output or records
-- [ ] If templates changed: `devroute init` was run so `.claude/` copies are in sync
+- [ ] If templates changed: `susanoo init` was run so `.claude/` copies are in sync

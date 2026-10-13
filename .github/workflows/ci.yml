@@ -40,14 +40,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -e ".[dev]"
-      - run: pytest --cov=devroute --cov-report=term-missing:skip-covered
+      - run: pytest --cov=susanoo --cov-report=term-missing:skip-covered
       - name: Routing evaluation
-        run: devroute eval --min-agreement 0.9 --fail-on-risk-violation
+        run: susanoo eval --min-agreement 0.9 --fail-on-risk-violation
       - name: CLI smoke test
         run: |
-          devroute doctor
-          devroute route --no-record "Fix typo in README"
-          devroute assess --json "Add Stripe checkout"
+          susanoo doctor
+          susanoo route --no-record "Fix typo in README"
+          susanoo assess --json "Add Stripe checkout"
 
   package:
     name: Build package
@@ -63,7 +63,7 @@ jobs:
         run: |
           python -m venv /tmp/wheel-env
           /tmp/wheel-env/bin/pip install dist/*.whl
-          cd /tmp && /tmp/wheel-env/bin/devroute --version && /tmp/wheel-env/bin/devroute eval
+          cd /tmp && /tmp/wheel-env/bin/susanoo --version && /tmp/wheel-env/bin/susanoo eval
 
   security:
     name: Security checks

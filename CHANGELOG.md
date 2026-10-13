@@ -4,6 +4,16 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
+### Changed
+- **DevRoute is now Susanoo.** The project, Python package (`import susanoo`), command (`susanoo`), skill (`/susanoo`), subagents (`susanoo-reviewer`, `susanoo-researcher`), state directory (`.susanoo/`), hook commands (`susanoo hook ...`), frontmatter key (`susanoo-capabilities`), and environment variable (`SUSANOO_DEBUG`) were renamed. No `devroute` alias is kept.
+- New record ids start with `su-`. Existing `dr-` records keep working.
+
+### Added
+- `susanoo init` migrates a DevRoute installation: it moves `.devroute/` to `.susanoo/` with records and configuration, keeps the enforce choice, and removes the old `/devroute` skill and `devroute-*` subagents only if they are unmodified. If `.susanoo/` already exists (a teammate committed the migration), local DevRoute records are merged into it. `susanoo init --uninstall` also removes the old files. `susanoo doctor` warns when a DevRoute installation is present, or when a settings file still runs `devroute hook` (the compaction snippet from `docs/enforcement.md`; change it to `susanoo hook`).
+- Skills and subagents that declare capabilities with the v0.2 `devroute-capabilities` key are still recognized.
+
 ## [0.2.0] - 2026-10-13
 
 ### Added

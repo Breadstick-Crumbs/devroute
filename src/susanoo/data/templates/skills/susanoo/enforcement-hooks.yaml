@@ -1,0 +1,12 @@
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell"
+      hooks:
+        - type: command
+          command: "susanoo hook pre-tool-use"
+          timeout: 30
+  Stop:
+    - hooks:
+        - type: command
+          command: "susanoo hook stop"
+          timeout: 30

@@ -1,5 +1,7 @@
 # 0004: Local JSON Lines files for records
 
+> Written when the project was named DevRoute; names were updated when it was renamed to Susanoo (v0.3).
+
 **Status:** accepted (v0.1)
 
 ## Context
@@ -8,13 +10,13 @@ Evaluation needs durable records of routes, outcomes, and verification evidence.
 
 ## Options
 
-1. Append-only JSONL files in `.devroute/records/`.
+1. Append-only JSONL files in `.susanoo/records/`.
 2. SQLite.
 3. A hosted service.
 
 ## Decision
 
-Option 1. JSONL is append-only, easy to inspect and diff, tolerant of partial corruption (bad lines are skipped and counted), and needs no dependencies. Records are written only after `devroute init`, are git-ignored by default, and can store a hash instead of the task text.
+Option 1. JSONL is append-only, easy to inspect and diff, tolerant of partial corruption (bad lines are skipped and counted), and needs no dependencies. Records are written only after `susanoo init`, are git-ignored by default, and can store a hash instead of the task text.
 
 ## Consequences
 

@@ -11,10 +11,10 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Ten-dimension, explainable task assessment with independent complexity, risk, and uncertainty | ✅ |
 | FAST / STANDARD / DEEP routing with reasons, overrides, mandatory controls, critical-risk floor | ✅ |
 | CLI: `doctor`, `inventory`, `assess`, `route`, `init`, `report`, plus `verify`, `evidence`, `outcome`, `research`, `eval` | ✅ |
-| `/devroute` Claude Code skill and `devroute-reviewer` / `devroute-researcher` subagents with safe install and uninstall | ✅ |
+| `/susanoo` Claude Code skill and `susanoo-reviewer` / `susanoo-researcher` subagents with safe install and uninstall | ✅ |
 | Test suite, CI (lint, types, tests on 3 OSes, security checks) | ✅ |
 
-**Acceptance criteria (met):** the package installs with no runtime dependencies; every CLI command has automated tests; the routing suite runs deterministically with 0 risk-floor violations; `devroute init` never modifies a file it did not create.
+**Acceptance criteria (met):** the package installs with no runtime dependencies; every CLI command has automated tests; the routing suite runs deterministically with 0 risk-floor violations; `susanoo init` never modifies a file it did not create.
 
 ## Phase 2: Capability intelligence
 
@@ -39,7 +39,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Strategy selection within profiles (test-first, spike-then-build, migration-first) based on signals | 🔜 |
 | Stronger verification: coverage-delta checks, changed-files-to-tests mapping, migration dry runs | 🔜 |
 | Optional hooks that block completion claims when required evidence is missing | ✅ (v0.2, `--enforce`) |
-| Settings-scoped enforcement option, so gates also apply in resumed sessions and compaction recovery works without a manual snippet ([#29](https://github.com/Breadstick-Crumbs/devroute/issues/29)) | 🔜 |
+| Settings-scoped enforcement option, so gates also apply in resumed sessions and compaction recovery works without a manual snippet ([#29](https://github.com/Breadstick-Crumbs/susanoo/issues/29)) | 🔜 |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.
 

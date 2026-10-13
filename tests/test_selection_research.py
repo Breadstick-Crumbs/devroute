@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from devroute.analyzer import CapabilityRequirement
-from devroute.discovery import Finding, Inventory, Status
-from devroute.research import analyze_gaps, research
-from devroute.selection import recommend
+from susanoo.analyzer import CapabilityRequirement
+from susanoo.discovery import Finding, Inventory, Status
+from susanoo.research import analyze_gaps, research
+from susanoo.selection import recommend
 
 
 def inventory(findings: list[Finding], languages: dict[str, int] | None = None) -> Inventory:

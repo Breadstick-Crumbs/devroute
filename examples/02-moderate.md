@@ -3,13 +3,13 @@
 Command (run against `examples/sample-app`):
 
 ```bash
-devroute route --path examples/sample-app "Add a low-stock alert that emails the warehouse when a SKU drops below its reorder level"
+susanoo route --path examples/sample-app "Add a low-stock alert that emails the warehouse when a SKU drops below its reorder level"
 ```
 
 Output:
 
 ````markdown
-# DevRoute execution brief
+# Susanoo execution brief
 
 ## Task
 
@@ -48,7 +48,7 @@ Why: complexity is moderate; risk is moderate
 
 - Planning: short written plan shared before editing
 - Agents: optional: an independent reviewer subagent for the review phase
-- Review: code review of the full diff; use the devroute-reviewer subagent when risk is moderate or higher
+- Review: code review of the full diff; use the susanoo-reviewer subagent when risk is moderate or higher
 - Isolation: feature branch recommended
 - Verification depth: standard: unit tests, linting, and integration checks for touched boundaries
 
@@ -67,7 +67,7 @@ Missing capabilities:
 
 - Dependency audit [recommended, non-blocking]: consider pip-audit (cli)
 
-DevRoute never installs tools itself; adopting any of these needs your approval.
+Susanoo never installs tools itself; adopting any of these needs your approval.
 
 ## Proposed steps
 
@@ -76,7 +76,7 @@ DevRoute never installs tools itself; adopting any of these needs your approval.
 3. **Plan** **[approval]** - Write a short plan: files to change, approach, tests to add, and risks.
 4. **Implement incrementally** - Build in small steps, running relevant tests after each meaningful step.
 5. **Test** - Add or update automated tests for new behavior and run the required verification.
-6. **Review** - Review the complete diff for correctness, edge cases, and convention fit; delegate to devroute-reviewer when risk is moderate or higher.
+6. **Review** - Review the complete diff for correctness, edge cases, and convention fit; delegate to susanoo-reviewer when risk is moderate or higher.
 7. **Integration validation** - Confirm the change works with the rest of the system: run integration checks and the broader test suite.
 8. **Report** - Report what changed, the verification that actually ran (with results), and remaining limitations.
 
@@ -89,7 +89,7 @@ DevRoute never installs tools itself; adopting any of these needs your approval.
 - [recommended] Dependency vulnerability audit: no usable tool - gap
 - [recommended] Independent code review: Claude Code subagents (performed by the agent or a person)
 
-Only checks that actually ran count as evidence. Run `devroute verify --execute` to execute and record the ready checks.
+Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.
 
 ## Approval checkpoints
 
@@ -98,5 +98,5 @@ Only checks that actually ran count as evidence. Run `devroute verify --execute`
 ## Limitations
 
 - The assessment uses configurable keyword heuristics and local project files; it can miss context that is not in the task description.
-- Tool statuses come from read-only detection; run `devroute inventory --verify` to check versions.
+- Tool statuses come from read-only detection; run `susanoo inventory --verify` to check versions.
 ````

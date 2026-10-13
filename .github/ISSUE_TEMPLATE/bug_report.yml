@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in DevRoute does not work as documented.
+description: Something in Susanoo does not work as documented.
 labels: [bug]
 body:
   - type: textarea
@@ -24,8 +24,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: DevRoute version
-      placeholder: devroute --version
+      label: Susanoo version
+      placeholder: susanoo --version
     validations:
       required: true
   - type: input

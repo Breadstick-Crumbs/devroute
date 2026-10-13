@@ -1,7 +1,7 @@
 [project]
 name = "inventory-app"
 version = "0.1.0"
-description = "A tiny stock-tracking service used to demonstrate DevRoute."
+description = "A tiny stock-tracking service used to demonstrate Susanoo."
 requires-python = ">=3.11"
 
 [project.optional-dependencies]

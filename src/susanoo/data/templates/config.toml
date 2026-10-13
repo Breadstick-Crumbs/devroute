@@ -1,0 +1,37 @@
+# Susanoo project configuration.
+#
+# Values here are deep-merged over Susanoo's packaged defaults. Uncomment and
+# edit only what you want to change. Run `susanoo eval` after changing
+# heuristics to see the effect on routing, and `susanoo doctor` to validate.
+#
+# Full reference: https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/configuration.md
+
+schema_version = 1
+
+# [complexity]
+# thresholds = { moderate = 0.30, high = 0.62 }
+
+# [risk]
+# thresholds = { moderate = 0.30, high = 0.60, critical = 0.90 }
+
+# [routing]
+# Overrides below this profile are raised to it when risk is critical.
+# critical_risk_floor = "standard"
+
+# [records]
+# Set to false to store only a SHA-256 hash of task descriptions in local records.
+# store_task_text = true
+
+# Add or adjust a signal (merged by id with the defaults):
+# [[signals]]
+# id = "billing-domain"
+# label = "billing domain code"
+# area = "billing"
+# patterns = ["ledger", "reconciliation"]
+# effects = { data_integrity = 3, security_privacy = 2 }
+# requires = ["integration_testing"]
+
+# Disable a default signal:
+# [[signals]]
+# id = "notifications"
+# enabled = false

@@ -17,10 +17,10 @@ venv/
 coverage.xml
 htmlcov/
 
-# DevRoute local state (records stay on the developer's machine)
-.devroute/records/
-.devroute/install.json
-**/.devroute/records/
+# Susanoo local state (records stay on the developer's machine)
+.susanoo/records/
+.susanoo/install.json
+**/.susanoo/records/
 
 # Claude Code local files
 .claude/settings.local.json
@@ -41,3 +41,8 @@ Thumbs.db
 
 # Local session handoff notes
 HANDOFF.md
+
+# Pre-rename DevRoute state; `susanoo init` migrates it. Kept ignored for one release.
+.devroute/records/
+.devroute/install.json
+**/.devroute/records/

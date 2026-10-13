@@ -1,5 +1,0 @@
-"""DevRoute: the right workflow for every development task."""
-
-__version__ = "0.2.0"
-
-__all__ = ["__version__"]

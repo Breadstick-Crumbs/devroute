@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Short records of decisions that shape DevRoute, written when the decision was made. Each lists the options considered and why one was chosen. To revisit a decision, add a new record that supersedes the old one instead of editing it.
+Short records of decisions that shape Susanoo, written when the decision was made. Each lists the options considered and why one was chosen. To revisit a decision, add a new record that supersedes the old one instead of editing it.
 
 | ADR | Decision |
 |---|---|

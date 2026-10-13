@@ -1,6 +1,6 @@
 # Code of Conduct
 
-DevRoute aims to be a welcoming, professional project for everyone who uses or improves it.
+Susanoo aims to be a welcoming, professional project for everyone who uses or improves it.
 
 ## Expected behavior
 

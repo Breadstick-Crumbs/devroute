@@ -1,5 +1,7 @@
 # 0005: Safety controls derive from risk, not from the chosen profile
 
+> Written when the project was named DevRoute; names were updated when it was renamed to Susanoo (v0.3).
+
 **Status:** accepted (v0.1)
 
 ## Context
@@ -18,5 +20,5 @@ Option 3. Controls add approval checkpoints and force specific verification step
 
 ## Consequences
 
-- `devroute route --profile fast` on a security-sensitive task gives a lighter process but keeps security review, its checkpoint, and security analysis.
+- `susanoo route --profile fast` on a security-sensitive task gives a lighter process but keeps security review, its checkpoint, and security analysis.
 - Projects can tighten the floor (for example to DEEP) or change control thresholds in configuration. That is a deliberate, reviewable change rather than a per-task override.

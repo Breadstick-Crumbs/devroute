@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement to DevRoute.
+description: Suggest an improvement to Susanoo.
 labels: [enhancement]
 body:
   - type: textarea

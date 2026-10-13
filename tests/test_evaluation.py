@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from devroute.config import ConfigError
-from devroute.evaluation import RecordError, RecordStore, run_suite, summarize
+from susanoo.config import ConfigError
+from susanoo.evaluation import RecordError, RecordStore, run_suite, summarize
 from tests.conftest import write
 
 
@@ -31,7 +31,7 @@ def test_corrupt_lines_are_skipped(tmp_path: Path):
 
 
 def test_empty_store_explains_how_to_create_records(tmp_path: Path):
-    with pytest.raises(RecordError, match="devroute init"):
+    with pytest.raises(RecordError, match="susanoo init"):
         RecordStore(tmp_path).resolve_route("latest")
 
 
