@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
 ### Changed
 - **DevRoute is now Susanoo.** The project, Python package (`import susanoo`), command (`susanoo`), skill (`/susanoo`), subagents (`susanoo-reviewer`, `susanoo-researcher`), state directory (`.susanoo/`), hook commands (`susanoo hook ...`), frontmatter key (`susanoo-capabilities`), and environment variable (`SUSANOO_DEBUG`) were renamed. No `devroute` alias is kept.
 - New record ids start with `su-`. Existing `dr-` records keep working.
