@@ -139,10 +139,10 @@ def render_brief(plan: TaskPlan) -> str:
             how = f"`{' '.join(s.command)}`"
         elif s.mode == "manual":
             how = f"{s.tool} (performed by the agent or a person)"
-            if s.withheld:
-                how += f" - {s.withheld}"
         else:
             how = "no usable tool - gap"
+        if s.withheld:
+            how += f" - {s.withheld}"
         lines.append(f"- [{s.level}] {s.title}: {how}")
     lines += [
         "",

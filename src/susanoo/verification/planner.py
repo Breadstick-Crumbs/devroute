@@ -129,6 +129,7 @@ def build_plan(
                     "Delegate to the susanoo-reviewer subagent (separate context) or a human reviewer."
                 )
         elif rec is not None and rec.suggestion is not None:
+            step.withheld = rec.suggestion.command_withheld
             step.notes.append(
                 f"No usable tool; option: {rec.suggestion.name} ({rec.suggestion.status.value})."
             )

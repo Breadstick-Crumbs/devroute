@@ -181,6 +181,43 @@ def test_withheld_reason_is_shown_in_brief(tmp_path: Path, config):
     assert f"pytest (performed by the agent or a person) - {unit.withheld}" in render_brief(plan)
 
 
+def test_withheld_reason_reaches_auto_brief_and_skipped_evidence(tmp_path: Path, config):
+    from susanoo.enforcement.auto import compact_brief
+    from susanoo.pipeline import plan_task
+
+    inv = Inventory(
+        str(tmp_path), "", False, {"python": 3}, [_PYTEST, _environment(Status.CONFIGURED_INACCESSIBLE)]
+    )
+    plan = plan_task("Fix the crash when saving settings", tmp_path, config, inventory=inv)
+    unit = plan.verification.get("unit_tests")
+    assert f"Unit tests ({unit.withheld})" in compact_brief(plan, "r1", False, "susanoo")
+    [evidence] = [e for e in execute_plan(plan.verification, tmp_path) if e.step == "unit_tests"]
+    assert evidence.status == "skipped" and unit.withheld in evidence.note
+
+
+def test_withheld_reason_is_kept_when_tool_is_a_gap(tmp_path: Path, config):
+    from susanoo.pipeline import plan_task
+    from susanoo.render import render_brief
+
+    # pytest declared but on no PATH, and the manager is missing too: still a gap, with the reason.
+    declared = Finding(
+        "tool:pytest",
+        "tool",
+        "pytest",
+        Status.CONFIGURED_INACCESSIBLE,
+        ["unit_testing"],
+        tool_kind="cli",
+        detail={"registry_id": "pytest", "python_declared": True},
+    )
+    inv = Inventory(
+        str(tmp_path), "", False, {"python": 3}, [declared, _environment(Status.CONFIGURED_INACCESSIBLE)]
+    )
+    plan = plan_task("Fix the crash when saving settings", tmp_path, config, inventory=inv)
+    unit = plan.verification.get("unit_tests")
+    assert unit.mode == "unavailable" and "'poetry' is not on PATH" in unit.withheld
+    assert f"no usable tool - gap - {unit.withheld}" in render_brief(plan)
+
+
 def test_non_python_tools_ignore_python_environment(registry):
     jest = Finding(
         "tool:jest", "tool", "Jest", Status.INSTALLED_UNVERIFIED, ["unit_testing"], tool_kind="cli"
