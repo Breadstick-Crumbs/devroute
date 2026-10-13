@@ -64,6 +64,11 @@ def _which(name: str) -> str | None:
     return found
 
 
+def has_project_python_env(root: Path) -> bool:
+    """True if the project has its own virtualenv (.venv, venv, env with Scripts/ or bin/)."""
+    return any((root / name / sub).is_dir() for name in PROJECT_ENV_DIRS for sub in ("Scripts", "bin"))
+
+
 def project_dirs(root: Path | None) -> list[Path]:
     """Project-local tool directories (virtualenvs, node_modules/.bin), searched before PATH."""
     dirs: list[Path] = []

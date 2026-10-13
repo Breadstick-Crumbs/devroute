@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from susanoo.analyzer import assess
+from susanoo.analyzer import CapabilityRequirement, assess
 from susanoo.discovery import Finding, Inventory, Status
 from susanoo.router import route
-from susanoo.selection import recommend
+from susanoo.selection import candidates_for, recommend
 from susanoo.verification import (
     VerificationPlan,
     VerificationStep,
@@ -76,6 +76,118 @@ def test_step_modes_reflect_tools(config, profiles, registry):
     unit = plan.get("unit_tests")
     assert unit.mode == "ready" and unit.command == ["pytest", "-q"]
     assert plan.get("static_analysis").mode == "unavailable"
+
+
+def _environment(status: Status) -> Finding:
+    return Finding(
+        "environment:poetry",
+        "environment",
+        "Poetry",
+        status,
+        detail={"binary": "poetry", "run_prefix": ["poetry", "run"]},
+    )
+
+
+_PYTEST = Finding(
+    "tool:pytest", "tool", "pytest", Status.INSTALLED_UNVERIFIED, ["unit_testing"], tool_kind="cli"
+)
+
+
+def test_python_checks_run_in_external_environment(config, profiles, registry):
+    findings = [_PYTEST, _environment(Status.INSTALLED_UNVERIFIED)]
+    unit = plan_for("Fix the crash when saving settings", config, profiles, registry, findings).get(
+        "unit_tests"
+    )
+    assert unit.mode == "ready" and unit.command == ["poetry", "run", "pytest", "-q"]
+
+
+def test_python_checks_become_manual_without_environment_manager(config, profiles, registry):
+    findings = [_PYTEST, _environment(Status.CONFIGURED_INACCESSIBLE)]
+    unit = plan_for("Fix the crash when saving settings", config, profiles, registry, findings).get(
+        "unit_tests"
+    )
+    # pytest from PATH would run without the project's dependencies; never record that as evidence.
+    assert unit.mode == "manual" and unit.command is None
+    assert "'poetry' is not on PATH" in unit.withheld
+
+
+def test_tools_declared_in_external_environment_are_usable(registry):
+    # pytest is only installed in the Poetry environment: declared, but no binary on PATH.
+    declared = Finding(
+        "tool:pytest",
+        "tool",
+        "pytest",
+        Status.CONFIGURED_INACCESSIBLE,
+        ["unit_testing"],
+        tool_kind="cli",
+        detail={"registry_id": "pytest", "python_declared": True},
+    )
+    inv = Inventory(".", "", False, {"python": 3}, [declared, _environment(Status.INSTALLED_UNVERIFIED)])
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
+    assert rec.selected is not None and rec.selected.id == "pytest"
+    assert rec.selected.status is Status.INSTALLED_UNVERIFIED
+    assert rec.selected.command == ["poetry", "run", "pytest", "-q"]
+
+    without_manager = Inventory(
+        ".", "", False, {"python": 3}, [declared, _environment(Status.CONFIGURED_INACCESSIBLE)]
+    )
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], without_manager, registry)
+    assert rec.selected is None
+
+
+def test_python_scripts_also_run_in_external_environment(registry):
+    django = Finding(
+        "tool:django-migrations",
+        "tool",
+        "Django migrations",
+        Status.INSTALLED_UNVERIFIED,
+        ["migration_checks"],
+        tool_kind="script",
+    )
+    inv = Inventory(".", "", False, {"python": 3}, [django, _environment(Status.INSTALLED_UNVERIFIED)])
+    candidate = next(
+        c for c in candidates_for("migration_checks", inv, registry) if c.id == "django-migrations"
+    )
+    assert candidate.command is not None and candidate.command[:3] == ["poetry", "run", "python"]
+
+
+def test_withheld_tool_ranks_after_runnable_alternative(registry):
+    make_test = Finding(
+        "tool:make-test",
+        "tool",
+        "make test",
+        Status.INSTALLED_UNVERIFIED,
+        ["unit_testing"],
+        tool_kind="script",
+    )
+    inv = Inventory(
+        ".", "", False, {"python": 3}, [_PYTEST, make_test, _environment(Status.CONFIGURED_INACCESSIBLE)]
+    )
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
+    assert rec.selected is not None and rec.selected.id == "make-test"
+    assert rec.selected.command_withheld == ""
+
+
+def test_withheld_reason_is_shown_in_brief(tmp_path: Path, config):
+    from susanoo.pipeline import plan_task
+    from susanoo.render import render_brief
+
+    inv = Inventory(
+        str(tmp_path), "", False, {"python": 3}, [_PYTEST, _environment(Status.CONFIGURED_INACCESSIBLE)]
+    )
+    plan = plan_task("Fix the crash when saving settings", tmp_path, config, inventory=inv)
+    unit = plan.verification.get("unit_tests")
+    assert unit.mode == "manual" and unit.withheld
+    assert f"pytest (performed by the agent or a person) - {unit.withheld}" in render_brief(plan)
+
+
+def test_non_python_tools_ignore_python_environment(registry):
+    jest = Finding(
+        "tool:jest", "tool", "Jest", Status.INSTALLED_UNVERIFIED, ["unit_testing"], tool_kind="cli"
+    )
+    inv = Inventory(".", "", False, {"typescript": 3}, [jest, _environment(Status.CONFIGURED_INACCESSIBLE)])
+    candidate = next(c for c in candidates_for("unit_testing", inv, registry) if c.id == "jest")
+    assert candidate.command == ["npx", "--no-install", "jest"] and candidate.command_withheld == ""
 
 
 def _step(

@@ -609,6 +609,8 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
             for s in plan.verification.steps:
                 how = " ".join(s.command) if s.command else s.mode
                 lines.append(f"  [{s.level:<11}] {s.id:<18} {s.mode:<11} {how}")
+                if s.withheld:
+                    lines.append(f"  {'':<13} {s.withheld}")
             lines += ["", "Nothing was run. Add --execute to run the 'ready' steps and record evidence."]
             ctx.emit("\n".join(lines))
         return EXIT_OK
