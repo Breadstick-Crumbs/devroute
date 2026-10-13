@@ -64,6 +64,7 @@ Profiles live in `data/profiles/*.toml`: phases (with approval flags), planning 
 | Source files | bounded directory walk that skips dependency and build directories | languages are counted |
 | Manifests | `pyproject.toml`, `requirements*.txt`, `package.json`, `Makefile`, `.git/config` | declarations make a tool *configured* |
 | Executables | project `.venv`/`venv`/`node_modules/.bin`, then `PATH`, then the interpreter directory | found means *installed (unverified)*; a successful `--verify` version probe means *verified* |
+| Python environment managers | `[[environments]]` in the packaged `tools.toml` (Poetry, Pipenv): marker files, with no in-project environment | Python tools run through the manager's `run` prefix, and tools declared in the project's dependencies count as installed; without the manager on PATH their checks become manual, so a PATH interpreter's result is never recorded as executed evidence |
 | Skills, commands, subagents | `.claude/{skills,commands,agents}` in the project and `~/.claude` | valid frontmatter means *verified*; broken or missing files mean *configured, not usable* |
 | MCP servers | `.mcp.json` and `~/.claude.json` (user and per-project scopes) | resolvable launch command means *installed*; missing command or disabled means *configured, not usable*; remote servers are never contacted |
 | Plugins | `enabledPlugins` in user and project settings | *installed (unverified)* |

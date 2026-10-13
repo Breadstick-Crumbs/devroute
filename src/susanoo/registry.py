@@ -49,10 +49,25 @@ class ToolSpec:
     origin: str = "packaged"
 
 
+@dataclass(frozen=True)
+class EnvironmentSpec:
+    """A project environment manager whose virtualenv lives outside the project by default."""
+
+    id: str
+    name: str
+    binary: str
+    run_prefix: tuple[str, ...]
+    markers: tuple[str, ...] = ()
+    pyproject_tools: tuple[str, ...] = ()
+    # Files that mean another manager owns the environment (e.g. uv.lock after a migration).
+    unless_markers: tuple[str, ...] = ()
+
+
 @dataclass
 class Registry:
     tools: dict[str, ToolSpec]
     capabilities: dict[str, CapabilitySpec]
+    environments: tuple[EnvironmentSpec, ...] = ()
 
     def tools_for(self, capability: str) -> list[ToolSpec]:
         return [t for t in self.tools.values() if capability in t.capabilities]
@@ -114,11 +129,35 @@ def _tool_from_dict(entry: dict[str, Any], origin: str = "packaged") -> ToolSpec
     return ToolSpec(**kwargs)
 
 
+def _environment_from_dict(entry: dict[str, Any]) -> EnvironmentSpec:
+    eid = entry.get("id")
+    if not isinstance(eid, str) or not eid:
+        raise ConfigError("every [[environments]] entry needs a string 'id'")
+    binary = entry.get("binary")
+    if not isinstance(binary, str) or not binary:
+        raise ConfigError(f"environment '{eid}': 'binary' must be a non-empty string")
+    lists: dict[str, tuple[str, ...]] = {}
+    for key in ("run_prefix", "markers", "pyproject_tools", "unless_markers"):
+        value = entry.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise ConfigError(f"environment '{eid}': '{key}' must be a list of strings")
+        lists[key] = tuple(value)
+    if not lists["run_prefix"]:
+        raise ConfigError(f"environment '{eid}': 'run_prefix' must not be empty")
+    if not lists["markers"] and not lists["pyproject_tools"]:
+        raise ConfigError(f"environment '{eid}': needs 'markers' or 'pyproject_tools'")
+    return EnvironmentSpec(id=eid, name=str(entry.get("name", eid)), binary=binary, **lists)
+
+
 def load_registry(root: Path | None = None) -> Registry:
     """Load the packaged registry; ``.susanoo/tools.toml`` may add or replace tools by id."""
+    packaged = load_toml_data("tools.toml")
     tool_entries: dict[str, tuple[dict[str, Any], str]] = {
-        t["id"]: (t, "packaged") for t in load_toml_data("tools.toml").get("tools", [])
+        t["id"]: (t, "packaged") for t in packaged.get("tools", [])
     }
+    # Packaged only: a run prefix decides what `verify --execute` runs, so a repository
+    # cannot supply its own.
+    environments = tuple(_environment_from_dict(e) for e in packaged.get("environments", []))
     if root is not None:
         extra = state_dir(root) / "tools.toml"
         if extra.is_file():
@@ -144,4 +183,4 @@ def load_registry(root: Path | None = None) -> Registry:
         for capability in tool.capabilities:
             if capability not in capabilities:
                 raise ConfigError(f"tool '{tool.id}' references unknown capability '{capability}'")
-    return Registry(tools=tools, capabilities=capabilities)
+    return Registry(tools=tools, capabilities=capabilities, environments=environments)

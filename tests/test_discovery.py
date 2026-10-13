@@ -5,6 +5,7 @@ from pathlib import Path
 
 from susanoo.adapters.claude_code.discovery import parse_frontmatter
 from susanoo.discovery import Status, build_inventory, detect_tool, scan_project
+from susanoo.discovery.inventory import detect_environment
 from tests.conftest import write
 
 
@@ -218,3 +219,160 @@ def test_declared_capabilities_override_inference(tmp_path: Path, home: Path, re
     [agent] = build_inventory(root, registry, home=home, env={}).by_kind("agent")
     assert agent.capabilities == ["web_research"]
     assert any("not_a_capability" in e for e in agent.evidence)
+
+
+def poetry_project(root: Path) -> Path:
+    write(root, "pyproject.toml", '[tool.poetry]\nname = "demo"\nversion = "0.1.0"\n')
+    write(root, "poetry.lock", "")
+    write(root, "tests/test_x.py", "def test_x():\n    assert True\n")
+    return root
+
+
+def test_poetry_environment_outside_project_is_detected(tmp_path: Path, registry):
+    facts = scan_project(poetry_project(tmp_path))
+    finding = detect_environment(registry, facts, all_binaries)
+    assert finding is not None and finding.id == "environment:poetry"
+    assert finding.status is Status.INSTALLED_UNVERIFIED
+    assert finding.detail["run_prefix"] == ["poetry", "run"]
+    assert "poetry.lock present" in finding.evidence
+    missing = detect_environment(registry, facts, no_binaries)
+    assert missing is not None and missing.status is Status.CONFIGURED_INACCESSIBLE
+
+
+def test_pipenv_environment_is_detected(tmp_path: Path, registry):
+    write(tmp_path, "Pipfile", "[packages]\n")
+    finding = detect_environment(registry, scan_project(tmp_path), all_binaries)
+    assert finding is not None and finding.id == "environment:pipenv"
+    assert finding.detail["run_prefix"] == ["pipenv", "run"]
+
+
+def test_pipfile_dependencies_are_parsed(tmp_path: Path):
+    write(tmp_path, "Pipfile", '[packages]\nRequests = "*"\n\n[dev-packages]\npytest = "*"\nruff = "*"\n')
+    assert {"requests", "pytest", "ruff"} <= scan_project(tmp_path).python_packages
+    write(tmp_path, "Pipfile", "[packages\n")
+    facts = scan_project(tmp_path)
+    assert any("Pipfile: invalid TOML" in w for w in facts.warnings)
+
+
+def test_pipenv_dev_dependency_runs_through_pipenv(tmp_path: Path, registry):
+    from susanoo.analyzer import CapabilityRequirement
+    from susanoo.discovery import Inventory
+    from susanoo.selection import recommend
+
+    write(tmp_path, "Pipfile", '[dev-packages]\npytest = "*"\n')
+    write(tmp_path, "app.py", "")
+    facts = scan_project(tmp_path)
+
+    def only_pipenv(name: str) -> str | None:
+        return "/usr/bin/pipenv" if name == "pipenv" else None
+
+    pytest_finding = detect_tool(registry.tools["pytest"], facts, {}, False, which=only_pipenv)
+    assert pytest_finding is not None and pytest_finding.status is Status.CONFIGURED_INACCESSIBLE
+    environment = detect_environment(registry, facts, only_pipenv)
+    assert environment is not None
+    inv = Inventory(str(tmp_path), "", False, facts.languages, [pytest_finding, environment])
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
+    assert rec.selected is not None and rec.selected.command == ["pipenv", "run", "pytest", "-q"]
+
+
+def test_poetry_detected_from_pyproject_without_lock(tmp_path: Path, registry):
+    write(tmp_path, "pyproject.toml", '[tool.poetry]\nname = "demo"\n')
+    finding = detect_environment(registry, scan_project(tmp_path), all_binaries)
+    assert finding is not None and finding.id == "environment:poetry"
+    assert finding.evidence[0] == "[tool.poetry] in pyproject.toml"
+
+
+def test_poetry_wins_over_pipfile(tmp_path: Path, registry):
+    poetry_project(tmp_path)
+    write(tmp_path, "Pipfile", "[packages]\n")
+    finding = detect_environment(registry, scan_project(tmp_path), all_binaries)
+    assert finding is not None and finding.id == "environment:poetry"
+
+
+def test_verify_dry_run_shows_withheld_reason(tmp_path: Path, monkeypatch):
+    import io
+
+    from susanoo import cli
+    from susanoo.discovery import inventory
+
+    def only_pytest(name: str, root: Path | None = None) -> str | None:
+        return "/usr/bin/pytest" if name == "pytest" else None
+
+    monkeypatch.setattr(inventory, "resolve_executable", only_pytest)
+    poetry_project(tmp_path)
+    write(tmp_path, "pytest.ini", "[pytest]\n")
+    out = io.StringIO()
+    code = cli.main(
+        ["verify", "Fix the crash when saving settings", "--path", str(tmp_path)],
+        stdin=io.StringIO(),
+        stdout=out,
+        stderr=io.StringIO(),
+    )
+    assert code == 0
+    assert "unit_tests" in out.getvalue() and "'poetry' is not on PATH" in out.getvalue()
+
+
+def test_in_project_environment_needs_no_manager(tmp_path: Path, registry):
+    import os
+
+    poetry_project(tmp_path)
+    (tmp_path / ".venv" / ("Scripts" if os.name == "nt" else "bin")).mkdir(parents=True)
+    assert detect_environment(registry, scan_project(tmp_path), all_binaries) is None
+
+
+def test_env_bin_directory_counts_as_in_project_environment(tmp_path: Path, registry):
+    poetry_project(tmp_path)
+    (tmp_path / "env" / "bin").mkdir(parents=True)
+    assert detect_environment(registry, scan_project(tmp_path), all_binaries) is None
+
+
+def test_uv_lock_overrides_leftover_poetry_lock(tmp_path: Path, registry):
+    poetry_project(tmp_path)
+    write(tmp_path, "uv.lock", "")
+    assert detect_environment(registry, scan_project(tmp_path), all_binaries) is None
+
+
+def test_project_registry_cannot_add_environments(tmp_path: Path):
+    from susanoo.registry import load_registry
+
+    write(
+        tmp_path,
+        ".susanoo/tools.toml",
+        '[[environments]]\nid = "evil"\nbinary = "sh"\nrun_prefix = ["sh", "-c"]\nmarkers = ["app.py"]\n',
+    )
+    assert [e.id for e in load_registry(tmp_path).environments] == ["poetry", "pipenv"]
+
+
+def test_invalid_environment_entries_are_rejected():
+    import pytest
+
+    from susanoo.config import ConfigError
+    from susanoo.registry import _environment_from_dict
+
+    for entry in (
+        {"binary": "poetry", "run_prefix": ["poetry", "run"], "markers": ["poetry.lock"]},
+        {"id": "x", "run_prefix": ["x"], "markers": ["x.lock"]},
+        {"id": "x", "binary": "x", "run_prefix": [], "markers": ["x.lock"]},
+        {"id": "x", "binary": "x", "run_prefix": ["x"]},
+        {"id": "x", "binary": "x", "run_prefix": "x run", "markers": ["x.lock"]},
+    ):
+        with pytest.raises(ConfigError):
+            _environment_from_dict(entry)
+
+
+def test_inventory_lists_environment_manager_only_when_present(tmp_path: Path, home: Path, registry):
+    from susanoo.render import render_inventory
+
+    plain = build_inventory(tmp_path, registry, home=home, env={})
+    assert "Python environment manager" not in render_inventory(plain)
+    inv = build_inventory(poetry_project(tmp_path), registry, home=home, env={})
+    assert "## Python environment manager" in render_inventory(inv)
+
+
+def test_plain_python_project_has_no_environment_manager(python_project: Path, registry):
+    assert detect_environment(registry, scan_project(python_project), all_binaries) is None
+
+
+def test_build_inventory_reports_environment(tmp_path: Path, home: Path, registry):
+    inv = build_inventory(poetry_project(tmp_path), registry, home=home, env={})
+    assert [f.id for f in inv.by_kind("environment")] == ["environment:poetry"]

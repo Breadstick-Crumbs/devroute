@@ -54,6 +54,8 @@ class Candidate:
     install: str = ""
     notes: str = ""
     adjustments: list[str] = field(default_factory=list)
+    # Why a tool that has a run command cannot be run by Susanoo here (the check becomes manual).
+    command_withheld: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -117,6 +119,16 @@ def _registry_candidate(tool: ToolSpec, capability: str, inventory: Inventory) -
     if tool.kind == "script" and finding is None:
         return None  # Project scripts are only meaningful where they exist.
     command = list(tool.run[capability]) if capability in tool.run else None
+    evidence = list(finding.evidence) if finding else []
+    withheld = ""
+    environment = next(iter(inventory.by_kind("environment")), None)
+    if command and environment is not None and tool.kind in ("cli", "script") and "python" in tool.languages:
+        command, withheld = _through_environment(command, environment, evidence)
+        declared = finding is not None and finding.detail.get("python_declared")
+        if command and declared and status is Status.CONFIGURED_INACCESSIBLE:
+            # Installed into the external environment, which PATH lookups cannot see.
+            status = Status.INSTALLED_UNVERIFIED
+            evidence.append(f"expected in the {environment.name} environment (declared dependency)")
     return Candidate(
         id=tool.id,
         name=tool.name,
@@ -125,10 +137,30 @@ def _registry_candidate(tool: ToolSpec, capability: str, inventory: Inventory) -
         score=_score(
             status, tool.kind, tool.reliability, tool.context_cost, tool.setup_cost, tool.security_exposure
         ),
-        evidence=list(finding.evidence) if finding else [],
+        evidence=evidence,
         command=command,
         install=tool.install,
         notes=tool.notes,
+        command_withheld=withheld,
+    )
+
+
+def _through_environment(
+    command: list[str], environment: Finding, evidence: list[str]
+) -> tuple[list[str] | None, str]:
+    """Run a Python tool inside the project's external environment, or withhold the command.
+
+    Running it from PATH instead would use another interpreter without the project's
+    dependencies, and its result would be recorded as executed evidence.
+    """
+    prefix = [str(part) for part in environment.detail.get("run_prefix", [])]
+    if environment.status.usable and prefix:
+        evidence.append(f"runs in the {environment.name} environment (`{' '.join(prefix)}`)")
+        return prefix + command, ""
+    binary = environment.detail.get("binary", environment.name)
+    return None, (
+        f"{environment.name} project without an in-project environment and '{binary}' is not on PATH; "
+        "run this check in the project's environment and record the result with `susanoo evidence`"
     )
 
 
@@ -214,7 +246,8 @@ def candidates_for(
                 candidate.notes = "git is installed but this project is not a repository yet"
     if capability == "code_navigation":
         _adjust_for_size(candidates, inventory, context or SelectionContext())
-    return sorted(candidates, key=lambda c: (-c.score, c.name))
+    # A tool whose command had to be withheld ranks after runnable ones (e.g. `make test`).
+    return sorted(candidates, key=lambda c: (bool(c.command_withheld), -c.score, c.name))
 
 
 def _rationale(selected: Candidate | None, suggestion: Candidate | None, others: list[Candidate]) -> str:

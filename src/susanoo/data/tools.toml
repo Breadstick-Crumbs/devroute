@@ -699,3 +699,31 @@ reliability = 3
 context_cost = 1
 setup_cost = 2
 security_exposure = 2
+
+# Environment managers that keep the project's Python virtualenv outside the repository by
+# default (Poetry: {cache-dir}/virtualenvs; Pipenv: a central virtualenvs folder). When one is
+# detected and the project has no in-project environment (.venv, venv, env), Python tools run
+# through `run_prefix`; if the manager is not on PATH those checks become manual, so a result
+# from the wrong interpreter is never recorded as executed evidence. First match wins.
+#   markers          project files or globs whose presence indicates the manager
+#   pyproject_tools  [tool.<name>] sections in pyproject.toml that indicate it
+#   unless_markers   files that mean another manager owns the environment (uv keeps its
+#                    environment in .venv; a leftover poetry.lock must not override that)
+# Only the packaged catalog is read; .susanoo/tools.toml cannot add environments.
+
+[[environments]]
+id = "poetry"
+name = "Poetry"
+binary = "poetry"
+run_prefix = ["poetry", "run"]
+markers = ["poetry.lock"]
+pyproject_tools = ["poetry"]
+unless_markers = ["uv.lock"]
+
+[[environments]]
+id = "pipenv"
+name = "Pipenv"
+binary = "pipenv"
+run_prefix = ["pipenv", "run"]
+markers = ["Pipfile", "Pipfile.lock"]
+unless_markers = ["uv.lock"]

@@ -46,7 +46,7 @@ class Finding:
     """One discovered (or configured) thing in the environment."""
 
     id: str
-    kind: str  # tool | skill | agent | command | mcp_server | plugin | language | build_system | vcs
+    kind: str  # tool | skill | agent | command | mcp_server | plugin | language | build_system | vcs | environment
     name: str
     status: Status
     capabilities: list[str] = field(default_factory=list)
