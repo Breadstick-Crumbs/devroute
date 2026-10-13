@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from devroute.analyzer import assess
-from devroute.config import merge
-from devroute.router import route
+from susanoo.analyzer import assess
+from susanoo.config import merge
+from susanoo.router import route
 
 
 def decide(task, config, profiles, override=None):

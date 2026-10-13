@@ -8,17 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from devroute.adapters.claude_code.installer import (
+from susanoo.adapters.claude_code.installer import (
     apply_install,
     enforcement_enabled,
     plan_install,
     skill_template,
 )
-from devroute.cli import main
-from devroute.config import load_config
-from devroute.enforcement import gates
-from devroute.enforcement.state import RouteState, evidence_status
-from devroute.evaluation import RecordStore
+from susanoo.cli import main
+from susanoo.config import load_config
+from susanoo.enforcement import gates
+from susanoo.enforcement.state import RouteState, evidence_status
+from susanoo.evaluation import RecordStore
 
 SESSION = "session-123"
 
@@ -113,11 +113,11 @@ def test_edits_outside_the_project_are_not_gated(tmp_path: Path, cfg):
 
 
 def test_approval_command_always_requires_user_prompt(tmp_path: Path, cfg):
-    for command in ("devroute approve", "python -m devroute approve latest", "cd x && devroute approve dr-1"):
+    for command in ("susanoo approve", "python -m susanoo approve latest", "cd x && susanoo approve dr-1"):
         assert gates.pre_tool_use(bash_event(command), None, tmp_path, cfg).permission == "ask"
     assert (
         gates.pre_tool_use(
-            bash_event("devroute outcome latest --accept-missing-evidence"), None, tmp_path, cfg
+            bash_event("susanoo outcome latest --accept-missing-evidence"), None, tmp_path, cfg
         ).permission
         == "ask"
     )
@@ -129,7 +129,7 @@ def test_approval_command_always_requires_user_prompt(tmp_path: Path, cfg):
         ("pytest -q", False),
         ("git status && git diff", False),
         ("grep -rn foo src 2>/dev/null", False),
-        ("python -m devroute report --json", False),
+        ("python -m susanoo report --json", False),
         ('grep -n "a->b" src', False),
         ('rg "=>" src', False),
         ('git log --format="%h -> %s"', False),
@@ -188,9 +188,7 @@ def test_irreversible_gate(tmp_path: Path, cfg, command: str, asks: bool):
 def test_stop_blocked_until_evidence(cfg):
     blocked = gates.stop({"stop_hook_active": False}, state(approved=True, missing=["unit_tests"]), cfg, 0)
     assert (
-        blocked.block_stop
-        and "unit_tests" in blocked.reason
-        and "devroute verify --execute" in blocked.reason
+        blocked.block_stop and "unit_tests" in blocked.reason and "susanoo verify --execute" in blocked.reason
     )
     assert not gates.stop({}, state(approved=True), cfg, 0).block_stop
     assert not gates.stop({}, None, cfg, 0).block_stop
@@ -294,7 +292,7 @@ def test_stop_guard_counts_and_releases(project: Path, monkeypatch):
 
 def test_compaction_reinjects_summary(project: Path, monkeypatch):
     code, out = hook(project, "session-start", {"session_id": SESSION, "source": "compact"}, monkeypatch)
-    assert "DevRoute: active route" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert "Susanoo: active route" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
     hook(project, "post-compact", {"session_id": SESSION, "trigger": "auto"}, monkeypatch)
     code, out = hook(project, "pre-tool-use", bash_event("git status"), monkeypatch)
     assert "additionalContext" in json.loads(out)["hookSpecificOutput"]
@@ -320,7 +318,7 @@ def test_bad_hook_input_is_a_non_blocking_error(tmp_path: Path, monkeypatch):
 def test_enforce_choice_persists_across_init(tmp_path: Path):
     apply_install(tmp_path, plan_install(tmp_path, enforce=True), enforce=True)
     assert enforcement_enabled(tmp_path)
-    skill = tmp_path / ".claude/skills/devroute/SKILL.md"
+    skill = tmp_path / ".claude/skills/susanoo/SKILL.md"
     assert skill.read_text(encoding="utf-8") == skill_template(True)
     out = io.StringIO()
     main(["init", "--path", str(tmp_path)], stdout=out, stderr=io.StringIO())
@@ -344,10 +342,10 @@ def test_reported_failures_are_not_passing_evidence():
 @pytest.mark.parametrize(
     "command",
     [
-        "DEVROUTE approve",
-        "devroute.exe approve latest",
-        '"devroute" approve',
-        "python -m devroute.cli approve",
+        "SUSANOO approve",
+        "susanoo.exe approve latest",
+        '"susanoo" approve',
+        "python -m susanoo.cli approve",
     ],
 )
 def test_approval_variants_still_ask(tmp_path: Path, cfg, command: str):
@@ -356,7 +354,7 @@ def test_approval_variants_still_ask(tmp_path: Path, cfg, command: str):
 
 def test_closing_or_replacing_unapproved_route_asks(tmp_path: Path, cfg):
     unapproved = state("standard")
-    for command in ("devroute outcome latest --status partial --source agent", "devroute route 'fix typo'"):
+    for command in ("susanoo outcome latest --status partial --source agent", "susanoo route 'fix typo'"):
         assert gates.pre_tool_use(bash_event(command), unapproved, tmp_path, cfg).permission == "ask"
         assert (
             gates.pre_tool_use(
@@ -409,6 +407,6 @@ def test_stop_guard_is_per_session(project: Path, monkeypatch):
     payload = {"session_id": SESSION, "stop_hook_active": True}
     hook(project, "stop", payload, monkeypatch)
     hook(project, "stop", {"session_id": "someone-else", "stop_hook_active": True}, monkeypatch)
-    hooks_dir = project / ".devroute" / "records" / "hooks"
+    hooks_dir = project / ".susanoo" / "records" / "hooks"
     [own] = [json.loads(p.read_text(encoding="utf-8")) for p in hooks_dir.glob("session-123*.json")]
     assert own["stop_blocks"] == 1

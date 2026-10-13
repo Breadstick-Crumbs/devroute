@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from devroute.config import Config, load_config
-from devroute.registry import Registry, load_registry
-from devroute.router import Profile, load_profiles
+from susanoo.config import Config, load_config
+from susanoo.registry import Registry, load_registry
+from susanoo.router import Profile, load_profiles
 
 
 @pytest.fixture(scope="session")

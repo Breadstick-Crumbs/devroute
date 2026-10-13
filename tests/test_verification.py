@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from devroute.analyzer import assess
-from devroute.discovery import Finding, Inventory, Status
-from devroute.router import route
-from devroute.selection import recommend
-from devroute.verification import (
+from susanoo.analyzer import assess
+from susanoo.discovery import Finding, Inventory, Status
+from susanoo.router import route
+from susanoo.selection import recommend
+from susanoo.verification import (
     VerificationPlan,
     VerificationStep,
     build_plan,

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from devroute import __version__
-from devroute.cli import main
+from susanoo import __version__
+from susanoo.cli import main
 
 
 def run(root: Path, *args: str, stdin: str = "") -> tuple[int, str, str]:
@@ -27,7 +27,7 @@ def test_version_and_help(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["--version"])
     assert exc.value.code == 0
-    assert f"devroute {__version__}" in capsys.readouterr().out
+    assert f"susanoo {__version__}" in capsys.readouterr().out
     assert main([], stdout=io.StringIO()) == 2
 
 
@@ -81,10 +81,10 @@ def test_route_json_and_override(python_project: Path):
 
 def test_full_record_lifecycle(python_project: Path):
     assert run(python_project, "init")[0] == 0
-    assert (python_project / ".claude/skills/devroute/SKILL.md").is_file()
+    assert (python_project / ".claude/skills/susanoo/SKILL.md").is_file()
     code, out, _ = run(python_project, "route", "--json", "Fix the crash when saving settings")
     record_id = json.loads(out)["record_id"]
-    assert record_id and record_id.startswith("dr-")
+    assert record_id and record_id.startswith("su-")
 
     code, out, _ = run(python_project, "verify")
     assert code == 0 and "Nothing was run" in out
@@ -112,7 +112,7 @@ def test_full_record_lifecycle(python_project: Path):
         "--source",
         "agent",
         "--agents",
-        "devroute-reviewer",
+        "susanoo-reviewer",
         "--tokens",
         "1000",
     )
@@ -144,7 +144,7 @@ def test_full_record_lifecycle(python_project: Path):
 
 def test_outcome_requires_init(python_project: Path):
     code, _, err = run(python_project, "outcome", "latest", "--status", "completed")
-    assert code == 1 and "devroute init" in err
+    assert code == 1 and "susanoo init" in err
 
 
 def test_outcome_rejects_negative_numbers(python_project: Path):
@@ -156,33 +156,33 @@ def test_outcome_rejects_negative_numbers(python_project: Path):
 
 def test_store_task_text_false_hashes_only(python_project: Path):
     run(python_project, "init")
-    (python_project / ".devroute/config.toml").write_text(
+    (python_project / ".susanoo/config.toml").write_text(
         "schema_version = 1\n[records]\nstore_task_text = false\n", encoding="utf-8"
     )
     run(python_project, "route", "Secret project codename Falcon")
-    text = (python_project / ".devroute/records/routes.jsonl").read_text(encoding="utf-8")
+    text = (python_project / ".susanoo/records/routes.jsonl").read_text(encoding="utf-8")
     assert "Falcon" not in text and "task_sha256" in text
 
 
 def test_init_dry_run_and_uninstall(python_project: Path):
     code, out, _ = run(python_project, "init", "--dry-run")
-    assert "dry run" in out and not (python_project / ".devroute").exists()
+    assert "dry run" in out and not (python_project / ".susanoo").exists()
     run(python_project, "init")
     code, out, _ = run(python_project, "init", "--uninstall")
     assert code == 0 and "remove" in out
-    assert not (python_project / ".claude/skills/devroute").exists()
+    assert not (python_project / ".claude/skills/susanoo").exists()
 
 
 def test_doctor_json(python_project: Path):
     code, out, _ = run(python_project, "doctor", "--json")
     data = json.loads(out)
     assert code == 0 and data["ok"] is True
-    assert {c["check"] for c in data["checks"]} >= {"python", "configuration", "/devroute skill"}
+    assert {c["check"] for c in data["checks"]} >= {"python", "configuration", "/susanoo skill"}
 
 
 def test_doctor_reports_invalid_config(python_project: Path):
-    (python_project / ".devroute").mkdir()
-    (python_project / ".devroute/config.toml").write_text("schema_version = 99\n", encoding="utf-8")
+    (python_project / ".susanoo").mkdir()
+    (python_project / ".susanoo/config.toml").write_text("schema_version = 99\n", encoding="utf-8")
     code, out, _ = run(python_project, "doctor")
     assert code == 1 and "[fail]" in out
 

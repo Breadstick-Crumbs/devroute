@@ -1,1 +1,1 @@
-"""Sample application for DevRoute examples."""
+"""Sample application for Susanoo examples."""

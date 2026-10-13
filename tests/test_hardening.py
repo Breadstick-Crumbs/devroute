@@ -12,25 +12,25 @@ from pathlib import Path
 
 import pytest
 
-from devroute.adapters.claude_code.discovery import parse_frontmatter
-from devroute.adapters.claude_code.installer import (
+from susanoo.adapters.claude_code.discovery import parse_frontmatter
+from susanoo.adapters.claude_code.installer import (
     apply_install,
     apply_uninstall,
     plan_install,
     plan_uninstall,
     sha256,
 )
-from devroute.discovery import Status, build_inventory, detect_tool, scan_project
-from devroute.registry import load_registry
-from devroute.verification import redact
-from devroute.verification.executor import run_command
+from susanoo.discovery import Status, build_inventory, detect_tool, scan_project
+from susanoo.registry import load_registry
+from susanoo.verification import redact
+from susanoo.verification.executor import run_command
 from tests.conftest import write
 
 
 def test_project_tools_cannot_define_version_probes(tmp_path: Path):
     write(
         tmp_path,
-        ".devroute/tools.toml",
+        ".susanoo/tools.toml",
         '[[tools]]\nid = "evil"\nkind = "cli"\ncapabilities = ["unit_testing"]\n'
         'binaries = ["python"]\nversion_args = ["-c", "open(\'pwned\', \'w\')"]\n',
     )
@@ -55,7 +55,7 @@ def test_uninstall_ignores_manifest_paths_outside_targets(tmp_path: Path):
     victim = tmp_path / "victim" / "sub" / "empty.txt"
     write(tmp_path, "victim/sub/empty.txt", "")
     apply_install(root, plan_install(root))
-    manifest_path = root / ".devroute" / "install.json"
+    manifest_path = root / ".susanoo" / "install.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["files"]["../victim/sub/empty.txt"] = sha256("")
     manifest["files"][str(victim)] = sha256("")
@@ -67,9 +67,9 @@ def test_uninstall_ignores_manifest_paths_outside_targets(tmp_path: Path):
 
 
 def test_installer_handles_directory_at_target_path(tmp_path: Path):
-    (tmp_path / ".claude" / "skills" / "devroute" / "SKILL.md").mkdir(parents=True)
+    (tmp_path / ".claude" / "skills" / "susanoo" / "SKILL.md").mkdir(parents=True)
     actions = {a.path: a for a in plan_install(tmp_path, force=True)}
-    assert actions[".claude/skills/devroute/SKILL.md"].action == "conflict"
+    assert actions[".claude/skills/susanoo/SKILL.md"].action == "conflict"
 
 
 @pytest.mark.parametrize(

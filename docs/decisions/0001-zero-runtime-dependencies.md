@@ -1,10 +1,12 @@
 # 0001: Python standard library only at runtime
 
+> Written when the project was named DevRoute; names were updated when it was renamed to Susanoo (v0.3).
+
 **Status:** accepted (v0.1)
 
 ## Context
 
-DevRoute runs inside developers' environments, often alongside the project's own virtualenv, and is invoked by an AI agent through a shell. Every dependency adds install friction, version conflicts, and supply-chain exposure.
+Susanoo runs inside developers' environments, often alongside the project's own virtualenv, and is invoked by an AI agent through a shell. Every dependency adds install friction, version conflicts, and supply-chain exposure.
 
 ## Options
 
@@ -18,6 +20,6 @@ Option 1. Python 3.11+ provides `tomllib`, so configuration can be TOML without 
 
 ## Consequences
 
-- `pip install devroute` pulls in nothing else. Development tools (pytest, ruff, mypy, bandit) are optional extras.
+- Installing Susanoo pulls in nothing else. Development tools (pytest, ruff, mypy, bandit) are optional extras.
 - Terminal output is less decorated.
 - If configuration validation grows much more complex, adding a schema library is a reasonable future decision.

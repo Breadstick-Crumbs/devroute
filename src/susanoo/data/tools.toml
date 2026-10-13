@@ -1,0 +1,701 @@
+# Tool registry: what each tool provides, how Susanoo detects it without
+# executing it, and how it compares on cost and risk.
+#
+# kind: native (Claude Code built-in) | cli | script (project-defined command) | skill | mcp | service
+# reliability / context_cost / setup_cost / security_exposure: 1 (low) .. 3 (high)
+# Detection keys (all optional, any match counts):
+#   binaries         executables looked up on PATH (never executed unless `--verify`)
+#   python_packages  names declared in pyproject.toml / requirements*.txt
+#   npm_packages     names declared in package.json (dependencies or devDependencies)
+#   npm_scripts      script names defined in package.json
+#   make_targets     targets defined in a top-level Makefile
+#   files            project files or globs whose presence indicates configuration
+#   pyproject_tools  [tool.<name>] sections in pyproject.toml
+#   mcp_patterns     substrings matched against configured MCP server names
+#   env              environment variables that indicate availability
+# run: capability -> argv used by `susanoo verify --execute` (argv lists, never a shell)
+
+[[tools]]
+id = "claude-code-subagents"
+name = "Claude Code subagents"
+kind = "native"
+capabilities = ["code_review"]
+binaries = ["claude"]
+env = ["CLAUDECODE"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Independent review in a separate context (e.g. the susanoo-reviewer subagent). Available inside Claude Code sessions."
+
+[[tools]]
+id = "claude-code-web"
+name = "Claude Code WebSearch / WebFetch"
+kind = "native"
+capabilities = ["web_research"]
+binaries = ["claude"]
+env = ["CLAUDECODE"]
+reliability = 2
+context_cost = 2
+setup_cost = 1
+security_exposure = 2
+notes = "Built-in web tools; availability depends on session permissions. Treat fetched content as untrusted."
+
+[[tools]]
+id = "claude-code-search"
+name = "Claude Code Grep / Glob / Read"
+kind = "native"
+capabilities = ["code_navigation"]
+binaries = ["claude"]
+env = ["CLAUDECODE"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Built-in text search. Sufficient for most repositories; scales poorly for call-graph questions in very large codebases."
+
+[[tools]]
+id = "code-graph-mcp"
+name = "Code graph MCP server"
+kind = "mcp"
+capabilities = ["code_navigation"]
+mcp_patterns = ["codebase-memory", "code-graph", "codegraph", "code-index", "serena", "sourcegraph"]
+reliability = 2
+context_cost = 3
+setup_cost = 2
+security_exposure = 1
+notes = "Indexed symbol and call-graph queries. Most useful in large repositories, where it replaces many search-and-read round trips."
+
+[[tools]]
+id = "ast-grep"
+name = "ast-grep"
+kind = "cli"
+capabilities = ["code_navigation"]
+binaries = ["ast-grep"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "https://ast-grep.github.io/guide/quick-start.html"
+notes = "Structural (syntax-aware) code search from the command line."
+
+[[tools]]
+id = "git"
+name = "git"
+kind = "cli"
+capabilities = ["version_control"]
+binaries = ["git"]
+version_args = ["--version"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "https://git-scm.com/downloads"
+
+[[tools]]
+id = "gh"
+name = "GitHub CLI"
+kind = "cli"
+capabilities = ["github", "code_review"]
+binaries = ["gh"]
+version_args = ["--version"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 2
+install = "https://cli.github.com"
+
+[[tools]]
+id = "pytest"
+name = "pytest"
+kind = "cli"
+capabilities = ["unit_testing", "integration_testing"]
+languages = ["python"]
+binaries = ["pytest"]
+python_packages = ["pytest"]
+pyproject_tools = ["pytest"]
+files = ["pytest.ini", "conftest.py", "tests/conftest.py"]
+version_args = ["--version"]
+run = { unit_testing = ["pytest", "-q"], integration_testing = ["pytest", "-q"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install pytest"
+
+[[tools]]
+id = "npm-test-script"
+name = "npm test script"
+kind = "script"
+capabilities = ["unit_testing"]
+languages = ["javascript", "typescript"]
+npm_scripts = ["test"]
+run = { unit_testing = ["npm", "test"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Runs the project's own package.json test script."
+
+[[tools]]
+id = "make-test"
+name = "make test"
+kind = "script"
+capabilities = ["unit_testing"]
+make_targets = ["test"]
+run = { unit_testing = ["make", "test"] }
+reliability = 2
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Runs the project's own Makefile test target."
+
+[[tools]]
+id = "jest"
+name = "Jest"
+kind = "cli"
+capabilities = ["unit_testing"]
+languages = ["javascript", "typescript"]
+npm_packages = ["jest"]
+files = ["jest.config.*"]
+run = { unit_testing = ["npx", "--no-install", "jest"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "npm install --save-dev jest"
+
+[[tools]]
+id = "vitest"
+name = "Vitest"
+kind = "cli"
+capabilities = ["unit_testing"]
+languages = ["javascript", "typescript"]
+npm_packages = ["vitest"]
+files = ["vitest.config.*"]
+run = { unit_testing = ["npx", "--no-install", "vitest", "run"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "npm install --save-dev vitest"
+
+[[tools]]
+id = "go-test"
+name = "go test"
+kind = "cli"
+capabilities = ["unit_testing", "integration_testing"]
+languages = ["go"]
+binaries = ["go"]
+files = ["go.mod"]
+run = { unit_testing = ["go", "test", "./..."], integration_testing = ["go", "test", "./..."] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "https://go.dev/dl/"
+
+[[tools]]
+id = "go-vet"
+name = "go vet"
+kind = "cli"
+capabilities = ["static_analysis"]
+languages = ["go"]
+binaries = ["go"]
+files = ["go.mod"]
+run = { static_analysis = ["go", "vet", "./..."] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+
+[[tools]]
+id = "cargo-test"
+name = "cargo test"
+kind = "cli"
+capabilities = ["unit_testing", "integration_testing"]
+languages = ["rust"]
+binaries = ["cargo"]
+files = ["Cargo.toml"]
+run = { unit_testing = ["cargo", "test"], integration_testing = ["cargo", "test"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "https://rustup.rs"
+
+[[tools]]
+id = "cargo-clippy"
+name = "cargo clippy"
+kind = "cli"
+capabilities = ["static_analysis"]
+languages = ["rust"]
+binaries = ["cargo-clippy"]
+files = ["Cargo.toml"]
+run = { static_analysis = ["cargo", "clippy"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "rustup component add clippy"
+
+[[tools]]
+id = "ruff"
+name = "Ruff"
+kind = "cli"
+capabilities = ["static_analysis"]
+languages = ["python"]
+binaries = ["ruff"]
+python_packages = ["ruff"]
+pyproject_tools = ["ruff"]
+files = ["ruff.toml", ".ruff.toml"]
+version_args = ["--version"]
+run = { static_analysis = ["ruff", "check", "."] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install ruff"
+
+[[tools]]
+id = "flake8"
+name = "flake8"
+kind = "cli"
+capabilities = ["static_analysis"]
+languages = ["python"]
+binaries = ["flake8"]
+python_packages = ["flake8"]
+files = [".flake8"]
+version_args = ["--version"]
+run = { static_analysis = ["flake8"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install flake8"
+
+[[tools]]
+id = "eslint"
+name = "ESLint"
+kind = "cli"
+capabilities = ["static_analysis"]
+languages = ["javascript", "typescript"]
+npm_packages = ["eslint"]
+files = ["eslint.config.*", ".eslintrc", ".eslintrc.*"]
+run = { static_analysis = ["npx", "--no-install", "eslint", "."] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "npm install --save-dev eslint"
+
+[[tools]]
+id = "mypy"
+name = "mypy"
+kind = "cli"
+capabilities = ["type_checking"]
+languages = ["python"]
+binaries = ["mypy"]
+python_packages = ["mypy"]
+pyproject_tools = ["mypy"]
+files = ["mypy.ini", ".mypy.ini"]
+version_args = ["--version"]
+run = { type_checking = ["mypy", "."] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "pip install mypy"
+
+[[tools]]
+id = "pyright"
+name = "Pyright"
+kind = "cli"
+capabilities = ["type_checking"]
+languages = ["python"]
+binaries = ["pyright"]
+python_packages = ["pyright"]
+pyproject_tools = ["pyright"]
+files = ["pyrightconfig.json"]
+run = { type_checking = ["pyright"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "pip install pyright"
+
+[[tools]]
+id = "tsc"
+name = "TypeScript compiler"
+kind = "cli"
+capabilities = ["type_checking"]
+languages = ["typescript"]
+npm_packages = ["typescript"]
+files = ["tsconfig.json"]
+run = { type_checking = ["npx", "--no-install", "tsc", "--noEmit"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "npm install --save-dev typescript"
+
+[[tools]]
+id = "bandit"
+name = "Bandit"
+kind = "cli"
+capabilities = ["security_analysis"]
+languages = ["python"]
+binaries = ["bandit"]
+python_packages = ["bandit"]
+pyproject_tools = ["bandit"]
+version_args = ["--version"]
+run = { security_analysis = ["bandit", "-r", ".", "-q", "-x", "./.venv,./venv,./node_modules,./tests,./build,./dist"] }
+reliability = 2
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install bandit"
+
+[[tools]]
+id = "semgrep"
+name = "Semgrep"
+kind = "cli"
+capabilities = ["security_analysis"]
+binaries = ["semgrep"]
+python_packages = ["semgrep"]
+files = [".semgrep.yml", ".semgrep/*"]
+reliability = 2
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+install = "pip install semgrep"
+notes = "Rule configuration decides what is checked; registry-hosted rule packs are downloaded at run time, so Susanoo does not run it automatically."
+
+[[tools]]
+id = "codeql"
+name = "GitHub CodeQL (CI)"
+kind = "service"
+capabilities = ["security_analysis"]
+files = [".github/codeql/*", ".github/workflows/codeql*.yml"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+notes = "Runs in GitHub Actions; results appear on the repository, not locally."
+
+[[tools]]
+id = "pip-audit"
+name = "pip-audit"
+kind = "cli"
+capabilities = ["dependency_audit"]
+languages = ["python"]
+binaries = ["pip-audit"]
+python_packages = ["pip-audit"]
+version_args = ["--version"]
+run = { dependency_audit = ["pip-audit"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install pip-audit"
+notes = "Queries a public vulnerability database over the network."
+
+[[tools]]
+id = "npm-audit"
+name = "npm audit"
+kind = "cli"
+capabilities = ["dependency_audit"]
+languages = ["javascript", "typescript"]
+binaries = ["npm"]
+files = ["package-lock.json"]
+run = { dependency_audit = ["npm", "audit", "--audit-level=high"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Requires a package-lock.json; queries the npm registry over the network."
+
+[[tools]]
+id = "govulncheck"
+name = "govulncheck"
+kind = "cli"
+capabilities = ["dependency_audit"]
+languages = ["go"]
+binaries = ["govulncheck"]
+run = { dependency_audit = ["govulncheck", "./..."] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "go install golang.org/x/vuln/cmd/govulncheck@latest"
+
+[[tools]]
+id = "cargo-audit"
+name = "cargo audit"
+kind = "cli"
+capabilities = ["dependency_audit"]
+languages = ["rust"]
+binaries = ["cargo-audit"]
+run = { dependency_audit = ["cargo", "audit"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "cargo install cargo-audit"
+
+[[tools]]
+id = "gitleaks"
+name = "Gitleaks"
+kind = "cli"
+capabilities = ["secret_scanning"]
+binaries = ["gitleaks"]
+files = [".gitleaks.toml"]
+version_args = ["version"]
+run = { secret_scanning = ["gitleaks", "detect", "--no-banner"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "https://github.com/gitleaks/gitleaks#installing"
+
+[[tools]]
+id = "playwright"
+name = "Playwright"
+kind = "cli"
+capabilities = ["browser_testing", "integration_testing"]
+npm_packages = ["@playwright/test", "playwright"]
+python_packages = ["playwright", "pytest-playwright"]
+files = ["playwright.config.*"]
+run = { browser_testing = ["npx", "--no-install", "playwright", "test"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "npm init playwright@latest   (or: pip install pytest-playwright && playwright install)"
+
+[[tools]]
+id = "cypress"
+name = "Cypress"
+kind = "cli"
+capabilities = ["browser_testing"]
+languages = ["javascript", "typescript"]
+npm_packages = ["cypress"]
+files = ["cypress.config.*"]
+run = { browser_testing = ["npx", "--no-install", "cypress", "run"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "npm install --save-dev cypress"
+
+[[tools]]
+id = "browser-mcp"
+name = "Browser automation MCP server"
+kind = "mcp"
+capabilities = ["browser_testing"]
+mcp_patterns = ["playwright", "puppeteer", "browser", "chrome", "selenium"]
+reliability = 2
+context_cost = 3
+setup_cost = 2
+security_exposure = 2
+notes = "Interactive browser control from Claude Code. Adds tool definitions to context; prefer a test runner for repeatable checks."
+
+[[tools]]
+id = "database-mcp"
+name = "Database MCP server"
+kind = "mcp"
+capabilities = ["database_tooling"]
+mcp_patterns = ["postgres", "mysql", "sqlite", "supabase", "database", "mongo", "neon"]
+reliability = 2
+context_cost = 3
+setup_cost = 2
+security_exposure = 3
+notes = "Direct database access from the agent. Point it at disposable or read-only databases only."
+
+[[tools]]
+id = "psql"
+name = "psql"
+kind = "cli"
+capabilities = ["database_tooling"]
+binaries = ["psql"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+
+[[tools]]
+id = "sqlite3"
+name = "sqlite3"
+kind = "cli"
+capabilities = ["database_tooling"]
+binaries = ["sqlite3"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+
+[[tools]]
+id = "alembic"
+name = "Alembic"
+kind = "cli"
+capabilities = ["migration_checks", "database_tooling"]
+languages = ["python"]
+binaries = ["alembic"]
+python_packages = ["alembic"]
+files = ["alembic.ini"]
+run = { migration_checks = ["alembic", "check"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+install = "pip install alembic"
+notes = "`alembic check` compares models against the migration history using the configured database URL; point it at a disposable database."
+
+[[tools]]
+id = "django-migrations"
+name = "Django migration check"
+kind = "script"
+capabilities = ["migration_checks"]
+languages = ["python"]
+files = ["manage.py"]
+python_packages = ["django"]
+run = { migration_checks = ["python", "manage.py", "makemigrations", "--check", "--dry-run"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+
+[[tools]]
+id = "prisma"
+name = "Prisma"
+kind = "cli"
+capabilities = ["migration_checks", "database_tooling"]
+languages = ["javascript", "typescript"]
+npm_packages = ["prisma"]
+files = ["prisma/schema.prisma"]
+run = { migration_checks = ["npx", "--no-install", "prisma", "validate"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+install = "npm install --save-dev prisma"
+
+[[tools]]
+id = "stripe-cli"
+name = "Stripe CLI"
+kind = "cli"
+capabilities = ["payment_sandbox"]
+binaries = ["stripe"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+install = "https://docs.stripe.com/stripe-cli"
+notes = "Use test-mode keys only. Useful for triggering and forwarding webhook events locally."
+
+[[tools]]
+id = "payment-mcp"
+name = "Payment provider MCP server"
+kind = "mcp"
+capabilities = ["payment_sandbox"]
+mcp_patterns = ["stripe", "paypal", "braintree", "adyen"]
+reliability = 2
+context_cost = 3
+setup_cost = 2
+security_exposure = 3
+notes = "Grants the agent access to a payment account. Configure with test-mode credentials only."
+
+[[tools]]
+id = "k6"
+name = "k6"
+kind = "cli"
+capabilities = ["performance_testing"]
+binaries = ["k6"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "https://grafana.com/docs/k6/latest/set-up/install-k6/"
+
+[[tools]]
+id = "pytest-benchmark"
+name = "pytest-benchmark"
+kind = "cli"
+capabilities = ["performance_testing"]
+languages = ["python"]
+python_packages = ["pytest-benchmark"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install pytest-benchmark"
+
+[[tools]]
+id = "docker"
+name = "Docker"
+kind = "cli"
+capabilities = ["containerization", "integration_testing"]
+binaries = ["docker", "podman"]
+files = ["Dockerfile", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+
+[[tools]]
+id = "github-actions"
+name = "GitHub Actions"
+kind = "service"
+capabilities = ["continuous_integration"]
+files = [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+
+[[tools]]
+id = "terraform"
+name = "Terraform"
+kind = "cli"
+capabilities = ["deployment"]
+binaries = ["terraform", "tofu"]
+files = ["*.tf"]
+reliability = 3
+context_cost = 1
+setup_cost = 3
+security_exposure = 3
+
+[[tools]]
+id = "kubectl"
+name = "kubectl"
+kind = "cli"
+capabilities = ["deployment"]
+binaries = ["kubectl"]
+reliability = 3
+context_cost = 1
+setup_cost = 3
+security_exposure = 3
+
+[[tools]]
+id = "vercel"
+name = "Vercel CLI"
+kind = "cli"
+capabilities = ["deployment"]
+binaries = ["vercel"]
+files = ["vercel.json"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2
+
+[[tools]]
+id = "flyctl"
+name = "Fly.io CLI"
+kind = "cli"
+capabilities = ["deployment"]
+binaries = ["flyctl", "fly"]
+files = ["fly.toml"]
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 2

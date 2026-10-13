@@ -1,6 +1,6 @@
 # Architecture overview
 
-DevRoute is a deterministic Python library with a CLI and a Claude Code adapter. It decides **how much engineering process a task deserves** and **what evidence proves it is done**. The engineering itself is done by Claude Code (or a person).
+Susanoo is a deterministic Python library with a CLI and a Claude Code adapter. It decides **how much engineering process a task deserves** and **what evidence proves it is done**. The engineering itself is done by Claude Code (or a person).
 
 ## Design principles
 
@@ -9,13 +9,13 @@ DevRoute is a deterministic Python library with a CLI and a Claude Code adapter.
 3. **Explainability over cleverness.** Every score lists the signals and context that produced it. The heuristics are plain TOML.
 4. **Determinism.** No model is involved in assessment, routing, selection, or verification planning. The same inputs produce the same brief, which makes behavior testable and evaluable.
 5. **Read-only by default.** Discovery reads files and looks up executables. It runs nothing unless you pass `--verify` (version probes) or `verify --execute` (project checks).
-6. **Evidence, not assertions.** Verification results record who produced them (`executed` by DevRoute or `reported` by an agent or person), plus the command, exit code, and duration.
-7. **Never silently change trusted configuration.** The installer writes only DevRoute-owned files. Learning produces suggestions, not edits.
+6. **Evidence, not assertions.** Verification results record who produced them (`executed` by Susanoo or `reported` by an agent or person), plus the command, exit code, and duration.
+7. **Never silently change trusted configuration.** The installer writes only Susanoo-owned files. Learning produces suggestions, not edits.
 
 ## Components
 
 ```text
-src/devroute/
+src/susanoo/
   analyzer/            Task Intelligence Engine        assess(task, config, context) -> Assessment
   router.py            Adaptive Workflow Router         route(assessment, profiles, config, override) -> RouteDecision
   discovery/           Capability Intelligence Engine   build_inventory(root, registry) -> Inventory
@@ -84,13 +84,13 @@ Availability dominates. Among comparable options, the simpler integration wins, 
 
 ### Capability Research Engine (`research.py`)
 
-`analyze_gaps` turns unmet requirements into gaps (blocking when *required*). `research()` queries `ResearchProvider`s. v0.1 ships `LocalRegistryProvider`. It returns a decision (`use-existing`, `fix-configuration`, `adopt`, `custom-or-research`), candidates with kind-specific security notes, validation steps, and explicit limitations. Records go to `.devroute/records/research.jsonl`. New providers (package indexes, MCP registries) implement the same protocol.
+`analyze_gaps` turns unmet requirements into gaps (blocking when *required*). `research()` queries `ResearchProvider`s. v0.1 ships `LocalRegistryProvider`. It returns a decision (`use-existing`, `fix-configuration`, `adopt`, `custom-or-research`), candidates with kind-specific security notes, validation steps, and explicit limitations. Records go to `.susanoo/records/research.jsonl`. New providers (package indexes, MCP registries) implement the same protocol.
 
 ### Verification Intelligence (`verification/`)
 
 `[[verification]]` rules set a level per profile, escalate on dimension thresholds, can be limited to certain signals, and are forced to *required* by mandatory controls. Each step becomes:
 
-- `ready`: a usable tool with a registry command; `devroute verify --execute` runs it as an argv list (no shell) in the project root, with a timeout, and records the exit code, duration, and redacted output tail;
+- `ready`: a usable tool with a registry command; `susanoo verify --execute` runs it as an argv list (no shell) in the project root, with a timeout, and records the exit code, duration, and redacted output tail;
 - `manual`: a usable tool that is operated by the agent or a person (for example the reviewer subagent);
 - `unavailable`: a capability gap.
 
@@ -98,26 +98,26 @@ Identical commands run once per execution; later steps reuse the result and say 
 
 ### Evaluation & Learning Engine (`evaluation/`)
 
-- `RecordStore`: append-only JSONL files (`routes`, `outcomes`, `evidence`, `research`) under `.devroute/records/`, which `devroute init` git-ignores. Route records hold the assessment summary, profile, override, controls, gaps, and planned verification. Task text can be replaced by its SHA-256 (`records.store_task_text = false`).
+- `RecordStore`: append-only JSONL files (`routes`, `outcomes`, `evidence`, `research`) under `.susanoo/records/`, which `susanoo init` git-ignores. Route records hold the assessment summary, profile, override, controls, gaps, and planned verification. Task text can be replaced by its SHA-256 (`records.store_task_text = false`).
 - `summarize`: per-profile completion rate, duration, interventions, tokens, cost, regressions, and executed-check failure rate. Insights appear only after `min_samples` outcomes per profile (default 10) and are phrased as suggestions to review.
 - `run_suite`: deterministic routing evaluation against a labeled suite (see [evaluation.md](../evaluation.md)).
 
 ### Claude Code adapter
 
-- **`/devroute` skill** (`.claude/skills/devroute/SKILL.md`): `disable-model-invocation: true`, so it costs no context until you invoke it. It pre-approves only DevRoute's read and record commands. `devroute verify --execute` runs project code, so it goes through normal permission prompts.
-- **`devroute-reviewer`**: independent review in a separate context, with no Edit or Write tools.
-- **`devroute-researcher`**: manual capability research with WebSearch and WebFetch. It never installs anything.
-- **Installer**: manifest-based (`.devroute/install.json`), atomic writes, conflict detection, backups on `--force`, and hash-checked uninstall.
+- **`/susanoo` skill** (`.claude/skills/susanoo/SKILL.md`): `disable-model-invocation: true`, so it costs no context until you invoke it. It pre-approves only Susanoo's read and record commands. `susanoo verify --execute` runs project code, so it goes through normal permission prompts.
+- **`susanoo-reviewer`**: independent review in a separate context, with no Edit or Write tools.
+- **`susanoo-researcher`**: manual capability research with WebSearch and WebFetch. It never installs anything.
+- **Installer**: manifest-based (`.susanoo/install.json`), atomic writes, conflict detection, backups on `--force`, and hash-checked uninstall.
 
-DevRoute reuses Claude Code's own mechanisms (skills, subagents, plan mode, `--worktree` isolation, the permission system) instead of adding a separate orchestration layer.
+Susanoo reuses Claude Code's own mechanisms (skills, subagents, plan mode, `--worktree` isolation, the permission system) instead of adding a separate orchestration layer.
 
 ### Enforcement (`enforcement/`, opt-in)
 
-`gates.py` contains pure functions that take a hook event and the session's route state and return a decision: deny or ask on tool use, block on stop, or extra context. `state.py` derives the route state from records: active route for a session, approval, and missing or failing evidence. `hooks.py` translates between Claude Code's hook JSON and those decisions, and logs every intervention. The hooks are declared in the `/devroute` skill's frontmatter, so they exist only in the Claude Code process that invoked the skill, not in a session resumed later. Compaction recovery (`session-start`) is wired through a settings hook instead, because Claude Code does not fire compaction events for skill hooks. See [enforcement.md](../enforcement.md).
+`gates.py` contains pure functions that take a hook event and the session's route state and return a decision: deny or ask on tool use, block on stop, or extra context. `state.py` derives the route state from records: active route for a session, approval, and missing or failing evidence. `hooks.py` translates between Claude Code's hook JSON and those decisions, and logs every intervention. The hooks are declared in the `/susanoo` skill's frontmatter, so they exist only in the Claude Code process that invoked the skill, not in a session resumed later. Compaction recovery (`session-start`) is wired through a settings hook instead, because Claude Code does not fire compaction events for skill hooks. See [enforcement.md](../enforcement.md).
 
-## Data flow of `devroute route`
+## Data flow of `susanoo route`
 
-1. Load configuration (defaults, then `.devroute/config.toml`, then `--config`), profiles, and registry.
+1. Load configuration (defaults, then `.susanoo/config.toml`, then `--config`), profiles, and registry.
 2. Build the inventory (read-only).
 3. Assess the task with project context.
 4. Route, then derive mandatory controls and checkpoints.
@@ -130,10 +130,10 @@ DevRoute reuses Claude Code's own mechanisms (skills, subagents, plan mode, `--w
 
 | To add... | Edit |
 |---|---|
-| a task signal | `[[signals]]` in `.devroute/config.toml` (project) or `data/defaults.toml` (upstream) |
-| a tool | `[[tools]]` in `.devroute/tools.toml` or `data/tools.toml` |
+| a task signal | `[[signals]]` in `.susanoo/config.toml` (project) or `data/defaults.toml` (upstream) |
+| a tool | `[[tools]]` in `.susanoo/tools.toml` or `data/tools.toml` |
 | a capability | `data/capabilities.toml` |
-| a profile tweak | `.devroute/profiles/<name>.toml` |
+| a profile tweak | `.susanoo/profiles/<name>.toml` |
 | a safety control or verification rule | `[[controls]]` / `[[verification]]` in config |
 | a research source | implement `research.ResearchProvider` |
 | another AI coding environment | a new package under `adapters/` (discovery + installer + instructions) |

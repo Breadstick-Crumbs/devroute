@@ -1,10 +1,10 @@
 """Regenerate the example briefs in this directory.
 
-Usage (from the repository root, with DevRoute installed):
+Usage (from the repository root, with Susanoo installed):
 
     python examples/generate.py
 
-Each example runs `devroute route` against examples/sample-app and writes the
+Each example runs `susanoo route` against examples/sample-app and writes the
 brief to a Markdown file. Tool availability depends on the machine, so your
 "Capabilities" sections may differ from the committed copies; the assessment
 and routing sections are deterministic.
@@ -16,7 +16,7 @@ import io
 import sys
 from pathlib import Path
 
-from devroute.cli import main
+from susanoo.cli import main
 
 HERE = Path(__file__).resolve().parent
 APP = HERE / "sample-app"
@@ -41,7 +41,7 @@ def run(*args: str) -> str:
     out = io.StringIO()
     code = main([*args, "--path", str(APP)], stdout=out, stderr=io.StringIO())
     if code != 0:
-        raise SystemExit(f"devroute {' '.join(args)} exited with {code}")
+        raise SystemExit(f"susanoo {' '.join(args)} exited with {code}")
     return out.getvalue()
 
 
@@ -51,7 +51,7 @@ def generate() -> None:
         body = (
             f"# Example: {title}\n\n"
             f"Command (run against `examples/sample-app`):\n\n"
-            f'```bash\ndevroute route --path examples/sample-app "{task}"\n```\n\n'
+            f'```bash\nsusanoo route --path examples/sample-app "{task}"\n```\n\n'
             "Output:\n\n"
             "````markdown\n" + brief.rstrip() + "\n````\n"
         )

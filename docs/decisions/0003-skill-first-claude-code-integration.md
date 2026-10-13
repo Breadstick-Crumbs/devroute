@@ -1,14 +1,16 @@
 # 0003: Integrate with Claude Code through a skill and subagents, not an MCP server
 
+> Written when the project was named DevRoute; names were updated when it was renamed to Susanoo (v0.3).
+
 **Status:** accepted (v0.1)
 
 ## Context
 
-DevRoute needs to be invocable from Claude Code as `/devroute <task>` and to guide Claude through the selected workflow.
+Susanoo needs to be invocable from Claude Code as `/susanoo <task>` and to guide Claude through the selected workflow.
 
 ## Options
 
-1. A project skill (`.claude/skills/devroute/SKILL.md`) that calls the `devroute` CLI, plus subagent definitions.
+1. A project skill (`.claude/skills/susanoo/SKILL.md`) that calls the `susanoo` CLI, plus subagent definitions.
 2. An MCP server exposing assessment and routing tools.
 3. A separate orchestrator that drives Claude Code programmatically.
 

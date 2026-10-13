@@ -3,13 +3,13 @@
 Command (run against `examples/sample-app`):
 
 ```bash
-devroute route --path examples/sample-app "Fix the typo in the OutOfStockError message"
+susanoo route --path examples/sample-app "Fix the typo in the OutOfStockError message"
 ```
 
 Output:
 
 ````markdown
-# DevRoute execution brief
+# Susanoo execution brief
 
 ## Task
 
@@ -73,14 +73,14 @@ Missing capabilities: none for this task.
 - [required] Unit tests: `pytest -q`
 - [recommended] Linting / static analysis: `ruff check .`
 
-Only checks that actually ran count as evidence. Run `devroute verify --execute` to execute and record the ready checks.
+Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.
 
 ## Approval checkpoints
 
-- None required by DevRoute for this task. Normal judgment still applies.
+- None required by Susanoo for this task. Normal judgment still applies.
 
 ## Limitations
 
 - The assessment uses configurable keyword heuristics and local project files; it can miss context that is not in the task description.
-- Tool statuses come from read-only detection; run `devroute inventory --verify` to check versions.
+- Tool statuses come from read-only detection; run `susanoo inventory --verify` to check versions.
 ````

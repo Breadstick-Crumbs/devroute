@@ -3,13 +3,13 @@
 Command (run against `examples/sample-app`):
 
 ```bash
-devroute route --path examples/sample-app "Build a multi-warehouse inventory platform with user authentication, Stripe billing, and an admin dashboard"
+susanoo route --path examples/sample-app "Build a multi-warehouse inventory platform with user authentication, Stripe billing, and an admin dashboard"
 ```
 
 Output:
 
 ````markdown
-# DevRoute execution brief
+# Susanoo execution brief
 
 ## Task
 
@@ -48,7 +48,7 @@ Why: risk is critical; complexity is high; (also: uncertainty is moderate: inves
 
 - Planning: explicit technical plan, reviewed before implementation (Claude Code plan mode is a good fit)
 - Agents: recommended: independent reviewer subagent; optional parallel subagents for independent feature areas
-- Review: independent review by a separate agent context (devroute-reviewer), plus human review of security-sensitive parts
+- Review: independent review by a separate agent context (susanoo-reviewer), plus human review of security-sensitive parts
 - Isolation: isolated git worktree or feature branch (for example `claude --worktree <name>`)
 - Verification depth: comprehensive: unit, integration, security, and end-to-end checks matched to the risks found
 
@@ -80,17 +80,17 @@ Missing capabilities:
 - Browser / end-to-end testing [recommended, non-blocking]: consider Playwright (cli)
 - Dependency audit [recommended, non-blocking]: consider pip-audit (cli)
 
-DevRoute never installs tools itself; adopting any of these needs your approval.
+Susanoo never installs tools itself; adopting any of these needs your approval.
 
 ## Proposed steps
 
 1. **Requirements and architecture analysis** **[approval]** - Establish requirements, constraints, and the architecture. Surface open questions instead of guessing.
 2. **Dependency and risk assessment** - List external dependencies, security and data risks, and irreversible steps. Confirm the safety controls below.
 3. **Technical plan** **[approval]** - Write an explicit plan with milestones, interfaces, test strategy, and rollback approach.
-4. **Targeted research** - Only when justified by missing capabilities or high uncertainty: research options and record findings (`devroute research`).
+4. **Targeted research** - Only when justified by missing capabilities or high uncertainty: research options and record findings (`susanoo research`).
 5. **Isolated implementation** - Implement milestone by milestone in an isolated branch or worktree. Delegate independent feature areas to subagents only when they do not share files.
-6. **Independent review** - Have a separate agent context (devroute-reviewer) review the full diff against the plan and the risks.
-7. **Integration and security verification** - Run the full required verification set and record results as evidence (`devroute verify --execute`).
+6. **Independent review** - Have a separate agent context (susanoo-reviewer) review the full diff against the plan and the risks.
+7. **Integration and security verification** - Run the full required verification set and record results as evidence (`susanoo verify --execute`).
 8. **Evidence-backed completion** **[approval]** - Report results with the recorded evidence, unresolved risks, and anything that was not verified.
 
 ## Required verification
@@ -106,7 +106,7 @@ DevRoute never installs tools itself; adopting any of these needs your approval.
 - [recommended] End-to-end / browser tests: no usable tool - gap
 - [recommended] Dependency vulnerability audit: no usable tool - gap
 
-Only checks that actually ran count as evidence. Run `devroute verify --execute` to execute and record the ready checks.
+Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.
 
 ## Approval checkpoints
 
@@ -120,5 +120,5 @@ Only checks that actually ran count as evidence. Run `devroute verify --execute`
 ## Limitations
 
 - The assessment uses configurable keyword heuristics and local project files; it can miss context that is not in the task description.
-- Tool statuses come from read-only detection; run `devroute inventory --verify` to check versions.
+- Tool statuses come from read-only detection; run `susanoo inventory --verify` to check versions.
 ````

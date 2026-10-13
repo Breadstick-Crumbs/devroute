@@ -1,5 +1,5 @@
 name: Tool or integration request
-description: Propose a tool, MCP server, or environment DevRoute should detect or recommend.
+description: Propose a tool, MCP server, or environment Susanoo should detect or recommend.
 labels: [registry, enhancement]
 body:
   - type: input
@@ -19,7 +19,7 @@ body:
     id: capabilities
     attributes:
       label: Capabilities it provides
-      description: See `devroute research --list` (e.g. browser_testing, security_analysis).
+      description: See `susanoo research --list` (e.g. browser_testing, security_analysis).
     validations:
       required: true
   - type: textarea

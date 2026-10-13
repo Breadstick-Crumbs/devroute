@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from devroute.adapters.claude_code.discovery import parse_frontmatter
-from devroute.discovery import Status, build_inventory, detect_tool, scan_project
+from susanoo.adapters.claude_code.discovery import parse_frontmatter
+from susanoo.discovery import Status, build_inventory, detect_tool, scan_project
 from tests.conftest import write
 
 
@@ -186,11 +186,11 @@ def test_project_environment_tools_take_precedence(tmp_path: Path):
     import os
     import stat
 
-    from devroute.discovery.executables import describe_location, resolve_executable
+    from susanoo.discovery.executables import describe_location, resolve_executable
 
     bindir = tmp_path / ".venv" / ("Scripts" if os.name == "nt" else "bin")
     bindir.mkdir(parents=True)
-    name = "devroute-fake-tool"
+    name = "susanoo-fake-tool"
     script = bindir / (name + (".bat" if os.name == "nt" else ""))
     script.write_text("@echo off\n" if os.name == "nt" else "#!/bin/sh\n", encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
@@ -213,8 +213,21 @@ def test_declared_capabilities_override_inference(tmp_path: Path, home: Path, re
         root,
         ".claude/agents/researcher.md",
         "---\nname: researcher\ndescription: Researches browser testing and payment tools\n"
-        "devroute-capabilities: web_research, not_a_capability\n---\nx",
+        "susanoo-capabilities: web_research, not_a_capability\n---\nx",
     )
     [agent] = build_inventory(root, registry, home=home, env={}).by_kind("agent")
     assert agent.capabilities == ["web_research"]
     assert any("not_a_capability" in e for e in agent.evidence)
+
+
+def test_devroute_capabilities_key_is_still_honored(tmp_path: Path, home: Path, registry):
+    root = tmp_path / "proj"
+    write(
+        root,
+        ".claude/agents/researcher.md",
+        "---\nname: researcher\ndescription: Researches browser testing and payment tools\n"
+        "devroute-capabilities: web_research\n---\nx",
+    )
+    [agent] = build_inventory(root, registry, home=home, env={}).by_kind("agent")
+    assert agent.capabilities == ["web_research"]
+    assert any("devroute-capabilities" in e for e in agent.evidence)
