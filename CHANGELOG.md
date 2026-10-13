@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-13
+
 ### Added
 - `susanoo init --enforce --enforce-scope settings` puts the enforcement hooks in `.claude/settings.local.json` instead of the skill, so the gates also apply in sessions resumed with `claude --resume` or `--continue`, and compaction recovery works without a manual snippet. Only Susanoo's own hook entries are added or removed and the rest of the file is kept; a file that is not valid JSON, has an unexpected shape, or is a symbolic link stops `init` before anything changes. Because Claude Code does not deduplicate identical hooks, `init` refuses any result that would put the gates in two places (for example a modified skill that still has hooks), and `susanoo doctor` reports where the hooks are and warns if it finds them in more than one place. Switching back to the skill scope keeps the compaction hook. The default scope stays `skill`, and the choice is kept for later `init` runs.
 - `scripts/live_enforcement_check.py --scope settings` runs the live checks with settings-scoped hooks.
