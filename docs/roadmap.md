@@ -40,6 +40,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Stronger verification: coverage-delta checks, changed-files-to-tests mapping, migration dry runs | 🔜 |
 | Optional hooks that block completion claims when required evidence is missing | ✅ (v0.2, `--enforce`) |
 | Settings-scoped enforcement option, so gates also apply in resumed sessions and compaction recovery works without a manual snippet ([#29](https://github.com/Breadstick-Crumbs/susanoo/issues/29)) | ✅ (v0.4, `--enforce-scope settings`) |
+| Global auto mode: the default workflow in every project, with automatic routing and autonomy-aware gates ([#34](https://github.com/Breadstick-Crumbs/susanoo/issues/34)) | ✅ (v0.6, `susanoo init --global`) |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.
 

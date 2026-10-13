@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "susanoo"
-version = "0.5.0"
+version = "0.6.0"
 description = "Adaptive AI-native engineering framework. The right workflow, tools, and agents for every development task."
 readme = "README.md"
 license = "Apache-2.0"
@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-susanoo = "susanoo.cli:main"
+susanoo = "susanoo.entry:main"
 
 [project.urls]
 Homepage = "https://github.com/Breadstick-Crumbs/susanoo"

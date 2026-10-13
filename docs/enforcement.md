@@ -44,6 +44,17 @@ Every hook calls `susanoo hook <event>`. That command reads the event JSON, look
 | **Compaction recovery** | `SessionStart` (source `compact`) | After context compaction, a short summary of the active route (profile, approval state, controls, outstanding verification) is put back into Claude's context. Included in the settings scope. Claude Code does not fire this event for hooks declared in a skill, so the skill scope needs the [settings snippet](#compaction-recovery). The other gates keep working after compaction without it. |
 | **Route integrity** | `PreToolUse` on Bash/PowerShell | While a plan is unapproved, closing the route (`susanoo outcome`) or replacing it (`susanoo route`) needs your confirmation, so the gates cannot be dropped silently. |
 
+## Autonomy
+
+Susanoo follows the autonomy you chose in Claude Code instead of adding questions on top:
+
+- **Normal (default) permission mode:** the gates above apply. That is at most one check-in per task, the plan approval for STANDARD and DEEP, plus confirmation for irreversible commands while that control is active.
+- **Autonomous mode:** when Claude Code runs in one of `[enforcement] autonomous_modes` (default: acceptEdits, auto, dontAsk, bypassPermissions), every Susanoo approval and question is off, and Claude Code's own permission settings decide what needs confirmation. The mode is read from each hook event, so switching modes mid-task takes effect immediately. Recording a task as completed without evidence (`--accept-missing-evidence`) is refused in these modes rather than asked about.
+- **Autonomy asked for in words:** when an automatically routed task says "work autonomously", "don't ask", or similar (at the start or end of the message, outside quotes; also in a follow-up), that counts as approving the plan. The irreversible-action confirmation stays, because only a permission mode hands everything to Claude Code.
+- **In every mode** the evidence gate stays: Claude cannot end the turn while required checks lack passing evidence. It never asks you anything.
+
+Set `autonomous_modes = []` in your configuration to keep every gate in every mode.
+
 Related integrity rule, active with or without enforcement: `susanoo outcome --status completed --source agent` is refused while required verification lacks passing evidence. People recording outcomes themselves (`--source human`) are trusted.
 
 ## Approving a plan
@@ -65,6 +76,7 @@ All gate settings live in `[enforcement]` (see `src/susanoo/data/defaults.toml`)
 approval_profiles = ["standard", "deep"]
 evidence_profiles = ["fast", "standard", "deep"]
 max_stop_blocks = 3
+autonomous_modes = ["acceptEdits", "auto", "dontAsk", "bypassPermissions"]
 edit_tools = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
 shell_write_patterns = ['...']      # regexes, case-insensitive
 irreversible_commands = ['...']
@@ -82,7 +94,7 @@ It does nothing in sessions without an active route. Without it, the gates still
 
 ## Live test results
 
-`scripts/live_enforcement_check.py` runs each check in a throwaway project against a real headless Claude Code session, sending every turn to one process the way an interactive session works. Results with **Claude Code 2.1.296** (Windows, Sonnet):
+`scripts/live_enforcement_check.py` runs each check in a throwaway project against a real headless Claude Code session, sending every turn to one process the way an interactive session works. It sets `autonomous_modes = []` in those projects so the gates themselves are exercised in every permission mode; with the default settings, the hands-off modes skip them by design (see [Autonomy](#autonomy)). Results with **Claude Code 2.1.296** (Windows, Sonnet):
 
 | Check | Result |
 |---|---|
@@ -102,12 +114,22 @@ With `--enforce-scope settings` (`scripts/live_enforcement_check.py --scope sett
 | Compaction recovery without any manual snippet | Pass: the route summary was re-injected after `/compact`, and the edit gate still applied |
 | Plan-approval gate after `claude --resume` in a new process | Pass: the edit was denied. Two earlier runs were inconclusive because Claude did not attempt the edit at all |
 
-These are single runs. Results can change with Claude Code versions; rerun the script after upgrading.
+Automatic routing (`scripts/live_auto_check.py`, projects installed with `--enforce --enforce-scope settings --auto`, default autonomy settings, same version). None of the prompts mention Susanoo:
+
+| Check | Result |
+|---|---|
+| A question ("What does app.py do?") | Pass: not routed |
+| A task in default mode | Routed automatically. In two runs Claude presented the plan and waited for approval instead of editing, so the edit gate was not needed as a backstop (inconclusive as a gate test) |
+| A task in acceptEdits mode | Pass: routed and built with no Susanoo approval or question. Claude Code's own permissions blocked the unapproved `susanoo verify` shell command headlessly, and the evidence gate then held the turn for `max_stop_blocks` |
+| A task in bypassPermissions mode | Pass: routed, built without questions, `susanoo verify --execute` run (a failing test was fixed and rerun), outcome recorded as completed, no stop blocks needed |
+
+These are single runs. Results can change with Claude Code versions; rerun the scripts after upgrading.
 
 ## Limits
 
 - **Guardrails, not a sandbox.** The gates catch drift; they are not a security boundary against a determined agent. Shell-write detection is pattern-based and cannot recognize every way a command can change files.
 - **Resumed sessions with the skill scope are not enforced.** Skill hooks live in the process that invoked `/susanoo`. If you quit and later continue the session with `claude --resume` or `--continue`, the route is still active in Susanoo's records but no hook runs, so none of the gates apply. Use `--enforce-scope settings` if you resume sessions, or start a new `/susanoo` task. Do not add the hooks to your settings by hand while the skill has them: Claude Code does not deduplicate identical hooks, so every gate would run twice and the `Stop` gate would release early.
-- **Permission modes.** In the live runs above the approval `ask` held in every permission mode, including bypassPermissions and dontAsk. The Claude Code docs do not document this for every mode, so treat it as observed behavior for the tested version. The plan-approval gate uses `deny`, which does not depend on a prompt being shown.
+- **Permission modes.** By default the hands-off modes skip Susanoo's approvals and questions on purpose (see [Autonomy](#autonomy)). With `autonomous_modes = []`, the live runs above show the approval `ask` holding in every permission mode, including bypassPermissions and dontAsk; the Claude Code docs do not document this for every mode, so treat it as observed behavior for the tested version.
+- **Automatic routing is keyword-based.** It routes only prompts that start like a task ("add ...", "can you fix ..."); requests phrased differently ("the checkout page is broken") are not routed. Use `/susanoo <task>` for those, or reword.
 - **Live coverage.** The gate logic and the hook bridge are tested end to end with recorded hook payloads. The live checks above cover the main gates in single runs; the shell-write, irreversible-action, and route-integrity gates use the same `ask` path but were not exercised live.
 - **`/clear` and `--fork-session`** give the session a new id, which ends enforcement for routes created before it.

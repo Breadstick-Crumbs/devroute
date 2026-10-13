@@ -5,11 +5,10 @@ from __future__ import annotations
 import copy
 import re
 import tomllib
-from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from susanoo.paths import project_config_path
+from susanoo.paths import project_config_path, user_config_path
 
 DIMENSIONS: tuple[str, ...] = (
     "implementation_complexity",
@@ -38,10 +37,16 @@ class ConfigError(Exception):
 Config = dict[str, Any]
 
 
+_DATA = Path(__file__).resolve().parent / "data"
+
+
 def read_data_text(*parts: str) -> str:
-    """Read a text file shipped in the ``susanoo.data`` package directory."""
-    node = resources.files("susanoo").joinpath("data", *parts)
-    return node.read_text(encoding="utf-8")
+    """Read a text file shipped in the ``susanoo/data`` package directory.
+
+    Read from disk next to this module (Susanoo is never imported from a zip), which avoids the
+    import cost of ``importlib.resources`` on the hook path.
+    """
+    return _DATA.joinpath(*parts).read_text(encoding="utf-8")
 
 
 def load_toml_data(*parts: str) -> dict[str, Any]:
@@ -93,9 +98,14 @@ def _merge_by_id(base: list[Any], override: list[Any], name: str) -> list[Any]:
 
 
 def load_config(root: Path | None = None, extra: Path | None = None) -> Config:
-    """Load defaults, then ``<root>/.susanoo/config.toml``, then ``extra`` if given."""
+    """Load defaults, then ``~/.susanoo/config.toml`` (user), ``<root>/.susanoo/config.toml``,
+    and ``extra`` if given."""
     config = load_toml_data("defaults.toml")
     sources = ["defaults"]
+    user_file = user_config_path()
+    if user_file.is_file():
+        config = merge(config, load_toml_file(user_file))
+        sources.append(str(user_file))
     if root is not None:
         project_file = project_config_path(root)
         if project_file.is_file():

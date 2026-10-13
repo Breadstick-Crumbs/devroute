@@ -13,6 +13,7 @@ link is never rewritten.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -22,18 +23,30 @@ from susanoo.config import read_data_text
 SETTINGS_FILE = ".claude/settings.local.json"
 OWNED_PREFIX = "susanoo hook "
 GATE_EVENTS = frozenset({"PreToolUse", "Stop"})  # the events the skill scope also declares
+# A Susanoo handler runs `susanoo hook <event>`, directly or as `<python> -m susanoo hook <event>`.
+_OWNED = re.compile(r"""(?:^|[\s"'/\\])(?:-m\s+)?susanoo(?:\.exe)?\s+hook\s""")
 
 
-def settings_hooks() -> dict[str, list[dict[str, Any]]]:
-    data: dict[str, list[dict[str, Any]]] = json.loads(read_data_text("templates", "settings-hooks.json"))[
-        "hooks"
-    ]
-    return data
+def settings_hooks(
+    command: str = "susanoo", auto: bool = False, global_install: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    """Susanoo's hook groups; ``command`` replaces `susanoo`, ``auto`` adds prompt routing, and
+    ``global_install`` marks the commands (`hook --global`) so they step aside in projects that
+    run Susanoo hooks of their own."""
+    data = json.loads(read_data_text("templates", "settings-hooks.json"))
+    groups: dict[str, list[dict[str, Any]]] = dict(data["hooks"])
+    if auto:
+        groups.update(data["auto_hooks"])
+    if command != "susanoo" or global_install:
+        prefix = f"{command} hook " + ("--global " if global_install else "")
+        text = json.dumps(groups).replace('"susanoo hook ', json.dumps(prefix)[:-1])
+        groups = json.loads(text)
+    return groups
 
 
 def _owned(handler: Any) -> bool:
     command = handler.get("command") if isinstance(handler, dict) else None
-    return isinstance(command, str) and command.strip().startswith(OWNED_PREFIX)
+    return isinstance(command, str) and bool(_OWNED.search(command.strip()))
 
 
 def _group_owned(group: Any) -> bool:
@@ -74,10 +87,35 @@ def owned_events(settings: dict[str, Any]) -> set[str]:
     return {event for event, groups in hooks.items() if any(_group_owned(g) for g in groups)}
 
 
-def owned_events_in(path: Path) -> set[str]:
-    """Hook events with a Susanoo handler in a settings file (empty if absent or not parseable)."""
+_GLOBAL = re.compile(r"susanoo(?:\.exe)?\s+hook\s+--global\s")
+
+
+def owned_events_in(path: Path, include_global: bool = True) -> set[str]:
+    """Hook events with a Susanoo handler in a settings file (empty if absent or not parseable).
+
+    With ``include_global=False``, handlers of the global install (`hook --global`) are ignored:
+    they step aside in projects that run Susanoo hooks of their own, so they never duplicate them.
+    """
     data, problem = load_settings(path, for_write=False)
-    return owned_events(data) if data is not None and not problem else set()
+    if data is None or problem:
+        return set()
+    if not include_global:
+        data = {
+            "hooks": {
+                event: [
+                    {
+                        **g,
+                        "hooks": [
+                            h for h in g.get("hooks", []) if not _GLOBAL.search(str(h.get("command", "")))
+                        ],
+                    }
+                    for g in groups
+                    if isinstance(g, dict)
+                ]
+                for event, groups in data.get("hooks", {}).items()
+            }
+        }
+    return owned_events(data)
 
 
 def without_owned(settings: dict[str, Any], keep: frozenset[str] = frozenset()) -> dict[str, Any]:
@@ -112,17 +150,19 @@ def without_owned(settings: dict[str, Any], keep: frozenset[str] = frozenset()) 
     return result
 
 
-def with_owned(settings: dict[str, Any]) -> dict[str, Any]:
+def with_owned(settings: dict[str, Any], groups_by_event: dict[str, Any] | None = None) -> dict[str, Any]:
     result = without_owned(settings)
     hooks = dict(result.get("hooks") or {})
-    for event, groups in settings_hooks().items():
+    for event, groups in (groups_by_event or settings_hooks()).items():
         hooks[event] = [*hooks.get(event, []), *groups]
     result["hooks"] = hooks
     return result
 
 
-def _target(data: dict[str, Any], want: bool, keep: frozenset[str]) -> dict[str, Any]:
-    return with_owned(data) if want else without_owned(data, keep)
+def _target(
+    data: dict[str, Any], want: bool, keep: frozenset[str], hooks: dict[str, Any] | None
+) -> dict[str, Any]:
+    return with_owned(data, hooks) if want else without_owned(data, keep)
 
 
 def plan_settings(
@@ -132,28 +172,32 @@ def plan_settings(
     managed: bool,
     created: bool = False,
     keep: frozenset[str] = frozenset(),
+    rel: str = SETTINGS_FILE,
+    hooks: dict[str, Any] | None = None,
 ) -> FileAction | None:
     """Plan adding (``want``) or removing Susanoo's hooks.
 
     Removal only happens when Susanoo manages the file (``managed``), so a user's own
     `susanoo hook` entries are never removed by a skill-scope install. ``keep`` lists events
-    whose Susanoo handlers stay on removal; ``created`` means Susanoo created the file.
+    whose Susanoo handlers stay on removal; ``created`` means Susanoo created the file. ``rel`` is
+    the settings file relative to ``root``, and ``hooks`` the groups to install (default: the
+    project-scope set).
     """
     if not want and not managed:
         return None
-    data, problem = load_settings(root / SETTINGS_FILE)
+    data, problem = load_settings(root / rel)
     if problem:
-        return FileAction(SETTINGS_FILE, "conflict", f"is {problem}; left untouched")
+        return FileAction(rel, "conflict", f"is {problem}; left untouched")
     if data is None:
-        return FileAction(SETTINGS_FILE, "create", "enforcement hooks") if want else None
-    target = _target(data, want, keep)
+        return FileAction(rel, "create", "enforcement hooks") if want else None
+    target = _target(data, want, keep, hooks)
     if target == data:
-        return FileAction(SETTINGS_FILE, "unchanged") if want else None
+        return FileAction(rel, "unchanged") if want else None
     if want:
-        return FileAction(SETTINGS_FILE, "update", "enforcement hooks added; other settings kept")
+        return FileAction(rel, "update", "enforcement hooks added; other settings kept")
     if not target and created:
-        return FileAction(SETTINGS_FILE, "remove", "only Susanoo's hooks were in it")
-    return FileAction(SETTINGS_FILE, "remove-hooks", "Susanoo's hooks removed; other settings kept")
+        return FileAction(rel, "remove", "only Susanoo's hooks were in it")
+    return FileAction(rel, "remove-hooks", "Susanoo's hooks removed; other settings kept")
 
 
 def apply_settings(
@@ -163,15 +207,17 @@ def apply_settings(
     managed: bool,
     created: bool = False,
     keep: frozenset[str] = frozenset(),
+    rel: str = SETTINGS_FILE,
+    hooks: dict[str, Any] | None = None,
 ) -> tuple[FileAction | None, bool]:
     """Re-plan against the current file and apply; return (what was done, Susanoo created it).
 
     Raises ``OSError`` if the file cannot be written.
     """
-    action = plan_settings(root, want=want, managed=managed, created=created, keep=keep)
+    action = plan_settings(root, want=want, managed=managed, created=created, keep=keep, rel=rel, hooks=hooks)
     if action is None or action.action in ("conflict", "unchanged"):
         return action, created
-    path = root / SETTINGS_FILE
+    path = root / rel
     data, _ = load_settings(path)
     if action.action == "remove":
         path.unlink(missing_ok=True)
@@ -179,5 +225,7 @@ def apply_settings(
         if parent != root and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
         return action, False
-    _atomic_write(path, json.dumps(_target(data or {}, want, keep), indent=2, ensure_ascii=False) + "\n")
+    _atomic_write(
+        path, json.dumps(_target(data or {}, want, keep, hooks), indent=2, ensure_ascii=False) + "\n"
+    )
     return action, created or action.action == "create"

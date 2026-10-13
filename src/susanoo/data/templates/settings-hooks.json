@@ -17,5 +17,12 @@
         "hooks": [{"type": "command", "command": "susanoo hook session-start", "timeout": 30}]
       }
     ]
+  },
+  "auto_hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{"type": "command", "command": "susanoo hook user-prompt-submit", "timeout": 20}]
+      }
+    ]
   }
 }

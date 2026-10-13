@@ -1,21 +1,32 @@
-"""Evaluation and Learning Engine: local records, summaries, and routing evaluation."""
+"""Evaluation and Learning Engine: local records, summaries, and routing evaluation.
 
-from susanoo.evaluation.report import OUTCOME_STATUSES, Insight, ProfileSummary, Report, summarize
-from susanoo.evaluation.store import RECORD_KINDS, RecordError, RecordStore, new_record_id
-from susanoo.evaluation.suite import CaseResult, SuiteResult, load_suite, run_suite
+Names are imported on first use, so hooks that only need the record store stay fast.
+"""
 
-__all__ = [
-    "OUTCOME_STATUSES",
-    "RECORD_KINDS",
-    "CaseResult",
-    "Insight",
-    "ProfileSummary",
-    "RecordError",
-    "RecordStore",
-    "Report",
-    "SuiteResult",
-    "load_suite",
-    "new_record_id",
-    "run_suite",
-    "summarize",
-]
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "OUTCOME_STATUSES": "report",
+    "Insight": "report",
+    "ProfileSummary": "report",
+    "Report": "report",
+    "summarize": "report",
+    "RECORD_KINDS": "store",
+    "RecordError": "store",
+    "RecordStore": "store",
+    "new_record_id": "store",
+    "CaseResult": "suite",
+    "SuiteResult": "suite",
+    "load_suite": "suite",
+    "run_suite": "suite",
+}
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(import_module(f"{__name__}.{_EXPORTS[name]}"), name)

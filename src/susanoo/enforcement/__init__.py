@@ -1,19 +1,30 @@
-"""Opt-in workflow enforcement through Claude Code hooks."""
+"""Opt-in workflow enforcement through Claude Code hooks.
 
-from susanoo.enforcement.gates import Decision, pre_tool_use, session_start, stop, summary
-from susanoo.enforcement.hooks import HOOK_EVENTS, handle
-from susanoo.enforcement.state import RouteState, active_route, evidence_status, route_state
+Names are imported on first use, so a hook loads only the modules it needs.
+"""
 
-__all__ = [
-    "HOOK_EVENTS",
-    "Decision",
-    "RouteState",
-    "active_route",
-    "evidence_status",
-    "handle",
-    "pre_tool_use",
-    "route_state",
-    "session_start",
-    "stop",
-    "summary",
-]
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "Decision": "gates",
+    "pre_tool_use": "gates",
+    "session_start": "gates",
+    "stop": "gates",
+    "summary": "gates",
+    "HOOK_EVENTS": "hooks",
+    "handle": "hooks",
+    "RouteState": "state",
+    "active_route": "state",
+    "evidence_status": "state",
+    "route_state": "state",
+}
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(import_module(f"{__name__}.{_EXPORTS[name]}"), name)

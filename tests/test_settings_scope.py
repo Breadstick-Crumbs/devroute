@@ -164,8 +164,8 @@ def test_skill_scope_refuses_hooks_already_in_settings(tmp_path: Path):
     assert not (tmp_path / SKILL).exists()
 
 
-def test_hooks_in_other_settings_files_block_enforcement(tmp_path: Path, home: Path):
-    write(home, ".claude/settings.json", {"hooks": settings_hooks()})
+def test_hooks_in_other_settings_files_block_enforcement(tmp_path: Path, isolated_susanoo_home: Path):
+    write(isolated_susanoo_home, "claude-config/settings.json", {"hooks": settings_hooks()})  # user settings
     code, _, err = run(tmp_path, *SETTINGS)
     assert code == 1 and "settings.json already runs Susanoo's hooks" in err
     assert not (tmp_path / LOCAL).exists()
@@ -263,12 +263,13 @@ def test_unreadable_skill_is_reported_not_crashed(tmp_path: Path):
     assert code == 1 and "not a readable text file" in err and "internal error" not in err
 
 
-def test_symlinked_settings_are_still_detected(tmp_path: Path, home: Path):
+def test_symlinked_settings_are_still_detected(tmp_path: Path, isolated_susanoo_home: Path):
     target = tmp_path / "dotfiles" / "settings.json"
     write(tmp_path, "dotfiles/settings.json", {"hooks": settings_hooks()})
-    (home / ".claude").mkdir()
+    config_dir = isolated_susanoo_home / "claude-config"
+    config_dir.mkdir()
     try:
-        os.symlink(target, home / ".claude" / "settings.json")
+        os.symlink(target, config_dir / "settings.json")
     except OSError:
         pytest.skip("creating symbolic links is not permitted here")
     code, _, err = run(tmp_path, *SETTINGS)

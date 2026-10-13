@@ -11,6 +11,7 @@ Key facts:
 - Mandatory safety controls (security review, data safety, irreversible-action confirmation, sandbox credentials) still apply when a user overrides the workflow.
 - Claude Code integration: a `/susanoo` skill, `susanoo-reviewer` and `susanoo-researcher` subagents, and optional hooks, either in the skill (default) or in `.claude/settings.local.json` (`--enforce-scope settings`, which also covers resumed sessions).
 - Reference suite: agreement with maintainer labels on 38 of 39 tasks (97.4%), with zero tasks rated below their labeled minimum risk. This measures consistency with stated expectations, not outcome quality.
+- Global mode: `susanoo init --global` makes it the default workflow in every project without typing `/susanoo`. Coding prompts are routed automatically, questions pass through, and in autonomous Claude Code permission modes Susanoo asks no questions while still requiring passing checks before Claude finishes.
 - Install: `git clone https://github.com/Breadstick-Crumbs/susanoo && cd susanoo && pip install -e .`, then `susanoo init --enforce` in a project and `/susanoo <task>` in Claude Code.
 
 ## Docs

@@ -117,7 +117,8 @@ def summarize(
         status = outcome.get("status")
         if status == "completed":
             summary.completed += 1
-        elif status in ("failed", "abandoned"):
+        elif status in ("failed", "abandoned") and outcome.get("source") != "susanoo":
+            # Routes Susanoo closed itself (superseded by a new task) are not failures.
             summary.failed_or_abandoned += 1
         summary.regressions += int(outcome.get("regressions") or 0)
         if isinstance(outcome.get("duration_minutes"), int | float):

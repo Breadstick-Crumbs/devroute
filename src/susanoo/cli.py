@@ -15,6 +15,14 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from susanoo import __version__
+from susanoo.adapters.claude_code.global_install import (
+    apply_global,
+    apply_global_uninstall,
+    claude_home,
+    plan_global,
+    plan_global_uninstall,
+    user_command,
+)
 from susanoo.adapters.claude_code.installer import (
     UNREADABLE,
     FileAction,
@@ -49,21 +57,29 @@ from susanoo.adapters.claude_code.settings_hooks import (
     apply_settings,
     owned_events_in,
     plan_settings,
+    settings_hooks,
 )
 from susanoo.analyzer import assess
 from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
-from susanoo.enforcement import HOOK_EVENTS, evidence_status, handle
-from susanoo.evaluation import (
-    OUTCOME_STATUSES,
-    RecordError,
-    RecordStore,
-    new_record_id,
-    run_suite,
-    summarize,
+from susanoo.enforcement.auto import auto_settings
+from susanoo.enforcement.hooks import HOOK_EVENTS, handle
+from susanoo.enforcement.hooks import _project_root as _hook_root
+from susanoo.enforcement.state import evidence_status
+from susanoo.entry import _project_has_own_hooks
+from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
+from susanoo.evaluation.store import RecordError, RecordStore, new_record_id
+from susanoo.evaluation.suite import run_suite
+from susanoo.paths import (
+    OFF_FILE,
+    find_project_root,
+    global_installed,
+    home_state,
+    is_initialized,
+    project_mode,
+    records_dir,
+    state_dir,
 )
-from susanoo.evaluation.report import latest_by_record
-from susanoo.paths import find_project_root, is_initialized, state_dir
 from susanoo.pipeline import TaskPlan, plan_task, project_context, route_record
 from susanoo.registry import load_registry
 from susanoo.render import (
@@ -178,8 +194,51 @@ def cmd_inventory(ctx: Context, stdin: TextIO) -> int:
     return EXIT_OK
 
 
+def _init_global(ctx: Context) -> int:
+    """`susanoo init --global`: install (or remove) Susanoo as the default workflow everywhere."""
+    args = ctx.args
+    if args.uninstall:
+        actions = plan_global_uninstall()
+        _refuse_settings_conflict(next((a for a in actions if a.path == "settings.json"), None), want=False)
+        if not args.dry_run:
+            actions = apply_global_uninstall(actions)
+    else:
+        auto = not args.no_auto
+        actions = plan_global(auto=auto, with_agents=not args.no_agents, force=args.force)
+        _refuse_settings_conflict(next((a for a in actions if a.path == "settings.json"), None), want=True)
+        if not args.dry_run:
+            actions = apply_global(actions, auto=auto, with_agents=not args.no_agents)
+    if args.json:
+        ctx.emit_json({"global": True, "dry_run": args.dry_run, "actions": actions_to_dicts(actions)})
+        return EXIT_OK
+    title = "global uninstall" if args.uninstall else "global install"
+    lines = [f"Susanoo {title} in {claude_home()}" + (" (dry run)" if args.dry_run else ""), ""]
+    lines += [f"  {a.action:<14} {a.path}" + (f"  ({a.note})" if a.note else "") for a in actions]
+    lines.append("")
+    if args.dry_run:
+        lines.append("No files were written (dry run). Re-run without --dry-run to apply.")
+    elif args.uninstall:
+        lines.append(f"Records in {home_state()} were kept; delete them yourself if you no longer need them.")
+    else:
+        lines += [
+            "Coding tasks in every project now go through Susanoo"
+            + (" automatically." if not args.no_auto else " when you use /susanoo."),
+            f"Records: {home_state() / 'projects'}. Turn it off in one project with a {OFF_FILE} file.",
+            "Restart running Claude Code sessions so they load the new hooks.",
+        ]
+        if user_command() != "susanoo":
+            lines.append(
+                "Note: `susanoo` is not on PATH, so the playbook uses the full command. Installing it "
+                "on PATH (for example `python -m pip install --user -e <path-to-susanoo>`) makes it shorter."
+            )
+    ctx.emit("\n".join(lines))
+    return EXIT_OK
+
+
 def cmd_init(ctx: Context, stdin: TextIO) -> int:
     args = ctx.args
+    if args.global_install:
+        return _init_global(ctx)
     notes: list[str] = []
     manifest = read_manifest(ctx.root)
     managed = manifest.get("settings_managed") is True
@@ -216,7 +275,14 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
         # With the skill scope, a compaction hook Susanoo put in settings earlier stays: the skill
         # cannot provide it, and it cannot run twice.
         keep = frozenset({"SessionStart"}) if skill_hooks else frozenset()
-        settings = plan_settings(ctx.root, want=want_settings, managed=managed, created=created, keep=keep)
+        # Automatic prompt routing needs settings-scoped hooks (skill hooks start only with /susanoo).
+        auto = want_settings and (args.auto or (manifest.get("auto") is True and not args.no_auto))
+        if args.auto and not want_settings:
+            ctx.err.write("note: --auto needs --enforce --enforce-scope settings; it was not turned on\n")
+        hooks = settings_hooks(auto=auto)
+        settings = plan_settings(
+            ctx.root, want=want_settings, managed=managed, created=created, keep=keep, hooks=hooks
+        )
         skill_plan = plan_install(ctx.root, force=args.force, with_agents=False, enforce=skill_hooks)[0]
         _check_single_hook_place(ctx, enforce, want_settings, skill_hooks, settings, skill_plan)
         if enforce and not shutil.which("susanoo"):
@@ -243,10 +309,11 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 notes.append(note)
             # Settings first: if they cannot be written, the skill and manifest stay as they were.
             settings, created = _apply_settings(
-                ctx.root, want=want_settings, managed=managed, created=created, keep=keep
+                ctx.root, want=want_settings, managed=managed, created=created, keep=keep, hooks=hooks
             )
             update_manifest(
                 ctx.root,
+                auto=auto,
                 settings_created=created,
                 settings_managed=bool(owned_events_in(ctx.root / SETTINGS_FILE))
                 and (want_settings or managed),
@@ -300,7 +367,7 @@ def _settings_sources(root: Path) -> list[Path]:
     paths = [
         root / SETTINGS_FILE,
         root / ".claude" / "settings.json",
-        Path.home() / ".claude" / "settings.json",
+        claude_home() / "settings.json",
     ]
     unique: dict[Path, Path] = {}
     for path in paths:
@@ -314,7 +381,7 @@ def _refuse_settings_conflict(settings: FileAction | None, *, want: bool) -> Non
         verb = "add the enforcement hooks to" if want else "remove Susanoo's hooks from"
         problem = settings.note.split(";")[0]
         raise CLIError(
-            f"cannot {verb} {SETTINGS_FILE}: it {problem}. Fix the file first"
+            f"cannot {verb} {settings.path}: it {problem}. Fix the file first"
             + ("." if want else ", or remove the `susanoo hook` entries yourself.")
             + " Nothing was changed."
         )
@@ -354,7 +421,11 @@ def _check_single_hook_place(
             f"{SETTINGS_FILE} already runs Susanoo's hooks, so the skill's would run twice. Use "
             f"--enforce-scope settings, or remove them from that file. {unchanged}"
         )
-    elsewhere = [str(p) for p in _settings_sources(ctx.root)[1:] if owned_events_in(p) & GATE_EVENTS]
+    elsewhere = [
+        str(p)
+        for p in _settings_sources(ctx.root)[1:]
+        if owned_events_in(p, include_global=False) & GATE_EVENTS
+    ]
     if elsewhere:
         raise CLIError(
             f"{', '.join(elsewhere)} already runs Susanoo's hooks, so enforcement would run them twice. "
@@ -372,7 +443,9 @@ def _apply_settings(root: Path, **kwargs: Any) -> tuple[FileAction | None, bool]
 def _check_hook_placement(ctx: Context, check: Callable[[str, str, str], None], *, skill_hooks: bool) -> None:
     """Report where enforcement hooks live, and warn when the same events run twice."""
     local = ctx.root / SETTINGS_FILE
-    settings_gates = [p for p in _settings_sources(ctx.root) if owned_events_in(p) & GATE_EVENTS]
+    settings_gates = [
+        p for p in _settings_sources(ctx.root) if owned_events_in(p, include_global=False) & GATE_EVENTS
+    ]
     places = (["the /susanoo skill"] if skill_hooks else []) + [str(p) for p in settings_gates]
     if len(places) > 1:
         check(
@@ -447,6 +520,31 @@ def cmd_doctor(ctx: Context, stdin: TextIO) -> int:
         else "Claude Code CLI not found on PATH (needed for /susanoo; the CLI works without it)",
     )
 
+    if global_installed():
+        routing = auto_settings(ctx.root)
+        if (ctx.root / OFF_FILE).exists():
+            detail = f"installed; off in this project ({OFF_FILE})"
+        elif project_mode(ctx.root) and _project_has_own_hooks(ctx.root):
+            detail = "installed; this project runs its own Susanoo hooks, so the global hooks step aside here"
+            routing = {}
+        elif project_mode(ctx.root):
+            detail = "installed; this project uses its own .susanoo/ setup"
+            if enforcement_enabled(ctx.root) and enforcement_scope(ctx.root) == "skill":
+                check(
+                    "global install",
+                    "warn",
+                    "this project enforces through its /susanoo skill, so after `/susanoo` the gates can run "
+                    "twice (global and skill). Run `susanoo init --enforce-scope settings` here (the global hooks "
+                    "then step aside) or `susanoo init --no-enforce`",
+                )
+        else:
+            detail = f"on for this project; records in {records_dir(ctx.root).parent}"
+        detail += (
+            "; coding prompts are routed automatically"
+            if routing
+            else "; prompts are not routed automatically"
+        )
+        check("global install", "ok", detail)
     if legacy_present(ctx.root):
         check(
             "DevRoute installation",
@@ -488,7 +586,9 @@ def cmd_doctor(ctx: Context, stdin: TextIO) -> int:
         "ok" if len(agents) == 2 else "warn",
         ", ".join(agents) if agents else "not installed (optional)",
     )
-    if is_initialized(ctx.root):
+    if not project_mode(ctx.root) and is_initialized(ctx.root):
+        check("local records", "ok", f"global mode; records in {records_dir(ctx.root).parent}")
+    elif is_initialized(ctx.root):
         ignored = (state_dir(ctx.root) / ".gitignore").is_file()
         check(
             "local records",
@@ -697,6 +797,9 @@ def cmd_hook(ctx: Context, stdin: TextIO) -> int:
         raise CLIError(f"hook input is not valid JSON: {exc.msg}") from exc
     if not isinstance(event, dict):
         raise CLIError("hook input must be a JSON object")
+    hook_root = _hook_root(event)
+    if ctx.args.from_global and project_mode(hook_root) and _project_has_own_hooks(hook_root):
+        return EXIT_OK  # the project's own hooks act; running both would double every gate
     code, output = handle(ctx.args.event, event)
     if output:
         ctx.emit(output)
@@ -809,6 +912,23 @@ def build_parser() -> argparse.ArgumentParser:
         ".claude/settings.local.json (every session, including resumed ones); the choice is kept",
     )
     p.add_argument("--no-enforce", action="store_true", help="install the skill without enforcement hooks")
+    p.add_argument(
+        "--global",
+        dest="global_install",
+        action="store_true",
+        help="install for every project in your Claude Code user configuration (~/.claude): playbook, "
+        "skill, subagents, and hooks; coding tasks are routed automatically",
+    )
+    p.add_argument(
+        "--auto",
+        action="store_true",
+        help="with --enforce --enforce-scope settings: route coding prompts in this project automatically",
+    )
+    p.add_argument(
+        "--no-auto",
+        action="store_true",
+        help="do not route prompts automatically; the gates stay (also for --global)",
+    )
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("report", parents=[common], help="show local records, summaries, and recommendations")
@@ -865,6 +985,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("hook", help="entry point for Claude Code hooks (reads the event JSON on stdin)")
     p.add_argument("event", choices=HOOK_EVENTS)
+    p.add_argument("--global", dest="from_global", action="store_true", help="called by the global install")
     p.set_defaults(func=cmd_hook)
 
     p = sub.add_parser(

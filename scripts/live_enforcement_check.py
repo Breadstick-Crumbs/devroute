@@ -88,7 +88,7 @@ def susanoo(*args: str, cwd: Path) -> None:
     )
 
 
-def make_project(base: Path, name: str) -> Path:
+def make_project(base: Path, name: str, autonomy_off: bool = True) -> Path:
     root = base / name
     root.mkdir()
     (root / "app.py").write_text(APP, encoding="utf-8")
@@ -99,6 +99,11 @@ def make_project(base: Path, name: str) -> Path:
     ):
         subprocess.run(cmd, cwd=root, check=True, capture_output=True)
     susanoo("init", "--enforce", "--enforce-scope", SCOPE, "--no-agents", "--path", str(root), cwd=root)
+    # These checks exercise the gates themselves in every permission mode, so the default
+    # hands-off modes are switched off here (scripts/live_auto_check.py covers autonomy).
+    if autonomy_off:
+        with (root / ".susanoo" / "config.toml").open("a", encoding="utf-8") as fh:
+            fh.write("\n[enforcement]\nautonomous_modes = []\n")
     return root
 
 

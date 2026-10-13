@@ -91,10 +91,59 @@ large_repo_files = 2000
 # in large repositories and lose it in small ones; built-in text search loses it in large ones.
 code_navigation_size_adjustment = 5.0
 
+[auto]
+# Automatic routing (`susanoo init --global`, or `--auto` with the settings scope): every prompt
+# is classified, and only clear coding tasks are routed. When unsure, Susanoo stays out of the
+# way: questions and ambiguous prompts pass through untouched.
+# A prompt starting with this prefix is never routed.
+skip_prefix = "?"
+# Leading phrases removed before classifying ("please", "can you", "ok now", ...).
+polite = [
+    "please", "pls", "can you", "could you", "would you", "will you", "let'?s", "i want you to",
+    "i need you to", "i.?d like you to", "(?:i|we) (?:want|need) to", "go ahead and", "ok(?:ay)?", "now",
+    "also", "and", "then", "so",
+]
+# A prompt (after polite phrases) starting with one of these is a coding task.
+task_verbs = [
+    "add", "implement", "create", "build", "make", "fix", "refactor", "update", "change", "modify",
+    "remove", "delete", "drop", "rename", "move", "migrate", "upgrade", "bump", "write", "rewrite",
+    "set ?up", "integrate", "optimi[sz]e", "speed up", "enable", "disable", "replace",
+    "convert", "deploy", "ship", "clean ?up", "extract", "wire up", "hook up", "configure",
+    "introduce", "handle", "improve", "resolve", "generate", "scaffold", "document",
+    "redesign", "restyle", "polish", "tweak", "adjust", "allow", "prevent", "make sure", "ensure",
+    "validate", "translate", "localize", "bootstrap", "rotate", "revert",
+]
+# A task verb followed by one of these is not a coding task ("write me a haiku", "make sense of
+# this", "drop it", "move on", "make sure you understand").
+not_after_verb = ["me", "us", "you", "sense", "it", "on", "a list", "an? (?:overview|summary)"]
+# A prompt starting with one of these is a question, even if it mentions code.
+question_starts = [
+    "what", "what'?s", "why", "how", "where", "when", "who", "which", "explain", "describe", "tell me",
+    "show me", "summari[sz]e", "is", "are", "does", "do", "did", "should", "would", "can i", "could i",
+    "is there", "are there", "compare", "review", "look at", "check", "investigate", "find", "list",
+    "read", "walk me through", "help me understand",
+]
+# A task routed with one of these phrases runs hands-off, like an autonomous permission mode.
+autonomy = [
+    "autonomous(?:ly)?", "do(?: not|n.?t) ask me(?: anything)?", "without asking me", "no questions",
+    "just do it", "on your own", "do(?: not|n.?t) (?:check in|wait for me)(?: until (?:it.?s )?done)?",
+    "no need to (?:ask|check with|confirm with) me",
+]
+# Tasks shorter than this many words are treated as ambiguous ("fix it").
+min_words = 3
+# While a task is open, a new task prompt continues it when it starts with one of these, or
+# arrives within `follow_up_minutes` of the routing; otherwise it replaces the open task.
+continuation = ["also", "and", "then", "now", "ok(?:ay)?", "next", "plus", "instead", "actually", "but", "same"]
+follow_up_minutes = 20
+
 [enforcement]
 # Used only when the /susanoo skill was installed with `susanoo init --enforce`.
 # Profiles whose file edits wait for the user to approve the plan.
 approval_profiles = ["standard", "deep"]
+# Claude Code permission modes in which the user chose to let Claude work hands-off. In these
+# modes (or when a task asks for autonomy) Susanoo adds no approval and no questions; Claude
+# Code's own permission settings decide. The evidence gate still applies.
+autonomous_modes = ["acceptEdits", "auto", "dontAsk", "bypassPermissions"]
 # Profiles whose turn cannot end while required verification lacks evidence.
 evidence_profiles = ["fast", "standard", "deep"]
 # Consecutive blocks (with nothing changing) before the evidence gate lets the turn end.
