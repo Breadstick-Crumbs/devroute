@@ -202,6 +202,8 @@ min_risk = "moderate"
 id = "tests-only-payments"
 task = "Add integration tests for the Stripe refund flow"
 expected = "standard"
+# Added after review: test-only caps must not remove external-service risk (sandbox keys).
+min_risk = "moderate"
 
 [[cases]]
 id = "tests-and-fix-auth"

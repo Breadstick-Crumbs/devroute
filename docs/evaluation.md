@@ -21,7 +21,8 @@ What the numbers mean:
 
 - **Profile agreement** is the share of tasks routed to the labeled profile. It measures consistency with stated expectations, not correctness. The heuristics and the suite were developed together, so agreement on this suite is optimistic. Hold-out suites written independently are more informative.
 - **Risk-floor violations** count tasks whose assessed risk fell below the labeled minimum. This is the safety-relevant number, and CI requires it to be zero.
-- **Known mismatch (v0.1):** "Write unit tests for the invoice total calculator" routes DEEP because of the billing signal. A test-only change does not alter production behavior. This conservative error is left visible on purpose.
+- **Known mismatch:** "Refactor the report builder without changing its output, and add a column to the users table" routes DEEP, although it is labeled STANDARD: "refactor" counts as an architectural change and stacks with "add". The negation itself works there (the database signal after the comma is kept). The v0.1 mismatch for test-only tasks ("Write unit tests for the invoice total calculator") is fixed (not yet released).
+- **Labeling order:** cases are committed before the heuristics they test are changed, so labels are not fitted to output. When a heuristic is adjusted after seeing a result, the change is noted in the CHANGELOG.
 
 Use your own suite to calibrate Susanoo for a codebase. Write 20-50 representative tasks from your backlog, label them before looking at Susanoo's output, and tune `.susanoo/config.toml` until agreement is acceptable with no risk-floor violations.
 

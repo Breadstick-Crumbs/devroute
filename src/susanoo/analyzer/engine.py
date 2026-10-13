@@ -33,6 +33,104 @@ def _compile(pattern: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![\w-])(?:{pattern})(?![\w-])", re.IGNORECASE)
 
 
+@lru_cache(maxsize=64)
+def _compile_plain(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.IGNORECASE)
+
+
+# Words that start a new clause; a negated target never runs across them.
+_CLAUSE_WORDS = "and|but|then|or|plus|we|you|when|while|so|except|until|before|after|which|that"
+
+
+def negation_patterns(negation: dict[str, Any]) -> list[str]:
+    """``[assessment.negation] patterns`` with ``{target}`` and ``{location}`` expanded."""
+    location = "(?:" + "|".join(negation.get("locations", [])) + ")"
+    # A word may contain . / - only between letters, so a target never runs past a sentence end.
+    word = rf"(?!(?:{_CLAUSE_WORDS})(?![\w-]))\w+(?:[./-]\w+)*"
+    filler = int(negation.get("filler", 3))
+    target = rf"(?:(?:the|any|our|its|this|their|your) )?(?:{word} ){{0,{filler}}}{location}"
+    return [
+        p.replace("{target}", target).replace("{location}", location) for p in negation.get("patterns", [])
+    ]
+
+
+def negated_spans(
+    text: str, negation: dict[str, Any], keep_patterns: Iterable[str] = ()
+) -> list[tuple[int, int]]:
+    """Character spans of ``text`` that an instruction says to leave alone.
+
+    A span ends at its code-location noun, so text after it always counts. Spans that
+    contain a match of ``keep_patterns`` (destructive or production work) are never returned.
+    """
+    if not negation.get("locations"):
+        return []
+    keep = [(m.start(), m.end()) for p in keep_patterns for m in _compile(p).finditer(text)]
+    spans: list[tuple[int, int]] = []
+    for pattern in negation_patterns(negation):
+        for m in _compile(pattern).finditer(text):
+            if not any(start < m.end() and m.start() < end for start, end in keep):
+                spans.append((m.start(), m.end()))
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+_CONNECTOR_BEFORE = re.compile(r"(?:\s*[,;:])?\s*(?:(?<![\w-])(?:and|but|while)\s*)?$", re.IGNORECASE)
+_CONNECTOR_AFTER = re.compile(r"^\s*[,;:]?\s*")
+_SECOND_SENTENCE = re.compile(r"[.!?]\s+\S")
+
+
+def _negation_holds(
+    text: str, spans: list[tuple[int, int]], matched: set[str], negation: dict[str, Any]
+) -> bool:
+    """Whether ignoring ``spans`` is safe enough: see ``[assessment.negation]`` in defaults.toml.
+
+    Outside the spans, a ``requires_signals`` signal must match, no ``blocking_signals`` may
+    match, and, without each span's connecting comma or "and"/"but", the text must be a
+    single clause.
+    """
+    required = set(negation.get("requires_signals", []))
+    if required and not required & matched:
+        return False
+    if set(negation.get("blocking_signals", [])) & matched:
+        return False
+    pieces: list[str] = []
+    last = 0
+    for start, end in spans:
+        before = text[last:start]
+        if last:
+            before = _CONNECTOR_AFTER.sub("", before)
+        pieces.append(_CONNECTOR_BEFORE.sub("", before))
+        last = end
+    pieces.append(_CONNECTOR_AFTER.sub("", text[last:]))
+    rest = " ".join(p.strip() for p in pieces if p.strip()).rstrip(".!? ")
+    clause = negation.get("clause")
+    if clause and _compile_plain(clause).search(rest):
+        return False
+    return not _SECOND_SENTENCE.search(rest)
+
+
+def _mask(text: str, spans: Iterable[tuple[int, int]]) -> str:
+    """``text`` with the given spans blanked out (lengths and positions preserved)."""
+    chars = list(text)
+    for start, end in spans:
+        chars[start:end] = " " * (end - start)
+    return "".join(chars)
+
+
+def _caps_allowed(text: str, signal: dict[str, Any]) -> bool:
+    """Whether the whole task fits one of the signal's ``caps_only_if`` shapes (if it has any)."""
+    shapes = signal.get("caps_only_if")
+    if not shapes:
+        return True
+    task = text.strip().rstrip(".")
+    return any(_compile_plain(shape).fullmatch(task) for shape in shapes)
+
+
 @dataclass
 class _Contribution:
     signal: SignalMatch
@@ -83,7 +181,21 @@ def assess(task: str, config: Config, context: ProjectContext | None = None) -> 
         raise ValueError("task description is empty")
 
     signal_defs = {s["id"]: s for s in config.get("signals", [])}
-    matches = match_signals(text, signal_defs.values())
+    # Line breaks and bullets end a sentence, so nothing (negation, test shapes) runs across them.
+    lines = " ".join(re.sub(r"\s*[\r\n]+\s*(?:[-*•]\s+)?", ". ", task.strip()).split())
+    # An instruction to leave a code location alone does not count as signals, but only when
+    # the rest of the task is one clause holding a clearly trivial edit (see `_negation_holds`).
+    negation = config["assessment"].get("negation", {})
+    keep = [
+        p for sid in negation.get("keep_signals", []) for p in signal_defs.get(sid, {}).get("patterns", [])
+    ]
+    spans = negated_spans(lines, negation, keep)
+    scanned = _mask(lines, spans)
+    matches = match_signals(scanned, signal_defs.values())
+    if spans and not _negation_holds(lines, spans, {m.id for m in matches}, negation):
+        spans, scanned = [], lines
+        matches = match_signals(scanned, signal_defs.values())
+    negated = [lines[start:end].strip() for start, end in spans]
 
     levels: dict[str, int] = dict.fromkeys(DIMENSIONS, 0)
     reasons: dict[str, list[str]] = {d: [] for d in DIMENSIONS}
@@ -136,6 +248,12 @@ def assess(task: str, config: Config, context: ProjectContext | None = None) -> 
             continue
         if has_scope_signal:
             continue
+        blocked_by = set(signal_defs[match.id].get("caps_unless_signals", [])) & {m.id for m in matches}
+        if blocked_by or not _caps_allowed(lines, signal_defs[match.id]):
+            for dim, cap in caps.items():
+                if levels[dim] > cap:
+                    reasons[dim].append(f"not capped by {match.label}: the task is more than that")
+            continue
         for dim, cap in caps.items():
             if levels[dim] > cap:
                 levels[dim] = cap
@@ -158,6 +276,7 @@ def assess(task: str, config: Config, context: ProjectContext | None = None) -> 
         areas=areas,
         requirements=_requirements(matches, signal_defs),
         context_notes=context_notes,
+        negated=negated,
     )
 
 

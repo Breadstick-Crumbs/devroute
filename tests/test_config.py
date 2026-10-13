@@ -58,6 +58,10 @@ def test_merge_does_not_mutate_inputs():
         ),
         ('[routing]\ncritical_risk_floor = "turbo"\n', "critical_risk_floor"),
         ('[[signals]]\npatterns = ["x"]\n', "needs an 'id'"),
+        ("[assessment.negation]\npatterns = ['(unclosed']\n", "invalid regular expression"),
+        ("[assessment.negation]\nfiller = -1\n", "from 0 to 6"),
+        ("[assessment.negation]\nkeep_signals = ['nope']\n", "unknown signal"),
+        ('[[signals]]\nid = "bad"\npatterns = ["x"]\ncaps_only_if = "x"\n', "list of strings"),
     ],
 )
 def test_invalid_overrides_are_rejected(tmp_path: Path, snippet: str, message: str):

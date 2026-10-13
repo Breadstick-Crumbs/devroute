@@ -4,6 +4,19 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Negation in task assessment (#11): an instruction to leave a code location alone ("fix the footer typo without touching the payments module", "rename the helper without changing the database schema") no longer counts as signals, and is listed as "Ignored as out of scope". It is narrow on purpose: only instructions (not descriptions such as "the job is not changing the hash"), only with a code-location noun, ending at that noun or at a sentence or line end, never across destructive-data or production phrases, and only when the rest of the task is a single clause with a clearly trivial edit keyword (typo, wording, rename, docstring, ...) and no new functionality. "Without breaking payments" and "without touching the payment code, add idempotency keys" still count. Configurable in `[assessment.negation]`.
+- Test-only tasks (#11): a short, plain test request ("write unit tests for the invoice total calculator") gets security and data-integrity risk capped at low. A longer subject, a second clause, prepositions ("by", "in", "using", ...), "-ing" words, words such as production, deploy, real, or live, and a database, destructive-data, or production signal all keep the full risk. Irreversibility and external-dependency risk are never capped, so production and sandbox controls stay. Generic `caps_only_if` and `caps_unless_signals` support for signals, and a `trivial-edit` signal (no effects) that negation requires.
+- A property test checks 75 adversarial wordings from four rounds of independent review: the new logic must not lower their risk.
+- The sensitive-data signal also matches "SSNs".
+- Eight routing-suite cases for negation and test-only scope, committed before the heuristics changed.
+
+### Changed
+- The destructive-data signal also matches "delete all user records", "deleting ... records", and "migrate the data".
+- The suite case `tests-only-payments` gained `min_risk = "moderate"` after review, so test-only caps cannot silently remove external-service risk.
+- The small-change rename pattern also matches a name before the noun and `helper` / `constant` ("rename the getUser helper"). This was adjusted after seeing a new suite case route STANDARD.
+- Routing suite: 97.4% agreement (38/39), 0 risk-floor violations; the v0.1 test-only mismatch is fixed.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added
