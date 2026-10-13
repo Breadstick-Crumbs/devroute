@@ -96,6 +96,16 @@ store_task_text = false   # only a SHA-256 of the task is stored
 - `stacking_level`: two or more independent signals at or above this level raise a dimension one extra step.
 - `baseline`: starting levels per dimension (default: `implementation_complexity = 1`).
 
+### `[assessment.negation]`
+An instruction to leave a part of the code base alone is ignored when signals are matched, and shown as "Ignored as out of scope" in the assessment.
+- `patterns`: regexes for the instruction, such as `without (?:touching|changing|...) {target}`. `{target}` expands to an optional determiner, up to `filler` plain words (default 3; never a clause word such as "and" or "we"), and one of `locations`; `{location}` is a location alone. The ignored span ends at the location, so anything after it still counts.
+- `locations`: code-location nouns (module, file, page, schema, database, ...). Without a location nothing is ignored, so preservation requirements such as "without breaking payments" keep their risk.
+- `keep_signals`: signal ids that are never ignored, even inside an instruction (default: destructive data operations and production work).
+- `requires_signals`: one of these signals must still match outside the ignored text (default: `trivial-edit`, a signal with no effects that matches typo, wording, rename, docstring, formatting, ...). `blocking_signals` must not match (default: new functionality). `clause`: after removing the ignored text and its connecting comma or "and"/"but", the rest must not match this pattern or contain a second sentence. If any of these fails, nothing is ignored. These are keyword checks, which is why they are strict.
+- Line breaks and bullets are treated as sentence ends, and a target never runs past one.
+
+Keep this narrow. Ignoring text can only lower risk.
+
 ### `[complexity]`, `[risk]`, `[uncertainty]`
 - `weights` (complexity): relative weights of the complexity dimensions.
 - `dimensions`, `max_weight`, `critical_severe_dimensions` (risk): see [architecture](architecture/overview.md).
@@ -103,7 +113,7 @@ store_task_text = false   # only a SHA-256 of the task is stored
 - `low_confidence_penalty` (uncertainty): added when assessment confidence is low.
 
 ### `[[signals]]`
-`id`, `label`, `patterns` (required), `effects` (dimension → 0-3), `caps` (upper bounds, ignored if a `kind = "scope"` signal matched), `area` (feature area name), `kind`, `requires` / `recommends` (capability ids).
+`id`, `label`, `patterns` (required), `effects` (dimension → 0-3), `caps` (upper bounds, ignored if a `kind = "scope"` signal matched), `caps_only_if` (regexes; the caps apply only when the whole task matches one of them: the `tests-only` signal uses it so only a short, plain test request is capped, and "add tests and fix the bug" keeps its full risk), `caps_unless_signals` (signal ids that disable the caps when they match), `area` (feature area name), `kind`, `requires` / `recommends` (capability ids).
 
 ### `[[controls]]`
 `id`, `when = { dimension, min }`, `description`, `checkpoint`, `verification` (step ids forced to required).

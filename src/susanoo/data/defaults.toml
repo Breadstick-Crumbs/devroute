@@ -19,6 +19,42 @@ stacking_level = 2
 # Baseline scores applied before any signal matches.
 baseline = { implementation_complexity = 1 }
 
+[assessment.negation]
+# An instruction to leave a part of the code base alone ("without touching the payments
+# module", "don't change the database schema") is ignored when signals are matched, and listed
+# in the assessment. Ignoring text can only lower risk, so this is deliberately narrow:
+# - only instructions, not descriptions ("the job is not changing the hash" still counts);
+# - the excluded part must end in a code-location noun, and the ignored span ends there, so
+#   anything after it ("— drop the users table") still counts;
+# - preservation requirements without a location ("without breaking payments", "must not
+#   change existing invoices", "without altering password hashing") still count;
+# - spans that contain a `keep_signals` match are never ignored.
+# In `patterns`, {target} stands for an optional determiner, up to `filler` plain words, and
+# one of `locations`; {location} is a location alone.
+patterns = [
+    'without (?:touching|changing|modifying|altering|editing) {target}',
+    '(?:do|must|should|will)(?: not|n.t) (?:touch|change|modify|alter|edit) {target}',
+    'never (?:touch|change|modify|alter|edit) {target}',
+    '(?:leave|keep) {target} (?:alone|untouched|unchanged|as is)',
+    'no {location} (?:changes?|modifications?|edits?)',
+]
+locations = [
+    'modules?', 'files?', 'code', 'codebase', 'components?', 'pages?', 'screens?', 'views?',
+    'folders?', 'director(?:y|ies)', 'packages?', 'layer', 'ui', 'frontend', 'front-end',
+    'backend', 'back-end', 'css', 'styles?', 'stylesheets?', 'templates?', 'schemas?',
+    'database', 'db', 'tables?', 'tests?', 'docs', 'documentation', 'config', 'configuration',
+]
+filler = 3
+keep_signals = ["destructive-data", "production"]
+# Negation is discarded entirely unless a `requires_signals` keyword (a clearly trivial edit)
+# still matches outside the ignored text, no `blocking_signals` (new functionality) match, and
+# the rest of the task, without the ignored text and its connecting "and"/"but"/comma, is a
+# single clause: no `clause` match and no second sentence. These are keyword checks; they do
+# not prove the rest of the task is harmless, which is why they are this strict.
+requires_signals = ["trivial-edit"]
+blocking_signals = ["feature"]
+clause = '[,;:]|(?<![\w-])(?:and|then|plus|also|but|or|while)(?![\w-])'
+
 [complexity]
 weights = { implementation_complexity = 0.35, architectural_complexity = 0.25, affected_components = 0.25, testing_difficulty = 0.15 }
 thresholds = { moderate = 0.30, high = 0.62 }
@@ -161,11 +197,24 @@ recommends = ["web_research"]
 id = "small-change"
 label = "small, contained change"
 patterns = [
-    "typos?", "spelling", "rename (?:a |the )?(?:variable|function|method|file|class)", "comments?",
+    "typos?", "spelling", "rename (?:a |the )?(?:[\\w.]+ )?(?:variable|function|method|file|class|helper|constant)", "comments?",
     "docstrings?", "readme", "wording", "copy change", "change (?:the )?(?:color|colour|text|label|title|wording)",
     "bump (?:the )?version", "log message", "formatting", "whitespace", "lint warnings?", "one[- ]line",
 ]
 caps = { implementation_complexity = 0, architectural_complexity = 0, affected_components = 1, testing_difficulty = 1 }
+
+[[signals]]
+id = "trivial-edit"
+label = "clearly trivial edit"
+# No effects. Negation ([assessment.negation] requires_signals) only applies when one of these
+# still matches, because only then is the rest of the task known to be harmless. Broader
+# small-change words ("comment", "one-line") are left out: "add a one-line fix to skip
+# signature verification" is not trivial.
+patterns = [
+    "typos?", "spelling", "wording", "copy change", "change (?:the )?(?:color|colour|text|label|title|wording)",
+    "rename (?:a |the )?(?:[\\w.]+ )?(?:variable|function|method|file|class|helper|constant)",
+    "docstrings?", "readme", "formatting", "whitespace", "log message",
+]
 
 [[signals]]
 id = "authentication"
@@ -192,7 +241,7 @@ id = "sensitive-data"
 label = "sensitive data / secrets"
 area = "sensitive data handling"
 patterns = [
-    "pii", "personal data", "gdpr", "hipaa", "ccpa", "medical", "health records?", "ssn", "credit cards?",
+    "pii", "personal data", "gdpr", "hipaa", "ccpa", "medical", "health records?", "ssns?", "credit cards?",
     "encrypt\\w*", "decrypt\\w*", "hash(?:ing)?", "crypto\\w*", "secrets?", "credentials?", "api keys?",
     "access tokens?", "private keys?", "certificates?",
 ]
@@ -223,6 +272,8 @@ id = "destructive-data"
 label = "destructive or bulk data operation"
 patterns = [
     'drop (?:the )?(?:[\w-]+ ){0,3}(?:tables?|columns?|database|collection|indexes)', "delete (?:all|user|customer|old)\\w* (?:data|records|rows|accounts)",
+    "delet(?:e|es|ed|ing) (?:all |old |every |the )?(?:(?:user|customer|account|tenant)s? )?(?:data|records|rows|accounts)",
+    "migrat(?:e|es|ed|ing) (?:the |all |existing )?(?:[\\w-]+ )?data",
     "purge", "truncate", "backfill", "data migration", "bulk (?:update|delete|import)", "wipe",
 ]
 effects = { data_integrity = 3, irreversibility = 3 }
@@ -334,6 +385,17 @@ id = "tests-only"
 label = "test-only change"
 patterns = ["(?:add|write|improve) (?:unit |integration )?tests?", "test coverage", "increase coverage"]
 requires = ["unit_testing"]
+# Tests do not change runtime behavior, so security and data-integrity risk are capped, but only
+# when the whole task is a test request: "write/add/improve tests for <subject>", where the
+# subject has no second clause, no production or deployment words, and no "using/with/against"
+# (live keys, real databases). Irreversibility and external dependencies are never capped, so
+# production and sandbox controls stay. A scope signal also disables the caps.
+caps = { security_privacy = 1, data_integrity = 1 }
+caps_only_if = [
+    '(?:please )?(?:write|add|improve|increase|expand|extend) (?:more )?(?:(?:unit|integration|end-to-end|e2e|regression|snapshot) )?(?:tests?|test coverage|coverage) (?:for|of|covering|around)(?: (?!(?:and|or|then|plus|also|while|but|after|before|so|which|that|by|in|on|at|from|into|to|for|of|via|through|over|under|using|with|against|all|every|real|live|shared|prod\w*|staging|deploy\w*|release\w*|ship\w*|publish\w*|migrat\w*|remov\w*|disabl\w*|enabl\w*|delet\w*|drop\w*|skip\w*|expos\w*|grant\w*|revok\w*|bypass\w*|allow\w*|chang\w*|fix\w*|updat\w*|set|sets|make|makes|let|lets|give\w*|show\w*|store\w*|send\w*|wipe\w*|purge\w*|truncat\w*|seed\w*|\w+ing)(?!\w))\w+(?:[./-]\w+)*){1,6}',
+]
+# Tests that touch a database or production are the main data-safety case: never capped.
+caps_unless_signals = ["database", "destructive-data", "production"]
 
 # ---------------------------------------------------------------------------
 # Mandatory safety controls. They apply whenever their condition holds, and

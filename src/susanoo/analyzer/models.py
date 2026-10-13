@@ -72,6 +72,7 @@ class Assessment:
     areas: list[str]
     requirements: list[CapabilityRequirement]
     context_notes: list[str] = field(default_factory=list)
+    negated: list[str] = field(default_factory=list)  # phrases ignored as "do not change"
 
     def level(self, dimension: str) -> int:
         return self.dimensions[dimension].level

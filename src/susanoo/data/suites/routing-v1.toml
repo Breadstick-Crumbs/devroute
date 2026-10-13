@@ -173,3 +173,51 @@ id = "hyphenated-platform"
 task = "Build a multi-warehouse inventory platform with user authentication, Stripe billing, and an admin dashboard"
 expected = "deep"
 min_risk = "critical"
+
+# --- Negation and test-only scope (#11). Labeled before running the changed heuristics.
+
+[[cases]]
+id = "negated-schema-rename"
+task = "Rename the getUser helper to fetchUser without changing the database schema"
+expected = "fast"
+
+[[cases]]
+id = "negated-payments-typo"
+task = "Fix a typo in the footer text without touching the payments module"
+expected = "fast"
+
+[[cases]]
+id = "not-negated-breaking"
+task = "Fix the checkout total rounding without breaking existing payments"
+expected = "deep"
+min_risk = "high"
+
+[[cases]]
+id = "negation-clause-break"
+task = "Refactor the report builder without changing its output, and add a column to the users table"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "tests-only-payments"
+task = "Add integration tests for the Stripe refund flow"
+expected = "standard"
+# Added after review: test-only caps must not remove external-service risk (sandbox keys).
+min_risk = "moderate"
+
+[[cases]]
+id = "tests-and-fix-auth"
+task = "Write tests for the login rate limiter and fix the off-by-one in its window"
+expected = "standard"
+min_risk = "high"
+
+[[cases]]
+id = "tests-and-fix-billing"
+task = "Add tests for the billing proration logic and fix the proration rounding bug"
+expected = "deep"
+min_risk = "high"
+
+[[cases]]
+id = "coverage-utilities"
+task = "Increase test coverage for the string utilities"
+expected = "fast"

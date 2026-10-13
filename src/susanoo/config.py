@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import tomllib
 from importlib import resources
 from pathlib import Path
@@ -140,6 +141,18 @@ def _check_dimension_map(where: str, mapping: Any) -> None:
         _check_level(f"{where}.{dim}", level)
 
 
+def _check_patterns(where: str, patterns: Any) -> None:
+    _require(
+        isinstance(patterns, list) and all(isinstance(p, str) for p in patterns),
+        f"{where} must be a list of strings",
+    )
+    for pattern in patterns:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ConfigError(f"{where}: invalid regular expression {pattern!r} ({exc})") from exc
+
+
 def validate(config: Config) -> None:
     """Validate the merged configuration, raising ``ConfigError`` with a precise message."""
     _require(config.get("schema_version") == 1, "unsupported or missing schema_version (expected 1)")
@@ -182,6 +195,35 @@ def validate(config: Config) -> None:
         )
         _check_dimension_map(f"signal '{sid}' effects", signal.get("effects", {}))
         _check_dimension_map(f"signal '{sid}' caps", signal.get("caps", {}))
+        _check_patterns(f"signal '{sid}' caps_only_if", signal.get("caps_only_if", []))
+
+    negation = config.get("assessment", {}).get("negation", {})
+    for key in ("patterns", "locations"):
+        _check_patterns(f"[assessment.negation] {key}", negation.get(key, []))
+    filler = negation.get("filler", 3)
+    _require(
+        isinstance(filler, int) and not isinstance(filler, bool) and 0 <= filler <= 6,
+        "[assessment.negation] filler must be an integer from 0 to 6",
+    )
+    id_lists = {
+        f"[assessment.negation] {key}": negation.get(key, [])
+        for key in ("keep_signals", "requires_signals", "blocking_signals")
+    }
+    clause = negation.get("clause", "")
+    _require(isinstance(clause, str), "[assessment.negation] clause must be a string")
+    _check_patterns("[assessment.negation] clause", [clause] if clause else [])
+    for signal in config.get("signals", []):
+        id_lists[f"signal '{signal['id']}' caps_unless_signals"] = signal.get("caps_unless_signals", [])
+    for where, ids in id_lists.items():
+        _require(
+            isinstance(ids, list) and all(isinstance(i, str) for i in ids), f"{where} must be a list of ids"
+        )
+        for sid in ids:
+            _require(sid in seen, f"{where}: unknown signal '{sid}'")
+    # Patterns are complete only once {target} and {location} are expanded.
+    from susanoo.analyzer.engine import negation_patterns  # imported here: the engine imports config
+
+    _check_patterns("[assessment.negation] patterns (expanded)", negation_patterns(negation))
 
     for control in config.get("controls", []):
         cid = control.get("id", "?")
