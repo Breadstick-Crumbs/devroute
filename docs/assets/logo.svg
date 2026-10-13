@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64" role="img" aria-labelledby="t">
+<title id="t">Susanoo logo: an armored helmet with a lightning crest</title>
+<path d="M27 21 13 1l9 6 7 11z" fill="#c4b5fd"/>
+<path d="M37 21 51 1l-9 6-7 11z" fill="#a78bfa"/>
+<path d="M35.5 0 27 13.5h5.2L29 24l9.5-13.5h-5.3z" fill="#fbbf24"/>
+<path d="M9 45 4 53l28 8 28-8-5-8-23 6z" fill="#3b0f86"/>
+<path d="M11 37 5 46l27 7 27-7-6-9-21 6z" fill="#5b21b6"/>
+<path d="M13 32 1 25l2 15 10-1z" fill="#8b5cf6"/>
+<path d="M51 32 63 25l-2 15-10-1z" fill="#6d28d9"/>
+<path d="M32 15H24l-8 6-4 11h20z" fill="#8b5cf6"/>
+<path d="M32 15h8l8 6 4 11H32z" fill="#6d28d9"/>
+<path d="M24 15l-3 17M40 15l3 17M32 15v17" stroke="#2e1065" stroke-opacity="0.35" stroke-width="1"/>
+<path d="M7 31h50l-5 5.5H12z" fill="#ede9fe"/>
+<path d="M18 36.5h28L42 48l-10 5-10-5z" fill="#0b0a12"/>
+<path d="M21.5 40.5l7.5 1.7M42.5 40.5 35 42.2" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="square"/>
+</svg>

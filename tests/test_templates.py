@@ -66,3 +66,16 @@ def test_enforcement_variant_registers_hooks_in_frontmatter():
         assert f"susanoo hook {event}" not in enforced
     # Everything except the hook block is identical.
     assert enforced.replace(enforced[enforced.index("hooks:") : frontmatter_end + 1], "") == plain
+
+
+def test_readme_demo_matches_current_routing():
+    """docs/assets/demo.svg shows real `susanoo route` results; rerun the script when they change."""
+    import importlib.util
+
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("make_demo_svg", root / "scripts" / "make_demo_svg.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    current = (root / "docs" / "assets" / "demo.svg").read_text(encoding="utf-8")
+    assert module.build() == current, "docs/assets/demo.svg is stale; run `python scripts/make_demo_svg.py`"

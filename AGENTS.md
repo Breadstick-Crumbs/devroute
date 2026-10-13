@@ -25,7 +25,8 @@ susanoo eval                             # routing behavior on the reference sui
 - Discovery must stay read-only and must never read MCP `env`, `headers`, `args`, or URLs.
 - After editing anything in `src/susanoo/data/templates/`, run `susanoo init` in the repo root so the `.claude/` dogfood copies stay in sync (`tests/test_templates.py` enforces this).
 - Do not describe heuristic scores as validated, and do not claim unimplemented features exist. Update `docs/roadmap.md` when status changes.
-- Record user-visible changes in `CHANGELOG.md` under *Unreleased*.
+- Record user-visible changes in `CHANGELOG.md` under *Unreleased*. A release bumps the version in `pyproject.toml`, `src/susanoo/__init__.py`, and `CITATION.cff`.
+- `docs/assets/demo.svg` is generated from real routing output: rerun `python scripts/make_demo_svg.py` when routing changes (a test checks it). Brand assets (logo, banners, social card) come from `python scripts/make_brand_assets.py`; it needs Edge or Chrome to render PNGs.
 
 ## Layout
 

@@ -1,0 +1,29 @@
+# Susanoo
+
+> Susanoo (formerly DevRoute) is an open-source workflow layer for Claude Code. It reads a coding task, rates its complexity and risk, and routes it to a FAST, STANDARD, or DEEP workflow with mandatory safety controls. With `susanoo init --enforce`, Claude Code hooks deny file edits until the user approves the plan, stop Claude from approving its own plan, and block the end of a turn until required checks have passing, recorded evidence.
+
+Key facts:
+
+- Python 3.11+ CLI and library with zero runtime dependencies; Apache-2.0 license.
+- Deterministic: routing uses configurable keyword and rule heuristics in TOML, not a model. Every score lists the reasons that produced it.
+- Three workflows: FAST (trivial, low-risk changes), STANDARD (typical features: plan, approval, build, test, review), DEEP (high-risk or complex work: architecture first, explicit plan, isolated implementation, independent review, evidence-backed completion).
+- Complexity and risk are separate dimensions, so a small change to password hashing or billing is never treated as routine.
+- Mandatory safety controls (security review, data safety, irreversible-action confirmation, sandbox credentials) still apply when a user overrides the workflow.
+- Claude Code integration: a `/susanoo` skill, `susanoo-reviewer` and `susanoo-researcher` subagents, and optional hooks, either in the skill (default) or in `.claude/settings.local.json` (`--enforce-scope settings`, which also covers resumed sessions).
+- Reference suite: agreement with maintainer labels on 38 of 39 tasks (97.4%), with zero tasks rated below their labeled minimum risk. This measures consistency with stated expectations, not outcome quality.
+- Install: `git clone https://github.com/Breadstick-Crumbs/susanoo && cd susanoo && pip install -e .`, then `susanoo init --enforce` in a project and `/susanoo <task>` in Claude Code.
+
+## Docs
+
+- [README](https://github.com/Breadstick-Crumbs/susanoo/blob/main/README.md): overview, quick start, FAQ
+- [Workflow enforcement](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/enforcement.md): the hook gates, scopes, live test results, and limits
+- [Claude Code integration](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/claude-code.md): skill, subagents, permissions
+- [Configuration](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/configuration.md): signals, thresholds, controls, negation rules
+- [Architecture](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/architecture/overview.md): components and data flow
+- [Evaluation](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/evaluation.md): routing suite and what its numbers mean
+
+## Optional
+
+- [Roadmap](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/roadmap.md)
+- [Changelog](https://github.com/Breadstick-Crumbs/susanoo/blob/main/CHANGELOG.md)
+- [Security policy](https://github.com/Breadstick-Crumbs/susanoo/blob/main/SECURITY.md)
