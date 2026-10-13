@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
 ### Added
 - **Global auto mode** (#34): `susanoo init --global` makes Susanoo the default workflow in every project. Coding prompts are routed automatically by a `UserPromptSubmit` hook (questions and ambiguous prompts pass through; a leading `?` skips routing; follow-ups continue the current task, and an unrelated or stricter task closes it and starts its own), a playbook goes into `~/.claude/CLAUDE.md` (a rules section written once, plus a managed workflow block), and records live in `~/.susanoo/projects/` so nothing is added to repositories. `.susanoo-off` turns it off in one project. Global mode applies only inside git repositories, and the global hooks step aside in projects that run Susanoo hooks of their own (`--enforce-scope settings`); `susanoo doctor` warns about skill-scope projects, where gates could run twice. `--no-auto` keeps the gates without routing; `--uninstall` removes what was added. Hooks run with `python -P` so project files are never imported, and a fast entry point keeps them light.
 - **Autonomy-aware gates:** in Claude Code's acceptEdits, auto, dontAsk, and bypassPermissions modes, Susanoo adds no approvals or questions (`[enforcement] autonomous_modes`), and refuses `--accept-missing-evidence` instead of asking. Asking for autonomy in a task ("work autonomously", "don't ask", also mid-task) counts as approving its plan; the irreversible-action confirmation stays. The evidence gate stays in every mode.
