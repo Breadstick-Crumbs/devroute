@@ -10,7 +10,12 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from susanoo.discovery.executables import describe_location, resolve_executable
+from susanoo.discovery.executables import (
+    PROJECT_ENV_DIRS,
+    describe_location,
+    has_project_python_env,
+    resolve_executable,
+)
 from susanoo.discovery.models import Finding, Inventory, Status
 from susanoo.discovery.project import BUILD_FILES, ProjectFacts, normalize_package, scan_project
 from susanoo.registry import Registry, ToolSpec
@@ -146,8 +151,45 @@ def detect_tool(
         evidence=evidence,
         scope="project" if configured else "system",
         tool_kind=tool.kind,
-        detail={"registry_id": tool.id},
+        detail={"registry_id": tool.id, "python_declared": bool(declared_py)},
     )
+
+
+def detect_environment(
+    registry: Registry, facts: ProjectFacts, lookup: Callable[[str], str | None]
+) -> Finding | None:
+    """The environment manager that owns this project's virtualenv, when it lives outside the project.
+
+    Without one, project tools resolve through the project's own .venv or PATH as usual.
+    """
+    if has_project_python_env(facts.root):
+        return None
+    for spec in registry.environments:
+        if any(facts.has_file(m) for m in spec.unless_markers):
+            continue
+        evidence = [f"{m} present" for m in spec.markers if facts.has_file(m)]
+        evidence += [
+            f"[tool.{s}] in pyproject.toml" for s in spec.pyproject_tools if s in facts.pyproject_tools
+        ]
+        if not evidence:
+            continue
+        evidence.append("no in-project environment (" + ", ".join(PROJECT_ENV_DIRS) + ")")
+        path = lookup(spec.binary)
+        if path:
+            evidence.append(f"'{spec.binary}' found {describe_location(path, facts.root)}")
+            status = Status.INSTALLED_UNVERIFIED
+        else:
+            evidence.append(f"'{spec.binary}' not found on PATH")
+            status = Status.CONFIGURED_INACCESSIBLE
+        return Finding(
+            id=f"environment:{spec.id}",
+            kind="environment",
+            name=spec.name,
+            status=status,
+            evidence=evidence,
+            detail={"binary": spec.binary, "run_prefix": list(spec.run_prefix)},
+        )
+    return None
 
 
 def build_inventory(
@@ -208,6 +250,10 @@ def build_inventory(
         if name not in cache:
             cache[name] = resolve_executable(name, root)
         return cache[name]
+
+    environment = detect_environment(registry, facts, cached_lookup)
+    if environment is not None:
+        findings.append(environment)
 
     for tool in registry.tools.values():
         finding = detect_tool(tool, facts, environ, verify, which=cached_lookup)

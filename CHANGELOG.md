@@ -10,6 +10,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - With automatic routing, `susanoo route --profile fast|standard` refuses a profile below Susanoo's recommendation unless the user's latest message named it, so Claude asks the user instead. `route` and `raise` no longer accept abbreviated options.
 - `scripts/live_auto_check.py --only unrouted`: live check that Claude routes a problem report the hook does not route.
 
+### Fixed
+- Python checks in Poetry and Pipenv projects no longer run with the wrong interpreter. These managers keep the virtualenv outside the project by default, so `pytest`, `ruff`, `mypy` and other Python tools were planned (and, with `verify --execute`, run) from PATH without the project's dependencies, and the result was recorded as executed evidence. When such a project has no in-project environment (`.venv`, `venv`, `env`) and no `uv.lock`, Python tools and scripts (including the Django migration check) now run through `poetry run` / `pipenv run`, and tools declared in the project's dependencies (`pyproject.toml`, requirements files, and now `Pipfile` `[packages]` / `[dev-packages]`) count as installed even though they are not on PATH. If the manager is not on PATH, those checks are not run by Susanoo: a tool found on PATH becomes a manual step, a tool found nowhere stays a gap, and either way the reason is shown in the brief, `susanoo verify` and the skipped evidence note (and, for manual steps, the auto-mode brief); a runnable alternative such as `make test` is preferred. Managers are data (`[[environments]]` in the packaged `tools.toml`); `susanoo inventory` lists the detected one. Wrapped commands need the Poetry or Pipenv environment: `poetry run` / `pipenv run` may create it during `verify --execute`. The managers resolve the tool inside their environment first; a tool that is not installed there still falls back to PATH.
+
 ## [0.6.0] - 2026-10-13
 
 ### Added
@@ -48,21 +51,16 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [0.3.0] - 2026-10-13
 
 ### Changed
-- **DevRoute is now Susanoo.** The project, Python package (`import susanoo`), command (`susanoo`), skill (`/susanoo`), subagents (`susanoo-reviewer`, `susanoo-researcher`), state directory (`.susanoo/`), hook commands (`susanoo hook ...`), frontmatter key (`susanoo-capabilities`), and environment variable (`SUSANOO_DEBUG`) were renamed. No `devroute` alias is kept.
-- New record ids start with `su-`. Existing `dr-` records keep working.
-
-### Added
-- `susanoo init` migrates a DevRoute installation: it moves `.devroute/` to `.susanoo/` with records and configuration, keeps the enforce choice, and removes the old `/devroute` skill and `devroute-*` subagents only if they are unmodified. If `.susanoo/` already exists (a teammate committed the migration), local DevRoute records are merged into it. `susanoo init --uninstall` also removes the old files. `susanoo doctor` warns when a DevRoute installation is present, or when a settings file still runs `devroute hook` (the compaction snippet from `docs/enforcement.md`; change it to `susanoo hook`).
-- Skills and subagents that declare capabilities with the v0.2 `devroute-capabilities` key are still recognized.
+- Renamed to Susanoo: the Python package (`import susanoo`), command, skill (`/susanoo`), subagents, state directory (`.susanoo/`), hook commands, frontmatter key (`susanoo-capabilities`), and environment variable (`SUSANOO_DEBUG`). New record ids start with `su-`.
 
 ## [0.2.0] - 2026-10-13
 
 ### Added
-- Opt-in workflow enforcement (`devroute init --enforce`): hooks registered by the `/devroute` skill add a plan-approval gate for edits, approval integrity, shell-write and irreversible-action confirmation, and an evidence gate on `Stop` with loop protection. Routes are bound to the Claude Code session that created them. Route re-injection after compaction is available through a settings snippet, because Claude Code does not fire compaction hooks declared in a skill. Sessions resumed in a new process are not enforced; see `docs/enforcement.md`.
+- Opt-in workflow enforcement (`susanoo init --enforce`): hooks registered by the `/susanoo` skill add a plan-approval gate for edits, approval integrity, shell-write and irreversible-action confirmation, and an evidence gate on `Stop` with loop protection. Routes are bound to the Claude Code session that created them. Route re-injection after compaction is available through a settings snippet, because Claude Code does not fire compaction hooks declared in a skill. Sessions resumed in a new process are not enforced; see `docs/enforcement.md`.
 - `scripts/live_enforcement_check.py`: a manual check of the gates against a real headless Claude Code session. Results for Claude Code 2.1.296 are in `docs/enforcement.md`.
-- `devroute approve` and `devroute hook <event>` commands.
+- `susanoo approve` and `susanoo hook <event>` commands.
 - `code_navigation` capability with repository-size-aware selection between built-in search and code-graph tools (MCP servers, skills, subagents), plus registry entries for code-graph MCP servers and ast-grep.
-- `devroute-capabilities` frontmatter key so skills and subagents can declare their capabilities instead of relying on keyword inference.
+- `susanoo-capabilities` frontmatter key so skills and subagents can declare their capabilities instead of relying on keyword inference.
 
 ### Changed
 - An agent can no longer record an outcome as `completed` while required verification lacks passing evidence (unless `--accept-missing-evidence`, which enforcement mode always confirms with the user).
@@ -78,8 +76,8 @@ First public release: a working vertical slice of the framework.
 - Capability Intelligence Engine: read-only discovery of languages, manifests, tools, Claude Code skills, commands, subagents, MCP servers, and plugins with five-state statuses; opt-in version verification.
 - Tool Selection Engine with a 46-entry registry and a preference for simple, low-context integrations.
 - Capability Research Engine: gap analysis, the `ResearchProvider` interface, and a local registry provider with security notes.
-- Verification Intelligence: risk-scaled verification plans, `devroute verify --execute` with machine-readable evidence, and separation of executed from reported results.
+- Verification Intelligence: risk-scaled verification plans, `susanoo verify --execute` with machine-readable evidence, and separation of executed from reported results.
 - Evaluation & Learning Engine: local JSONL records, per-profile summaries, sample-gated recommendations, and a deterministic routing evaluation suite (31 cases).
 - CLI commands: `doctor`, `inventory`, `assess`, `route`, `init`, `report`, `verify`, `evidence`, `outcome`, `research`, `eval`.
-- Claude Code integration: the `/devroute` skill and the `devroute-reviewer` and `devroute-researcher` subagents, with a manifest-based safe installer and uninstaller.
+- Claude Code integration: the `/susanoo` skill and the `susanoo-reviewer` and `susanoo-researcher` subagents, with a manifest-based safe installer and uninstaller.
 - Documentation, examples, and CI (lint, type check, tests on Linux, macOS, and Windows, security checks).

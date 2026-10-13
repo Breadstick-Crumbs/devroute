@@ -39,18 +39,6 @@ from susanoo.adapters.claude_code.installer import (
     skill_template,
     update_manifest,
 )
-from susanoo.adapters.claude_code.legacy import (
-    MigrationError,
-    legacy_present,
-    migrate_state,
-    migrated_manifest,
-    plan_legacy_files,
-    plan_migration,
-    planned_enforce,
-    remove_legacy_files,
-    stale_hook_settings,
-    state_sources,
-)
 from susanoo.adapters.claude_code.settings_hooks import (
     GATE_EVENTS,
     SETTINGS_FILE,
@@ -338,34 +326,20 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
     args = ctx.args
     if args.global_install:
         return _init_global(ctx)
-    notes: list[str] = []
     manifest = read_manifest(ctx.root)
     managed = manifest.get("settings_managed") is True
     created = manifest.get("settings_created") is True
-    migration: list[FileAction] = []
     if args.uninstall:
         own = plan_uninstall(ctx.root)
-        legacy = plan_legacy_files(ctx.root)
         settings = plan_settings(ctx.root, want=False, managed=managed, created=created)
         _refuse_settings_conflict(settings, want=False)
         if not args.dry_run:
             # Settings first, while the manifest that records Susanoo's ownership still exists.
             settings = _apply_settings(ctx.root, want=False, managed=managed, created=created)[0]
             apply_uninstall(ctx.root, own)
-            remove_legacy_files(ctx.root, legacy)
-        actions = own + legacy + ([settings] if settings else [])
+        actions = own + ([settings] if settings else [])
     else:
-        # A DevRoute installation is migrated in two phases: its state first (so records and the
-        # enforce choice carry over), its old skill and subagents only after the new ones exist.
-        migration = plan_migration(ctx.root)
-        moving = any(a.action == "migrate" for a in migration)
-        enforce = (
-            True
-            if args.enforce
-            else False
-            if args.no_enforce
-            else planned_enforce(ctx.root, migration, enforcement_enabled(ctx.root))
-        )
+        enforce = True if args.enforce else False if args.no_enforce else enforcement_enabled(ctx.root)
         scope = args.enforce_scope or enforcement_scope(ctx.root)
         if args.enforce_scope and not enforce:
             ctx.err.write("note: --enforce-scope was saved; it takes effect with --enforce\n")
@@ -390,22 +364,10 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 "Hooks will fail open (Claude Code shows a hook error) until it is.\n"
             )
         if args.dry_run:
-            # Preview the install as it will look once .devroute/ has moved.
             install = plan_install(
-                ctx.root,
-                force=args.force,
-                with_agents=not args.no_agents,
-                enforce=skill_hooks,
-                manifest_files=migrated_manifest(ctx.root)["files"] if moving else None,
-                read_from=state_sources(ctx.root) if moving else None,
+                ctx.root, force=args.force, with_agents=not args.no_agents, enforce=skill_hooks
             )
         else:
-            try:
-                note = migrate_state(ctx.root, migration)
-            except MigrationError as exc:
-                raise CLIError(str(exc)) from exc
-            if note:
-                notes.append(note)
             # Settings first: if they cannot be written, the skill and manifest stay as they were.
             settings, created = _apply_settings(
                 ctx.root, want=want_settings, managed=managed, created=created, keep=keep, hooks=hooks
@@ -421,8 +383,7 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 ctx.root, force=args.force, with_agents=not args.no_agents, enforce=skill_hooks
             )
             apply_install(ctx.root, install, with_agents=not args.no_agents, enforce=enforce, scope=scope)
-            remove_legacy_files(ctx.root, migration)
-        actions = migration + install + ([settings] if settings else [])
+        actions = install + ([settings] if settings else [])
     if args.json:
         ctx.emit_json({"root": str(ctx.root), "dry_run": args.dry_run, "actions": actions_to_dicts(actions)})
         return EXIT_OK
@@ -437,10 +398,6 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
     conflicts = [a for a in actions if a.action == "conflict" and a.path != SETTINGS_FILE]
     if conflicts:
         lines.append(f"{len(conflicts)} file(s) left untouched because they differ from Susanoo's version.")
-    if any(a.action in ("migrate", "merge", "remove") for a in migration):
-        verb = "Will migrate" if args.dry_run else "Migrated"
-        lines.append(f"{verb} the DevRoute installation; DevRoute is now Susanoo.")
-    lines += notes
     if args.uninstall:
         if state_dir(ctx.root).is_dir():
             lines.append(
@@ -644,18 +601,6 @@ def cmd_doctor(ctx: Context, stdin: TextIO) -> int:
             else "; prompts are not routed automatically"
         )
         check("global install", "ok", detail)
-    if legacy_present(ctx.root):
-        check(
-            "DevRoute installation",
-            "warn",
-            "found .devroute/ or the old /devroute skill; run `susanoo init` to migrate it",
-        )
-    for settings in stale_hook_settings(ctx.root, Path.home()):
-        check(
-            "DevRoute hook in settings",
-            "warn",
-            f"{settings} still runs `devroute hook`; change it to `susanoo hook`",
-        )
     skill = ctx.root / ".claude" / "skills" / "susanoo" / "SKILL.md"
     if not skill.is_file():
         check("/susanoo skill", "warn", "not installed; run `susanoo init`")
@@ -763,6 +708,8 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
             for s in plan.verification.steps:
                 how = " ".join(s.command) if s.command else s.mode
                 lines.append(f"  [{s.level:<11}] {s.id:<18} {s.mode:<11} {how}")
+                if s.withheld:
+                    lines.append(f"  {'':<13} {s.withheld}")
             lines += ["", "Nothing was run. Add --execute to run the 'ready' steps and record evidence."]
             ctx.emit("\n".join(lines))
         return EXIT_OK

@@ -11,12 +11,12 @@ from tests.conftest import write
 
 def test_store_roundtrip_and_resolution(tmp_path: Path):
     store = RecordStore(tmp_path)
-    store.append("routes", {"id": "dr-20260101-000000-aaaa", "profile": "fast"})
-    store.append("routes", {"id": "dr-20260102-000000-bbbb", "profile": "deep"})
+    store.append("routes", {"id": "su-20260101-000000-aaaa", "profile": "fast"})
+    store.append("routes", {"id": "su-20260102-000000-bbbb", "profile": "deep"})
     assert store.resolve_route("latest")["profile"] == "deep"
-    assert store.resolve_route("dr-20260101")["profile"] == "fast"
+    assert store.resolve_route("su-20260101")["profile"] == "fast"
     with pytest.raises(RecordError, match="matches 2"):
-        store.resolve_route("dr-2026")
+        store.resolve_route("su-2026")
     with pytest.raises(RecordError, match="no route record"):
         store.resolve_route("nope")
 

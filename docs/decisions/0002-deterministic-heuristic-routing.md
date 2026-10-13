@@ -1,7 +1,5 @@
 # 0002: Deterministic, configurable heuristics for assessment and routing
 
-> Written when the project was named DevRoute; names were updated when it was renamed to Susanoo (v0.3).
-
 **Status:** accepted (v0.1). Extended by [0006](0006-model-judgment-above-a-keyword-floor.md): with automatic routing, Claude's judgment applies above the keyword result.
 
 ## Context

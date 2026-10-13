@@ -172,6 +172,8 @@ def _execute_step(
 ) -> Evidence:
     if step.mode != "ready" or not step.command:
         reason = "performed by the agent or a person" if step.mode == "manual" else "no usable tool"
+        if step.withheld:
+            reason += f" ({step.withheld})"
         return Evidence(
             step=step.id,
             capability=step.capability,

@@ -1,7 +1,5 @@
 # 0001: Python standard library only at runtime
 
-> Written when the project was named DevRoute; names were updated when it was renamed to Susanoo (v0.3).
-
 **Status:** accepted (v0.1)
 
 ## Context

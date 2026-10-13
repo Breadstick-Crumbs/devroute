@@ -160,7 +160,11 @@ def compact_brief(
     if required:
         lines.append(
             "Required checks: "
-            + "; ".join(s.title + (f" (`{' '.join(s.command)}`)" if s.command else "") for s in required)
+            + "; ".join(
+                s.title
+                + (f" (`{' '.join(s.command)}`)" if s.command else f" ({s.withheld})" if s.withheld else "")
+                for s in required
+            )
             + "."
         )
     if hands_off or d.profile not in ("standard", "deep"):

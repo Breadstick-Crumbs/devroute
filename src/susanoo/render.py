@@ -141,6 +141,8 @@ def render_brief(plan: TaskPlan) -> str:
             how = f"{s.tool} (performed by the agent or a person)"
         else:
             how = "no usable tool - gap"
+        if s.withheld:
+            how += f" - {s.withheld}"
         lines.append(f"- [{s.level}] {s.title}: {how}")
     lines += [
         "",
@@ -178,6 +180,7 @@ def render_inventory(inv: Inventory) -> str:
         lines += [f"Languages: {langs}", ""]
     groups = [
         ("Build systems", "build_system"),
+        ("Python environment manager", "environment"),
         ("Version control", "vcs"),
         ("Tools", "tool"),
         ("Claude Code skills", "skill"),
@@ -188,6 +191,8 @@ def render_inventory(inv: Inventory) -> str:
     ]
     for title, kind in groups:
         items = inv.by_kind(kind)
+        if not items and kind == "environment":
+            continue  # only shown when the project's virtualenv lives outside it
         lines.append(f"## {title}")
         if not items:
             lines += ["", "- none found", ""]

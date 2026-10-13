@@ -27,6 +27,8 @@ class VerificationStep:
     # unavailable: no usable tool; this is a capability gap
     mode: str = "unavailable"
     notes: list[str] = field(default_factory=list)
+    # Why a tool with a run command is manual here (e.g. its Python environment is not reachable).
+    withheld: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -121,11 +123,13 @@ def build_plan(
             step.tool = rec.selected.name
             step.command = rec.selected.command
             step.mode = "ready" if rec.selected.command else "manual"
+            step.withheld = rec.selected.command_withheld
             if rule["capability"] == "code_review":
                 step.notes.append(
                     "Delegate to the susanoo-reviewer subagent (separate context) or a human reviewer."
                 )
         elif rec is not None and rec.suggestion is not None:
+            step.withheld = rec.suggestion.command_withheld
             step.notes.append(
                 f"No usable tool; option: {rec.suggestion.name} ({rec.suggestion.status.value})."
             )

@@ -81,7 +81,6 @@ SKIP_DIRS = frozenset(
         ".terraform",
         "site-packages",
         ".susanoo",
-        ".devroute",
         ".claude",
     }
 )
@@ -237,6 +236,20 @@ def _parse_requirements(facts: ProjectFacts) -> None:
                 facts.python_packages.add(name)
 
 
+def _parse_pipfile(facts: ProjectFacts) -> None:
+    path = facts.root / "Pipfile"
+    text = _read_text(path, facts) if path.is_file() else None
+    if text is None:
+        return
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        facts.warnings.append(f"Pipfile: invalid TOML ({exc})")
+        return
+    for section in ("packages", "dev-packages"):
+        facts.python_packages.update(normalize_package(name) for name in _table(data.get(section)))
+
+
 def _parse_package_json(facts: ProjectFacts) -> None:
     path = facts.root / "package.json"
     text = _read_text(path, facts) if path.is_file() else None
@@ -305,6 +318,7 @@ def scan_project(root: Path) -> ProjectFacts:
     facts.build_files = [name for name in BUILD_FILES if (root / name).is_file()]
     _parse_pyproject(facts)
     _parse_requirements(facts)
+    _parse_pipfile(facts)
     _parse_package_json(facts)
     _parse_makefile(facts)
     _parse_git(facts)
