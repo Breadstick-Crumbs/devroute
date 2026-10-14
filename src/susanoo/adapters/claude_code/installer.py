@@ -1,7 +1,7 @@
 """Safe project installation of the Susanoo Claude Code integration.
 
 Rules:
-- Only Susanoo-owned files are written: the /susanoo skill, susanoo-* subagents,
+- Only Susanoo-owned files are written: the /susanoo skill, the taste-ui skill, susanoo-* subagents,
   and files under .susanoo/. CLAUDE.md and .mcp.json are never touched; settings only with the
   opt-in settings enforcement scope (see settings_hooks.py), and then only Susanoo's own entries.
 - Existing files are never overwritten unless they are unmodified Susanoo installs
@@ -71,13 +71,20 @@ def skill_template(enforce: bool = False) -> str:
 SCOPES = ("skill", "settings")
 
 
-def targets(with_agents: bool = True, enforce: bool = False) -> list[Target]:
+def taste_skill_template() -> str:
+    """The taste-ui skill: how Claude makes visual decisions for UI work (see susanoo.taste)."""
+    return read_data_text("templates", "skills", "taste-ui", "SKILL.md")
+
+
+def targets(with_agents: bool = True, enforce: bool = False, with_taste: bool = True) -> list[Target]:
     """Files to install; ``enforce`` puts the hooks in the skill (the default "skill" scope)."""
     items = [
         Target(".claude/skills/susanoo/SKILL.md", skill_template(enforce)),
         Target(".susanoo/config.toml", read_data_text("templates", "config.toml")),
         Target(".susanoo/.gitignore", GITIGNORE),
     ]
+    if with_taste:
+        items.append(Target(".claude/skills/taste-ui/SKILL.md", taste_skill_template(), "taste"))
     if with_agents:
         for name in ("susanoo-reviewer", "susanoo-researcher"):
             items.append(
@@ -139,11 +146,12 @@ def plan_install(
     force: bool = False,
     with_agents: bool = True,
     enforce: bool = False,
+    with_taste: bool = True,
 ) -> list[FileAction]:
     """Plan an install."""
     manifest = read_manifest(root)["files"]
     actions: list[FileAction] = []
-    for target in targets(with_agents, enforce):
+    for target in targets(with_agents, enforce, with_taste):
         current = _read(root / target.path)
         if current is None:
             actions.append(FileAction(target.path, "create"))
@@ -186,8 +194,9 @@ def apply_install(
     with_agents: bool = True,
     enforce: bool = False,
     scope: str = "skill",
+    with_taste: bool = True,
 ) -> list[FileAction]:
-    content = {t.path: t.content for t in targets(with_agents, enforce and scope == "skill")}
+    content = {t.path: t.content for t in targets(with_agents, enforce and scope == "skill", with_taste)}
     manifest = read_manifest(root)
     files: dict[str, str] = manifest["files"]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
