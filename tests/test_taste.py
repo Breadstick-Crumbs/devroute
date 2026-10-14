@@ -284,3 +284,13 @@ def test_tools_under_the_home_folder_are_found_when_running_from_home(
     monkeypatch.chdir(home_dir)
     monkeypatch.setenv("PATH", str(home_dir / "tools" / "bin"))
     assert taste.which_outside_project("node") == str((home_dir / "tools" / "bin" / name).resolve())
+
+
+def test_motion_probe_ships_and_capture_uses_it() -> None:
+    probe = (taste.SCRIPTS / "motion-probe.js").read_text(encoding="utf-8")
+    capture = (taste.SCRIPTS / "capture.mjs").read_text(encoding="utf-8")
+    assert "window.__susanooMotion" in probe and "motion-probe.js" in capture
+    # The mobile menu probe must never click a real link (it would navigate away from the site).
+    assert "Never a real link" in probe
+    # The Python timeout must outlast the script's own watchdog, so the script can always clean up.
+    assert taste.TIMEOUTS["capture.mjs"] > 3500

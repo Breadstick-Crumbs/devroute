@@ -64,11 +64,11 @@ Susanoo's project configuration cannot change it, and relative paths are rejecte
 
 ```bash
 susanoo taste path                                        # where the profile is, and what it contains
-susanoo taste capture wispr=https://wisprflow.ai/ ...     # computed tokens + screenshots per site
+susanoo taste capture wispr=https://wisprflow.ai/ ...     # tokens, screenshots, navbar/scroll/hover motion, mobile menu
 susanoo taste shoot index.html shots/                     # 375, 768 and 1280 px screenshots + page errors
 ```
 
-`capture` and `shoot` need Node.js 22+ and Chrome, Chromium, or Edge. To use another browser, set `SUSANOO_BROWSER` to its absolute path. Node and the browser are never taken from the current folder, and on Windows only `.exe` files count. `capture` hides cookie and consent pop-ups for its screenshots; it never accepts them. Without a profile, the skill uses its built-in slop blacklist and offers to build a profile from 5–10 sites you like.
+`capture` and `shoot` need Node.js 22+ and Chrome, Chromium, or Edge. To use another browser, set `SUSANOO_BROWSER` to its absolute path. Node and the browser are never taken from the current folder, and on Windows only `.exe` files count. `capture` hides cookie and consent pop-ups for its screenshots; it never accepts them. For each site, `capture` writes `motion.json`, a scroll frame strip, and mobile screenshots. `motion.json` covers how the navbar behaves on scroll, which elements pin, move at parallax speed or animate, what changes on hover, how the mobile menu opens, and the motion libraries' own settings. Without a profile, the skill uses its built-in slop blacklist and offers to build a profile from 5–10 sites you like.
 
 ## Usage
 

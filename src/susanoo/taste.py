@@ -32,8 +32,8 @@ SCRIPTS = Path(__file__).resolve().parent / "data" / "taste"
 PROFILE = "TASTE.md"
 TIMEOUTS = {
     "shoot.mjs": 240,
-    "capture.mjs": 1800,
-}  # seconds; the scripts stop themselves sooner (180 s; 30 + 25 s per site, at most 1700 s)
+    "capture.mjs": 3600,
+}  # seconds; the scripts stop themselves sooner (180 s; 30 + 75 s per site, at most 3500 s)
 SLUG = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(10)), *(f"lpt{i}" for i in range(10))}
 
