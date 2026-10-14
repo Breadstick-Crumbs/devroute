@@ -85,6 +85,33 @@ Missing capabilities:
 
 Susanoo never installs tools itself; adopting any of these needs your approval.
 
+## UI
+
+UI domain: Dashboard or data-heavy app (the task mentions "dashboard"; set [ui] domain to change). This is a heuristic, not a verified classification.
+
+UI baseline (every UI change):
+
+- Text contrast at least 4.5:1 (3:1 for large text and for UI components and focus indicators); WCAG 2.2 AA 1.4.3 and 1.4.11.
+- Pointer targets at least 24x24 CSS px, or enough space around them (WCAG 2.2 AA 2.5.8); 44x44 is the better aim.
+- Everything works with the keyboard alone, in a sensible order, with a visible focus indicator that sticky headers or banners never fully hide (2.1.1, 2.4.7, 2.4.11).
+- Empty, loading, and error states, plus long content and very long words.
+- Check at 375, 768, and 1280 CSS px wide (common widths, not a standard).
+- Use the project's design tokens and components rather than one-off values.
+
+Sources: WCAG 2.2 level AA (W3C); the widths are conventions.
+
+Dashboard or data-heavy app:
+
+- Summary first, then drill down; a few headline metrics (practitioners suggest about 3-5).
+- Tables: sticky header, key column pinned, visible sort state, keyboard row selection.
+- Comfortable and compact density where people scan many rows.
+- Consistent number formats and units; numbers right-aligned.
+- Charts label axes and units and never rely on color alone (WCAG 1.4.1).
+- Every widget has loading, empty, and error states; large data sets are paginated or virtualized.
+- Filter and sort state stays visible.
+
+Sources: Practitioner guidance (for example Stephanie Walter on complex data tables, UX Studio on dashboards), not peer-reviewed research; WCAG for color.
+
 ## Proposed steps
 
 1. **Requirements and architecture analysis** **[checkpoint]** - Establish requirements, constraints, and the architecture. Surface open questions instead of guessing. Navigation: Claude Code Grep / Glob / Read.

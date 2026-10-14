@@ -1,6 +1,6 @@
 # 0008: UI and UX work
 
-**Status:** accepted, partly implemented (v0.8, unreleased): the UI reference suite, the suite's `controls` field, and the UI checks (visual check, accessibility scan, visual regression). UI domains, design context, and the routing changes are not built yet; [roadmap](../roadmap.md) tracks each part. Works within [0005](0005-safety-controls-independent-of-profile.md), [0006](0006-model-judgment-above-a-keyword-floor.md), and [0007](0007-hands-off-by-default.md).
+**Status:** accepted, partly implemented (v0.8, unreleased): the UI reference suite, the suite's `controls` field, the UI checks (visual check, accessibility scan, visual regression, website performance budget), and UI domains with their checklists. Design context and the routing changes are not built yet; [roadmap](../roadmap.md) tracks each part. Works within [0005](0005-safety-controls-independent-of-profile.md), [0006](0006-model-judgment-above-a-keyword-floor.md), and [0007](0007-hands-off-by-default.md).
 
 ## Context
 
@@ -33,12 +33,12 @@ Option 3. Susanoo sizes UI tasks, requires and records UI checks, and gives doma
 - **Browser tests** keep their current rule.
 - **Pick a UI domain** (`website`, `ecommerce`, `dashboard`, `mobile`, `component-library`) for a 5-8 item checklist and the checks it emphasizes, in this order:
   1. `[ui] domain` in the project or user configuration;
-  2. words in the task ("landing page", "dashboard", "checkout", "screen");
-  3. project detection, read-only: dependencies such as `@tanstack/react-table` or `recharts` (dashboard), `react-native` or `expo` (mobile), `@shopify/*` (ecommerce), Storybook without app routes (component library);
+  2. words in the task ("landing page", "dashboard", "checkout", "React Native"; "for mobile" alone means a responsive page, not a mobile app);
+  3. project detection, read-only: dependencies such as `@tanstack/react-table` or `recharts` (dashboard), `react-native` or `expo` (mobile), `@shopify/*` (ecommerce), Storybook without an app framework such as Next.js or React Router (component library);
   4. none: a generic UI checklist only.
 
-  The brief always says which domain was chosen and why ("UI domain: dashboard (detected from @tanstack/react-table; set [ui] domain to change)"). It is a heuristic and is never described as validated.
-- **A universal baseline** in every UI brief: WCAG 2.2 AA essentials (contrast at least 4.5:1 for body text, pointer targets at least 24×24 CSS px, focus never fully hidden behind sticky content, full keyboard operation with a visible focus indicator), the empty, loading, and error states plus long content, and the breakpoints above. The compact auto-mode brief gets one line, not the full list.
+  Domains are tried from the most specific (mobile, component library, ecommerce, dashboard) to the most general (website), and `[ui] domain = "none"` keeps only the baseline. Domains, their words, detection hints, and checklists are data in `ui_domains.toml`. The brief always says which domain was chosen and why ("UI domain: dashboard (detected from @tanstack/react-table; set [ui] domain to change)"). It is a heuristic and is never described as validated.
+- **A universal baseline** in every UI brief: WCAG 2.2 AA essentials (contrast at least 4.5:1 for body text, pointer targets at least 24x24 CSS px, focus never fully hidden behind sticky content, full keyboard operation with a visible focus indicator), the empty, loading, and error states plus long content, and the breakpoints above. The compact auto-mode brief gets one line, not the full list.
 - **Point Claude at design context**, read-only: `DESIGN.md` or `docs/design*.md`, token files (`tailwind.config.*`, `*.tokens.json`), Storybook, and an installed Figma MCP server (by name only, as for every MCP server). When a project has UI work but none of these, the brief suggests creating a `DESIGN.md`. Susanoo never creates it.
 
 ### What Susanoo will not do
