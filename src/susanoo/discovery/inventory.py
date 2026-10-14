@@ -67,11 +67,14 @@ def detect_tool(
     """Detect one registry tool without executing it (unless ``verify`` is set)."""
     if tool.kind == "mcp":
         return None  # MCP servers are discovered from Claude Code configuration instead.
+    required_files = [f for f in tool.requires_files if facts.has_file(f)]
+    if tool.requires_files and not required_files:
+        return None
 
     def lookup(name: str) -> str | None:
         return which(name) if which is not None else resolve_executable(name, facts.root)
 
-    evidence: list[str] = []
+    evidence: list[str] = [f"found: {', '.join(required_files[:3])}"] if required_files else []
     runnable = False
     configured = False
     verified = False

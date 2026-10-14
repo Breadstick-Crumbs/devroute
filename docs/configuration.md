@@ -83,6 +83,19 @@ setup_cost = 1
 security_exposure = 1
 ```
 
+To declare a browser Susanoo cannot detect (Claude in Chrome, for example) for the UI visual check, add an entry without a `run` command, so the check stays one that Claude performs and reports:
+
+```toml
+[[tools]]
+id = "claude-in-chrome"
+name = "Claude in Chrome"
+kind = "native"
+capabilities = ["visual_check"]
+env = ["CLAUDECODE"]   # set in every Claude Code session
+```
+
+Detection keys are those listed at the top of [`tools.toml`](../src/susanoo/data/tools.toml); any one that matches counts, except `requires_files`, which must also match (screenshot baselines for visual regression).
+
 Project tool entries are repository-controlled. Susanoo ignores their `version_args`, so `--verify` never runs them. Their `run` commands do execute under `susanoo verify --execute`, just like the project's own test scripts.
 
 ### Keep task text out of records
@@ -122,7 +135,9 @@ Keep this narrow. Ignoring text can only lower risk.
 `id`, `when = { dimension, min }`, `description`, `checkpoint`, `verification` (step ids forced to required).
 
 ### `[[verification]]`
-`id`, `title`, `capability`, `levels = { fast|standard|deep = "required"|"recommended" }`, `escalate = [{ dimension, min, level } | { signal, level }]`, `signals` (only include when one matched).
+`id`, `title`, `capability`, `levels = { fast|standard|deep = "required"|"recommended" }`, `escalate = [{ dimension, min, level } | { signal, level }]`, `signals` (only include when one matched), `instructions` (how to perform and record the check, shown in the brief), `only_with_tool = true` (leave the step out when no usable tool provides its capability, instead of showing a gap; a required step is never left out), `evidence = "reported"` (the check is always performed and reported by the agent or a person, even if its tool has a run command). `{command}` in `instructions` becomes the command that runs Susanoo.
+
+UI tasks (the `ui` signal) get `visual_check` (recommended in FAST, required in STANDARD and DEEP, always reported evidence), `accessibility_scan` (recommended in STANDARD, required in DEEP), and `visual_regression` (recommended, only when screenshot baselines exist). See [ADR 0008](decisions/0008-ui-ux-workflow.md).
 
 ### Dimensions
 `implementation_complexity`, `architectural_complexity`, `affected_components`, `technical_uncertainty`, `external_dependencies`, `security_privacy`, `data_integrity`, `irreversibility`, `testing_difficulty`, `parallelization`.

@@ -17,7 +17,13 @@ from susanoo.registry import Registry, load_registry
 from susanoo.research import Gap, analyze_gaps
 from susanoo.router import Profile, RouteDecision, load_profiles, recommended_profile, route
 from susanoo.selection import SelectionContext, ToolRecommendation, recommend
-from susanoo.verification import VerificationPlan, build_plan, select_steps, verification_requirements
+from susanoo.verification import (
+    VerificationPlan,
+    build_plan,
+    drop_toolless_optional,
+    select_steps,
+    verification_requirements,
+)
 
 
 @dataclass
@@ -124,6 +130,11 @@ def plan_task(
     recommendations = recommend(
         requirements, inventory, registry, SelectionContext.from_config(config, task=task)
     )
+    usable = {r.capability for r in recommendations if not r.gap}
+    selected_steps, dropped = drop_toolless_optional(selected_steps, requirements, usable)
+    if dropped:
+        requirements = [r for r in requirements if r.capability not in dropped]
+        recommendations = [r for r in recommendations if r.capability not in dropped]
     gaps = analyze_gaps(recommendations)
     verification = build_plan(decision.profile, selected_steps, recommendations)
     needed = {r.capability for r in requirements}

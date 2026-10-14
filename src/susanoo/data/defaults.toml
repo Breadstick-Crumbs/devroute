@@ -555,7 +555,11 @@ verification = ["integration_tests"]
 # Verification rules. `levels` sets the baseline per profile; `escalate`
 # raises the level when an assessment dimension reaches `min` (or when a
 # `signal` matched); `signals`
-# includes the step only when one of the listed signals matched.
+# includes the step only when one of the listed signals matched. `instructions` tell the
+# agent how to perform and record a manual check. `only_with_tool = true` leaves the step out
+# when no usable tool provides its capability, unless the step is required. `evidence = "reported"`
+# makes a check manual even when its tool has a run command. `{command}` in `instructions` is the
+# command that runs Susanoo.
 # ---------------------------------------------------------------------------
 
 [[verification]]
@@ -592,6 +596,36 @@ title = "End-to-end / browser tests"
 capability = "browser_testing"
 signals = ["ui", "large-scope"]
 levels = { standard = "recommended", deep = "recommended" }
+
+# UI checks (ADR 0008). The visual check is always performed by the agent or a person, so its
+# evidence is reported.
+[[verification]]
+id = "visual_check"
+title = "Visual check"
+capability = "visual_check"
+signals = ["ui"]
+levels = { fast = "recommended", standard = "required", deep = "required" }
+# Never run as a command, even if a tool entry gives the capability one: only a look counts.
+evidence = "reported"
+instructions = "Render the change and look at it at 375, 768, and 1280 CSS px (common widths, not a standard), compared with the request or a reference. Record it: `{command} evidence latest --step visual_check --status passed --note \"<widths checked, screenshot paths>\"`, or `--status skipped --note \"<why>\"` when nothing visible changed."
+
+[[verification]]
+id = "accessibility_scan"
+title = "Accessibility scan"
+capability = "accessibility_testing"
+signals = ["ui"]
+levels = { standard = "recommended", deep = "required" }
+instructions = "A scan finds only part of the problems; also check keyboard operation and a visible focus indicator."
+
+[[verification]]
+id = "visual_regression"
+title = "Visual regression"
+capability = "visual_regression"
+signals = ["ui"]
+levels = { standard = "recommended", deep = "recommended" }
+# Only when the project already has screenshot baselines; otherwise the step is left out.
+only_with_tool = true
+instructions = "Update baselines only for intended changes, and say so in the report."
 
 [[verification]]
 id = "security_scan"

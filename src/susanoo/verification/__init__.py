@@ -11,6 +11,7 @@ from susanoo.verification.planner import (
     VerificationPlan,
     VerificationStep,
     build_plan,
+    drop_toolless_optional,
     select_steps,
     verification_requirements,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "VerificationPlan",
     "VerificationStep",
     "build_plan",
+    "drop_toolless_optional",
     "execute_plan",
     "redact",
     "reported_evidence",

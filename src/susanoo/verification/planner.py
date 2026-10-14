@@ -29,6 +29,8 @@ class VerificationStep:
     notes: list[str] = field(default_factory=list)
     # Why a tool with a run command is manual here (e.g. its Python environment is not reachable).
     withheld: str = ""
+    # How to perform and record the check, from the rule's `instructions` (manual checks).
+    instructions: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -109,6 +111,28 @@ def verification_requirements(selected: list[SelectedStep]) -> list[CapabilityRe
     return list(reqs.values())
 
 
+def drop_toolless_optional(
+    selected: list[SelectedStep], requirements: list[CapabilityRequirement], usable: set[str]
+) -> tuple[list[SelectedStep], set[str]]:
+    """Leave out `only_with_tool` steps whose capability has no usable tool.
+
+    Such a step (visual regression needs screenshot baselines) is only worth doing when the project
+    already has the tool; otherwise it would only add a gap. A required step, and a capability that
+    something else asks for (another step, a signal, the profile), are kept. Returns the steps and
+    the dropped capabilities.
+    """
+    optional = {s.rule["capability"] for s in selected if s.rule.get("only_with_tool")}
+    # A required step (its profile level, an escalation, or a safety control) is never left out.
+    elsewhere = {
+        s.rule["capability"] for s in selected if not s.rule.get("only_with_tool") or s.level == "required"
+    }
+    elsewhere |= {
+        r.capability for r in requirements if any(not x.startswith("verification: ") for x in r.reasons)
+    }
+    drop = optional - usable - elsewhere
+    return [s for s in selected if s.rule["capability"] not in drop], drop
+
+
 def build_plan(
     profile: str, selected: list[SelectedStep], recommendations: list[ToolRecommendation]
 ) -> VerificationPlan:
@@ -123,12 +147,14 @@ def build_plan(
             capability=rule["capability"],
             level=item.level,
             reasons=item.reasons,
+            instructions=str(rule.get("instructions", "")),
         )
         if rec is not None and rec.selected is not None:
             step.tool = rec.selected.name
-            step.command = rec.selected.command
-            step.mode = "ready" if rec.selected.command else "manual"
-            step.withheld = rec.selected.command_withheld
+            reported_only = rule.get("evidence") == "reported"
+            step.command = None if reported_only else rec.selected.command
+            step.mode = "ready" if step.command else "manual"
+            step.withheld = "" if reported_only else rec.selected.command_withheld
             if rule["capability"] == "code_review":
                 step.notes.append(
                     "Delegate to the susanoo-reviewer subagent (separate context) or a human reviewer."

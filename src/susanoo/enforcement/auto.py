@@ -194,6 +194,7 @@ def compact_brief(
             + "; ".join(
                 s.title
                 + (f" (`{' '.join(s.command)}`)" if s.command else f" ({s.withheld})" if s.withheld else "")
+                + (f" [{s.instructions.replace('{command}', command)}]" if s.instructions else "")
                 for s in required
             )
             + "."

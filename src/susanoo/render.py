@@ -147,6 +147,8 @@ def render_brief(plan: TaskPlan) -> str:
         if s.withheld:
             how += f" - {s.withheld}"
         lines.append(f"- [{s.level}] {s.title}: {how}")
+        if s.instructions:
+            lines.append(f"  {s.instructions.replace('{command}', 'susanoo')}")
     lines += [
         "",
         "Only checks that actually ran count as evidence. Run `susanoo verify --execute` "
