@@ -21,6 +21,7 @@ from susanoo.adapters.claude_code.installer import (
     sha256,
 )
 from susanoo.discovery import Status, build_inventory, detect_tool, scan_project
+from susanoo.discovery.project import is_github_remote
 from susanoo.registry import load_registry
 from susanoo.verification import redact
 from susanoo.verification.executor import run_command
@@ -141,6 +142,25 @@ def test_git_remote_userinfo_fully_stripped(tmp_path: Path, remote: str):
     write(tmp_path, ".git/config", f'[remote "origin"]\n\turl = {remote}\n')
     [cleaned] = scan_project(tmp_path).git_remotes
     assert "TOKEN2" not in cleaned and "@" not in cleaned
+
+
+@pytest.mark.parametrize(
+    "remote, expected",
+    [
+        ("https://github.com/o/r.git", True),
+        ("HTTPS://GitHub.com/o/r.git", True),
+        ("git@github.com:o/r.git", True),
+        ("ssh://git@ssh.github.com:443/o/r.git", True),
+        ("https://github.com.evil.example/o/r.git", False),
+        ("https://evil.example/github.com/o/r.git", False),
+        ("https://notgithub.com/o/r.git", False),
+        ("git@evil.example:github.com/r.git", False),
+        ("../github.com/r.git", False),
+        ("C:/src/github.com/r", False),
+    ],
+)
+def test_github_remote_matches_host_only(remote: str, expected: bool):
+    assert is_github_remote(remote) is expected
 
 
 @pytest.mark.parametrize(
