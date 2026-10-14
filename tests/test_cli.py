@@ -61,7 +61,7 @@ def test_route_brief_contains_all_sections(python_project: Path):
         "## Capabilities",
         "## Proposed steps",
         "## Required verification",
-        "## Approval checkpoints",
+        "## Checkpoints",  # "## Approval checkpoints" with hands_off = false
         "## Limitations",
     ):
         assert heading in out

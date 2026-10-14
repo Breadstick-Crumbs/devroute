@@ -8,6 +8,8 @@ Code applies through hooks:
 - approval integrity: ``susanoo approve`` always requires an explicit user prompt;
 - irreversible-action gate: risky shell commands ask for confirmation while the
   ``irreversible-action-gate`` control is active;
+- hands-off (the default): only the evidence gate applies; Claude Code's own permission
+  settings decide what needs confirmation (see ``autonomous``);
 - evidence gate: the turn cannot end while required verification lacks evidence;
 - compaction recovery: a short route summary is re-injected after context compaction
   (needs a settings hook; Claude Code does not fire compaction events for skill hooks).
@@ -93,14 +95,17 @@ def _inside(file_path: str, root: Path) -> bool:
 
 
 def autonomous(event: dict[str, Any], state: RouteState | None, cfg: dict[str, Any]) -> bool:
-    """Whether Claude Code runs in one of ``autonomous_modes`` (read live from each hook event,
-    so switching modes mid-task takes effect immediately).
+    """Whether Susanoo works hands-off: always with ``hands_off`` (the default), otherwise when
+    Claude Code runs in one of ``autonomous_modes`` (read live from each hook event, so switching
+    modes mid-task takes effect immediately).
 
     Susanoo then adds no approval and no questions of its own; Claude Code's permission settings
-    decide. The evidence gate stays, because it never asks the user anything. (A task that asks
-    for autonomy in words is recorded as an approval instead, which keeps the irreversible-action
-    gate; see ``susanoo.enforcement.auto``.)
+    decide. The evidence gate stays, because it never asks the user anything. (Without
+    ``hands_off``, a task that asks for autonomy in words is recorded as an approval instead,
+    which keeps the irreversible-action gate; see ``susanoo.enforcement.auto``.)
     """
+    if cfg.get("hands_off"):
+        return True
     return str(event.get("permission_mode", "")) in set(cfg.get("autonomous_modes", []))
 
 
@@ -123,15 +128,19 @@ def starts_work(event: dict[str, Any], config: Config) -> bool:
     return False
 
 
-def summary(state: RouteState) -> str:
-    """Compact reminder of the active route (re-injected after compaction)."""
+def summary(state: RouteState, hands_off: bool = False) -> str:
+    """Compact reminder of the active route (follow-up prompts, and after compaction)."""
     r = state.route
+    if state.approved:
+        approval = "Plan approved: yes."
+    elif hands_off:
+        approval = "Hands-off: no plan approval needed; share the plan and continue."
+    else:
+        approval = "Plan approved: NO - present the plan and wait for approval before editing."
     parts = [
         f"Susanoo: active route {state.record_id} uses the {state.profile.upper()} workflow "
         f"(risk {r.get('risk', {}).get('level', '?')}, complexity {r.get('complexity', {}).get('level', '?')}).",
-        "Plan approved: yes."
-        if state.approved
-        else "Plan approved: NO - present the plan and wait for approval before editing.",
+        approval,
     ]
     if state.controls:
         parts.append("Mandatory safety controls: " + ", ".join(state.controls) + ".")
@@ -156,11 +165,19 @@ def pre_tool_use(event: dict[str, Any], state: RouteState | None, root: Path, co
         # "completed" without evidence would defeat the evidence gate, so that is refused outright
         # instead of asked about.
         command = str(tool_input.get("command", "")) if tool in ("Bash", "PowerShell") else ""
+        if _APPROVE.search(command):
+            # Nothing needs approval here, so this costs no prompt in practice; but an approval
+            # Claude recorded itself would still count if the user later sets hands_off = false.
+            return Decision(
+                permission="ask",
+                reason="Susanoo plan approval must come from you. Allow this only if you have reviewed "
+                "and accept the plan.",
+            )
         if _ACCEPT_MISSING.search(command):
             return Decision(
                 permission="deny",
-                reason="Susanoo: in autonomous mode a task cannot be recorded as completed without passing "
-                "evidence. Run the required checks, or record the outcome as partial.",
+                reason="Susanoo works hands-off here, so a task cannot be recorded as completed without "
+                "passing evidence. Run the required checks, or record the outcome as partial.",
             )
         return Decision()
 
@@ -272,7 +289,8 @@ def stop(
     return Decision(block_stop=True, reason=" ".join(lines))
 
 
-def session_start(event: dict[str, Any], state: RouteState | None) -> Decision:
+def session_start(event: dict[str, Any], state: RouteState | None, config: Config | None = None) -> Decision:
     if state is None or event.get("source") != "compact":
         return Decision()
-    return Decision(context=summary(state))
+    cfg = (config or {}).get("enforcement", {})
+    return Decision(context=summary(state, autonomous(event, state, cfg)))

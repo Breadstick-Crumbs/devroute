@@ -107,7 +107,7 @@ def detect_tool(
     if scripts:
         configured = True
         evidence.append(f"package.json script(s): {', '.join(scripts)}")
-        if lookup("npm"):
+        if lookup(facts.package_manager or "npm"):
             runnable = True
     targets = [t for t in tool.make_targets if t in facts.make_targets]
     if targets:
@@ -198,6 +198,19 @@ def detect_environment(
     return None
 
 
+def detect_package_manager(facts: ProjectFacts, registry: Registry) -> str | None:
+    """The project's JavaScript package manager: package.json "packageManager" first, then the
+    first lockfile found in registry order. ``None`` when there is no package.json or no hint."""
+    if not facts.has_file("package.json"):
+        return None
+    if facts.declared_package_manager in registry.package_managers:
+        return facts.declared_package_manager
+    for pm in registry.package_managers.values():
+        if any(facts.has_file(marker) for marker in pm.markers):
+            return pm.id
+    return None
+
+
 def build_inventory(
     root: Path,
     registry: Registry,
@@ -210,6 +223,7 @@ def build_inventory(
     """Inspect ``root`` and the user's environment. Read-only unless ``verify`` is set."""
     environ = os.environ if env is None else env
     facts = scan_project(root)
+    facts.package_manager = detect_package_manager(facts, registry)
     warnings = list(facts.warnings)
     findings: list[Finding] = []
 
@@ -280,6 +294,7 @@ def build_inventory(
         findings=findings,
         warnings=warnings,
         source_files=facts.source_files,
+        package_manager=facts.package_manager,
     )
 
 

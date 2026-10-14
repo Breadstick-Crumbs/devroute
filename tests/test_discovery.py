@@ -376,3 +376,49 @@ def test_plain_python_project_has_no_environment_manager(python_project: Path, r
 def test_build_inventory_reports_environment(tmp_path: Path, home: Path, registry):
     inv = build_inventory(poetry_project(tmp_path), registry, home=home, env={})
     assert [f.id for f in inv.by_kind("environment")] == ["environment:poetry"]
+
+
+def test_package_manager_detection(tmp_path: Path, registry):
+    from susanoo.discovery.inventory import detect_package_manager
+
+    def facts_for(name: str, files: dict[str, str]):
+        root = tmp_path / name
+        for rel, content in files.items():
+            write(root, rel, content)
+        return scan_project(root)
+
+    assert detect_package_manager(facts_for("none", {"app.py": ""}), registry) is None
+    assert detect_package_manager(facts_for("bare", {"package.json": "{}"}), registry) is None
+    assert (
+        detect_package_manager(facts_for("pnpm", {"package.json": "{}", "pnpm-lock.yaml": ""}), registry)
+        == "pnpm"
+    )
+    assert detect_package_manager(facts_for("bun", {"package.json": "{}", "bun.lock": ""}), registry) == "bun"
+    assert (
+        detect_package_manager(facts_for("npm", {"package.json": "{}", "package-lock.json": "{}"}), registry)
+        == "npm"
+    )
+    # "packageManager" in package.json wins over a stale lockfile.
+    declared = facts_for(
+        "declared", {"package.json": '{"packageManager": "yarn@4.1.0"}', "package-lock.json": "{}"}
+    )
+    assert detect_package_manager(declared, registry) == "yarn"
+    inv = build_inventory(tmp_path / "pnpm", registry, include_claude_code=False)
+    assert inv.package_manager == "pnpm" and inv.to_dict()["package_manager"] == "pnpm"
+
+
+def test_package_script_is_runnable_through_the_detected_manager(tmp_path: Path, registry):
+    from susanoo.discovery.inventory import detect_tool
+
+    root = tmp_path / "pnpm-app"
+    write(root, "package.json", '{"scripts": {"test": "vitest"}}')
+    write(root, "pnpm-lock.yaml", "")
+    facts = scan_project(root)
+    facts.package_manager = "pnpm"
+    spec = registry.tools["npm-test-script"]
+    only_npm = detect_tool(spec, facts, {}, False, which=lambda name: "/bin/npm" if name == "npm" else None)
+    with_pnpm = detect_tool(
+        spec, facts, {}, False, which=lambda name: "/bin/pnpm" if name == "pnpm" else None
+    )
+    assert only_npm is not None and not only_npm.status.usable
+    assert with_pnpm is not None and with_pnpm.status.usable

@@ -16,7 +16,7 @@ from susanoo.enforcement.auto import AMBIGUOUS, QUESTION, SKIP, TASK, classify, 
 from susanoo.enforcement.state import RouteState
 from susanoo.evaluation.store import RecordStore
 from susanoo.paths import OFF_FILE, find_project_root, global_project_dir, records_dir
-from tests.conftest import write
+from tests.conftest import GATED_TOML, gated_config, write
 from tests.test_cli import run
 
 SESSION = "sess-auto-1"
@@ -85,10 +85,28 @@ def _state(autonomous: bool = False) -> RouteState:
 
 EDIT = {"tool_name": "Edit", "tool_input": {"file_path": "app.py"}}
 PUSH = {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}
+APPROVE = {"tool_name": "Bash", "tool_input": {"command": "susanoo approve"}}
+
+
+def test_hands_off_by_default_in_every_mode(tmp_path: Path):
+    # Claude Code's own permission settings decide; only the evidence gate stays.
+    config = load_config()
+    for mode in ("default", "plan", ""):
+        for event in (EDIT, PUSH):
+            assert (
+                gates.pre_tool_use({**event, "permission_mode": mode}, _state(), tmp_path, config).permission
+                is None
+            )
+        # Approval integrity stays: an approval Claude recorded itself would count later.
+        assert (
+            gates.pre_tool_use({**APPROVE, "permission_mode": mode}, _state(), tmp_path, config).permission
+            == "ask"
+        )
+    assert gates.stop({"permission_mode": "default"}, _state(), config, 0, work_started=True).block_stop
 
 
 def test_default_mode_gates_once(tmp_path: Path):
-    config = load_config()
+    config = gated_config()
     assert (
         gates.pre_tool_use({**EDIT, "permission_mode": "default"}, _state(), tmp_path, config).permission
         == "deny"
@@ -98,16 +116,20 @@ def test_default_mode_gates_once(tmp_path: Path):
 @pytest.mark.parametrize("mode", ["acceptEdits", "auto", "dontAsk", "bypassPermissions"])
 def test_autonomous_modes_ask_nothing(tmp_path: Path, mode: str):
     config = load_config()
-    for event in (EDIT, PUSH, {"tool_name": "Bash", "tool_input": {"command": "susanoo approve"}}):
+    for event in (EDIT, PUSH):
         assert (
             gates.pre_tool_use({**event, "permission_mode": mode}, _state(), tmp_path, config).permission
             is None
         )
+    assert (
+        gates.pre_tool_use({**APPROVE, "permission_mode": mode}, _state(), tmp_path, config).permission
+        == "ask"
+    )
 
 
 def test_approved_route_keeps_the_irreversible_gate(tmp_path: Path):
     # Autonomy asked for in words is recorded as approval: no plan gate, irreversible gate kept.
-    config = load_config()
+    config = gated_config()
     approved = _state()
     approved.approved = True
     assert (
@@ -155,10 +177,13 @@ def _prompt(root: Path, prompt: str, mode: str = "default") -> str:
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 
 
-def _auto_project(tmp_path: Path) -> Path:
+def _auto_project(tmp_path: Path, gated: bool = False) -> Path:
     root = _project(tmp_path)
     code, _, err = run(root, "init", "--enforce", "--enforce-scope", "settings", "--auto")
     assert code == 0, err
+    if gated:
+        with (root / ".susanoo" / "config.toml").open("a", encoding="utf-8") as fh:
+            fh.write(GATED_TOML)
     return root
 
 
@@ -171,9 +196,15 @@ def test_project_auto_routes_tasks_and_ignores_questions(tmp_path: Path):
     assert RecordStore(root).read("routes") == []
     context = _prompt(root, "Add pagination to the /users API endpoint")
     assert "Susanoo routed this task automatically" in context and "STANDARD" in context
-    assert "wait for the user's approval" in context
+    assert "Work autonomously" in context and "wait for the user's approval" not in context
     routes = RecordStore(root).read("routes")
     assert len(routes) == 1 and routes[0]["session_id"] == SESSION and routes[0]["auto"] is True
+
+
+def test_gated_project_waits_for_plan_approval(tmp_path: Path):
+    root = _auto_project(tmp_path / "gated", gated=True)
+    context = _prompt(root, "Add pagination to the /users API endpoint")
+    assert "wait for the user's approval" in context
 
 
 def test_follow_ups_continue_and_riskier_tasks_escalate(tmp_path: Path):
@@ -570,3 +601,59 @@ def test_doctor_explains_project_setups_in_global_mode(isolated: Path, tmp_path:
         for c in json.loads(out)["checks"]
         if c["check"] == "global install"
     )
+
+
+def test_install_prompts_are_tasks():
+    assert classify("Install date-fns and use it for the invoice dates", load_config()["auto"]) == TASK
+
+
+def test_compact_brief_names_installed_extensions_and_gap_hints(tmp_path: Path, home: Path):
+    from susanoo.enforcement.auto import compact_brief
+    from susanoo.pipeline import plan_task
+
+    root = _project(tmp_path)
+    write(
+        home,
+        ".claude/skills/code-graph/SKILL.md",
+        "---\nname: code-graph\ndescription: Code graph for callers and the call chain.\n---\nBody\n",
+    )
+    plan = plan_task(
+        "Add Stripe checkout and store payment status in postgres", root, load_config(), home=home
+    )
+    brief = compact_brief(plan, "su-1", True, "susanoo")
+    assert "Installed tools that fit:" in brief and "code-graph (skill, user)" in brief
+    assert "Payment sandbox (consider Stripe CLI (cli), install: https://docs.stripe.com/stripe-cli)" in brief
+    assert "Never install anything without the user's approval" in brief
+
+
+@pytest.mark.parametrize("prompt", ["Install docker on my machine", "install the project dependencies"])
+def test_environment_chores_are_not_routed(prompt: str):
+    assert classify(prompt, load_config()["auto"]) != TASK
+
+
+def test_route_summary_follows_hands_off():
+    state = _state()
+    assert "Hands-off: no plan approval needed" in gates.summary(state, hands_off=True)
+    assert "wait for approval" in gates.summary(state)
+    compact = {"source": "compact", "permission_mode": "default"}
+    assert "wait for approval" not in str(gates.session_start(compact, state, load_config()).context)
+    assert "wait for approval" in str(gates.session_start(compact, state, gated_config()).context)
+
+
+def test_follow_up_under_hands_off_does_not_wait_for_approval(tmp_path: Path):
+    root = _auto_project(tmp_path)
+    _prompt(root, "Add pagination to the /users API endpoint")
+    follow_up = _prompt(root, "Add a page size option to the pagination")
+    assert "continues the task in progress" in follow_up
+    assert "wait for approval" not in follow_up and "Hands-off: no plan approval needed" in follow_up
+
+
+def test_accepting_missing_evidence_is_refused_under_hands_off_in_default_mode(tmp_path: Path):
+    command = {
+        "tool_name": "Bash",
+        "tool_input": {"command": "susanoo outcome latest --status completed --accept-missing-evidence"},
+        "permission_mode": "default",
+    }
+    decision = gates.pre_tool_use(command, _state(), tmp_path, load_config())
+    assert decision.permission == "deny" and "hands-off" in decision.reason
+    assert gates.pre_tool_use(command, _state(), tmp_path, gated_config()).permission == "ask"

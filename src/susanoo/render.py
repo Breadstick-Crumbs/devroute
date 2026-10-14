@@ -11,6 +11,7 @@ from susanoo.evaluation.report import Report
 from susanoo.evaluation.suite import SuiteResult
 from susanoo.pipeline import TaskPlan
 from susanoo.research import ResearchReport
+from susanoo.selection import installed_extensions
 from susanoo.verification import Evidence
 
 # Phases where the selected code-navigation tool is named in the brief.
@@ -103,9 +104,11 @@ def render_brief(plan: TaskPlan) -> str:
             if r.selected is None:
                 continue
             cmd = f" - `{' '.join(r.selected.command)}`" if r.selected.command else ""
+            extras = installed_extensions(r)
+            also = "; also installed: " + ", ".join(c.name for c in extras) if extras else ""
             lines.append(
                 f"- {r.title} [{r.level}]: {r.selected.name} ({r.selected.kind}, "
-                f"{STATUS_LABELS[r.selected.status]}){cmd}"
+                f"{STATUS_LABELS[r.selected.status]}){cmd}{also}"
             )
         lines.append("")
     if plan.gaps:
@@ -126,7 +129,7 @@ def render_brief(plan: TaskPlan) -> str:
         (r.selected for r in plan.recommendations if r.capability == "code_navigation" and r.selected), None
     )
     for i, phase in enumerate(p.phases, 1):
-        marker = " **[approval]**" if phase.approval else ""
+        marker = (" **[checkpoint]**" if plan.hands_off else " **[approval]**") if phase.approval else ""
         hint = f" Navigation: {nav.name}." if nav and phase.id in NAVIGATION_PHASES else ""
         lines.append(f"{i}. **{phase.title}**{marker} - {phase.action}{hint}")
     lines.append("")
@@ -151,7 +154,16 @@ def render_brief(plan: TaskPlan) -> str:
         "",
     ]
 
-    lines += ["## Approval checkpoints", ""]
+    lines += ["## Checkpoints" if plan.hands_off else "## Approval checkpoints", ""]
+    if d.checkpoints and plan.hands_off:
+        lines += [
+            "Hands-off (the default): report these in your updates and continue; Susanoo waits for "
+            "no approval. Mandatory safety controls still shape the work (review, sandbox credentials, "
+            "rollback path), while confirming deploys, pushes, migrations, and other outward-facing "
+            "actions is left to Claude Code's permission settings. Set `[enforcement] hands_off = false` "
+            "to stop at each one.",
+            "",
+        ]
     if d.checkpoints:
         lines += [f"- {c}" for c in d.checkpoints]
     else:

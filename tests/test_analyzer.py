@@ -305,3 +305,74 @@ def test_negation_target_stops_at_a_sentence_end(config):
     assert [text[s:e] for s, e in negated_spans(text, negation)] == ["Do not change the CSS"]
     a = assess("Fix the header typo and do not change the CSS.\nStripe billing code is next", config)
     assert not a.negated and "payments" in a.signal_ids()  # a second sentence: nothing ignored
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Add the zod package with pnpm",
+        "Remove the unused lodash dependency",
+        "Install date-fns and use it for the invoice dates",
+        "Bump the axios library version",
+        "Update requirements.txt to pin requests",
+    ],
+)
+def test_dependency_changes_are_recognized(config, task: str):
+    a = assess(task, config)
+    assert "dependency-change" in a.signal_ids()
+    assert a.level("external_dependencies") >= 1
+    assert {r.capability for r in a.requirements} >= {"dependency_audit"}
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Add a column to the users table",
+        "Fix typo in README",
+        "Add a settings page",
+        "Fix the install script exit code",
+    ],
+)
+def test_ordinary_tasks_are_not_dependency_changes(config, task: str):
+    assert "dependency-change" not in assess(task, config).signal_ids()
+
+
+def test_broad_upgrade_raises_uncertainty_and_testing(config):
+    a = assess("Upgrade all npm dependencies to their latest major versions", config)
+    assert "dependency-upgrade-broad" in a.signal_ids()
+    assert a.level("technical_uncertainty") >= 2 and a.level("testing_difficulty") >= 2
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Add a README to all packages in the monorepo",
+        "Fix the new major version banner",
+        "Make major updates to the onboarding flow",
+        "Prepare the changelog for the next major version",
+        "Rename all packages to com.example",
+    ],
+)
+def test_broad_upgrade_needs_an_upgrade_of_dependencies(config, task: str):
+    assert "dependency-upgrade-broad" not in assess(task, config).signal_ids()
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Add a dependency injection container",
+        "Fix the dependency graph rendering",
+        "Fix the missing deps in useEffect",
+        "Update package.json scripts",
+        "Install hooks for the auth middleware",
+        "Install them in the settings page",
+        "Run the build with npm",
+    ],
+)
+def test_dependency_lookalikes_are_not_dependency_changes(config, task: str):
+    assert "dependency-change" not in assess(task, config).signal_ids()
+
+
+@pytest.mark.parametrize("task", ["Upgrade React to 19", "Bump axios to 1.7.4", "Pin lodash to 4.17.x"])
+def test_named_package_with_version_is_a_dependency_change(config, task: str):
+    assert "dependency-change" in assess(task, config).signal_ids()

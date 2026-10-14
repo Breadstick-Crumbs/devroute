@@ -71,27 +71,28 @@ Available tools:
 - Type checking [required]: mypy (cli, installed (unverified)) - `mypy .`
 - Unit testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
 - Version control [required]: git (cli, installed (unverified))
+- Code navigation [recommended]: Claude Code Grep / Glob / Read (native, verified)
 
 Missing capabilities:
 
-- Migration checks [required, blocking until resolved or explicitly accepted]: consider Alembic (cli)
-- Payment sandbox [required, blocking until resolved or explicitly accepted]: consider Stripe CLI (cli)
-- Secret scanning [required, blocking until resolved or explicitly accepted]: consider Gitleaks (cli)
-- Browser / end-to-end testing [recommended, non-blocking]: consider Playwright (cli)
-- Dependency audit [recommended, non-blocking]: consider pip-audit (cli)
+- Migration checks [required, blocking until resolved or explicitly accepted]: consider Alembic (cli), install: pip install alembic
+- Payment sandbox [required, blocking until resolved or explicitly accepted]: consider Stripe CLI (cli), install: https://docs.stripe.com/stripe-cli
+- Secret scanning [required, blocking until resolved or explicitly accepted]: consider Gitleaks (cli), install: https://github.com/gitleaks/gitleaks#installing
+- Browser / end-to-end testing [recommended, non-blocking]: consider Playwright (cli), install: npm init playwright@latest   (or: pip install pytest-playwright && playwright install)
+- Dependency audit [recommended, non-blocking]: consider pip-audit (cli), install: pip install pip-audit
 
 Susanoo never installs tools itself; adopting any of these needs your approval.
 
 ## Proposed steps
 
-1. **Requirements and architecture analysis** **[approval]** - Establish requirements, constraints, and the architecture. Surface open questions instead of guessing.
+1. **Requirements and architecture analysis** **[checkpoint]** - Establish requirements, constraints, and the architecture. Surface open questions instead of guessing. Navigation: Claude Code Grep / Glob / Read.
 2. **Dependency and risk assessment** - List external dependencies, security and data risks, and irreversible steps. Confirm the safety controls below.
-3. **Technical plan** **[approval]** - Write an explicit plan with milestones, interfaces, test strategy, and rollback approach.
+3. **Technical plan** **[checkpoint]** - Write an explicit plan with milestones, interfaces, test strategy, and rollback approach.
 4. **Targeted research** - Only when justified by missing capabilities or high uncertainty: research options and record findings (`susanoo research`).
 5. **Isolated implementation** - Implement milestone by milestone in an isolated branch or worktree. Delegate independent feature areas to subagents only when they do not share files.
 6. **Independent review** - Have a separate agent context (susanoo-reviewer) review the full diff against the plan and the risks.
 7. **Integration and security verification** - Run the full required verification set and record results as evidence (`susanoo verify --execute`).
-8. **Evidence-backed completion** **[approval]** - Report results with the recorded evidence, unresolved risks, and anything that was not verified.
+8. **Evidence-backed completion** **[checkpoint]** - Report results with the recorded evidence, unresolved risks, and anything that was not verified.
 
 ## Required verification
 
@@ -108,7 +109,9 @@ Susanoo never installs tools itself; adopting any of these needs your approval.
 
 Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.
 
-## Approval checkpoints
+## Checkpoints
+
+Hands-off (the default): report these in your updates and continue; Susanoo waits for no approval. Mandatory safety controls still shape the work (review, sandbox credentials, rollback path), while confirming deploys, pushes, migrations, and other outward-facing actions is left to Claude Code's permission settings. Set `[enforcement] hands_off = false` to stop at each one.
 
 - Approve requirements and architecture before planning details.
 - Approve the technical plan before implementation starts.

@@ -8,12 +8,13 @@ less context, less setup, and less standing access.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from susanoo.analyzer.models import CapabilityRequirement
 from susanoo.discovery.models import Finding, Inventory, Status
-from susanoo.registry import Registry, ToolSpec
+from susanoo.registry import PackageManagerSpec, Registry, ToolSpec
 
 KIND_PREFERENCE: dict[str, float] = {
     "native": 3,
@@ -74,6 +75,7 @@ class ToolRecommendation:
     suggestion: Candidate | None
     alternatives: list[Candidate]
     rationale: str
+    extensions: list[Candidate] = field(default_factory=list)
 
     @property
     def gap(self) -> bool:
@@ -91,6 +93,7 @@ class ToolRecommendation:
             "suggestion": self.suggestion.to_dict() if self.suggestion else None,
             "alternatives": [c.to_dict() for c in self.alternatives],
             "rationale": self.rationale,
+            "extensions": [c.to_dict() for c in self.extensions],
         }
 
 
@@ -105,7 +108,42 @@ def _score(status: Status, kind: str, reliability: int, context: int, setup: int
     )
 
 
-def _registry_candidate(tool: ToolSpec, capability: str, inventory: Inventory) -> Candidate | None:
+# Used when the registry defines no package managers (e.g. a test registry).
+_NPM = PackageManagerSpec(
+    id="npm",
+    markers=("package-lock.json",),
+    add_dev="npm install --save-dev",
+    run=("npm", "run"),
+    create="npm init",
+)
+
+
+def package_manager(
+    inventory: Inventory, registry: Registry, context: SelectionContext | None = None
+) -> PackageManagerSpec:
+    """The project's JavaScript package manager, else the configured default (only with a
+    ``context``), else npm."""
+    default = context.default_package_manager if context is not None else None
+    for pid in (inventory.package_manager, default, "npm"):
+        if pid and pid in registry.package_managers:
+            return registry.package_managers[pid]
+    return _NPM
+
+
+def _expand(argv: tuple[str, ...], pm: PackageManagerSpec) -> list[str]:
+    """``{js_run}`` becomes the package manager's script runner (``bun test`` is Bun's own test
+    runner, so scripts always go through ``run``)."""
+    out: list[str] = []
+    for arg in argv:
+        out += list(pm.run) if arg == "{js_run}" else [arg]
+    return out
+
+
+def _registry_candidate(
+    tool: ToolSpec, capability: str, inventory: Inventory, pm: PackageManagerSpec, run_pm: PackageManagerSpec
+) -> Candidate | None:
+    if tool.package_managers and inventory.package_manager not in tool.package_managers:
+        return None  # e.g. `npm audit` needs package-lock.json; a pnpm project audits with pnpm.
     finding = inventory.get(f"tool:{tool.id}")
     status = finding.status if finding else Status.MISSING
     configured_mcp = any(f.kind == "mcp_server" and capability in f.capabilities for f in inventory.findings)
@@ -118,7 +156,7 @@ def _registry_candidate(tool: ToolSpec, capability: str, inventory: Inventory) -
         return None
     if tool.kind == "script" and finding is None:
         return None  # Project scripts are only meaningful where they exist.
-    command = list(tool.run[capability]) if capability in tool.run else None
+    command = _expand(tool.run[capability], run_pm) if capability in tool.run else None
     evidence = list(finding.evidence) if finding else []
     withheld = ""
     environment = next(iter(inventory.by_kind("environment")), None)
@@ -139,7 +177,9 @@ def _registry_candidate(tool: ToolSpec, capability: str, inventory: Inventory) -
         ),
         evidence=evidence,
         command=command,
-        install=tool.install,
+        install=tool.install.replace("{js_add_dev}", pm.add_dev).replace(
+            "{js_create}", pm.create or "npm init"
+        ),
         notes=tool.notes,
         command_withheld=withheld,
     )
@@ -186,15 +226,44 @@ class SelectionContext:
 
     large_repo_files: int = 2000
     size_adjustment: float = 5.0
+    default_package_manager: str = "npm"
+    task: str = ""
+    task_keyword_bonus: float = 3.0
 
     @classmethod
-    def from_config(cls, config: dict[str, Any] | None) -> SelectionContext:
+    def from_config(cls, config: dict[str, Any] | None, task: str = "") -> SelectionContext:
         if not config:
-            return cls()
+            return cls(task=task)
+        selection = config.get("selection", {})
         return cls(
             large_repo_files=int(config.get("context", {}).get("large_repo_files", 2000)),
-            size_adjustment=float(config.get("selection", {}).get("code_navigation_size_adjustment", 5.0)),
+            size_adjustment=float(selection.get("code_navigation_size_adjustment", 5.0)),
+            default_package_manager=str(selection.get("default_package_manager", "npm")),
+            task=task,
+            task_keyword_bonus=float(selection.get("task_keyword_bonus", 3.0)),
         )
+
+
+def _adjust_for_task(candidates: list[Candidate], registry: Registry, context: SelectionContext) -> None:
+    """A tool the task names (or whose technology it names) beats an equally available one.
+    The bonus is smaller than the gap between installed and missing, so it never makes a missing
+    tool win over a working one."""
+    task = context.task.lower()
+    for c in candidates:
+        spec = registry.tools.get(c.id)
+        if spec is None:
+            continue
+        hit = next(
+            (
+                k
+                for k in spec.task_keywords
+                if re.search(r"(?<![\w-])" + re.escape(k.lower()) + r"(?![\w-])", task)
+            ),
+            None,
+        )
+        if hit:
+            c.score += context.task_keyword_bonus
+            c.adjustments.append(f"the task mentions '{hit}'")
 
 
 # Kinds that index the codebase (graphs, language servers) rather than scanning text.
@@ -231,9 +300,14 @@ def candidates_for(
     registry: Registry,
     context: SelectionContext | None = None,
 ) -> list[Candidate]:
+    context = context or SelectionContext()
+    # Install hints may follow the configured default; run commands use the manager discovery
+    # checked for (npm without a lockfile), so a "ready" check never runs a missing binary.
+    pm = package_manager(inventory, registry, context)
+    run_pm = package_manager(inventory, registry)
     candidates: list[Candidate] = []
     for tool in registry.tools_for(capability):
-        candidate = _registry_candidate(tool, capability, inventory)
+        candidate = _registry_candidate(tool, capability, inventory, pm, run_pm)
         if candidate is not None:
             candidates.append(candidate)
     for finding in inventory.findings:
@@ -245,9 +319,31 @@ def candidates_for(
             if candidate.id == "git" and candidate.status.usable:
                 candidate.notes = "git is installed but this project is not a repository yet"
     if capability == "code_navigation":
-        _adjust_for_size(candidates, inventory, context or SelectionContext())
+        _adjust_for_size(candidates, inventory, context)
+    if context.task:
+        _adjust_for_task(candidates, registry, context)
     # A tool whose command had to be withheld ranks after runnable ones (e.g. `make test`).
     return sorted(candidates, key=lambda c: (bool(c.command_withheld), -c.score, c.name))
+
+
+# Kinds a user adds to Claude Code on purpose: worth naming even when a simpler tool is selected.
+EXTENSION_KINDS = frozenset({"skill", "agent", "mcp"})
+
+
+def installed_extensions(rec: ToolRecommendation, limit: int = 3) -> list[Candidate]:
+    """Usable skills, subagents, and MCP servers for this capability besides the selected tool."""
+    return rec.extensions[:limit]
+
+
+def _extensions(candidates: list[Candidate], selected: Candidate | None) -> list[Candidate]:
+    """Installed extensions, best of each kind first, so three similar subagents do not hide a
+    skill or an MCP server."""
+    usable = [c for c in candidates if c is not selected and c.status.usable and c.kind in EXTENSION_KINDS]
+    firsts: list[Candidate] = []
+    for c in usable:
+        if all(f.kind != c.kind for f in firsts):
+            firsts.append(c)
+    return firsts + [c for c in usable if c not in firsts]
 
 
 def _rationale(selected: Candidate | None, suggestion: Candidate | None, others: list[Candidate]) -> str:
@@ -304,6 +400,7 @@ def recommend(
                 suggestion=suggestion,
                 alternatives=rest[:3],
                 rationale=_rationale(selected, suggestion, rest),
+                extensions=_extensions(candidates, selected),
             )
         )
     return recommendations

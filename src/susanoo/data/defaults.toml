@@ -90,6 +90,13 @@ large_repo_files = 2000
 # Score shift applied to code-navigation candidates by repository size: indexed tools gain it
 # in large repositories and lose it in small ones; built-in text search loses it in large ones.
 code_navigation_size_adjustment = 5.0
+# Score added to a tool whose `task_keywords` appear in the task ("postgres" -> psql). Smaller than
+# the gap between an installed and a missing tool, so it only decides between comparable options.
+task_keyword_bonus = 3.0
+# JavaScript package manager for install hints when the project does not name one
+# (package.json "packageManager") and has no lockfile: npm, pnpm, yarn, or bun. Package-script
+# commands keep using the manager discovery checked for (npm without a lockfile).
+default_package_manager = "npm"
 
 [auto]
 # Automatic routing (`susanoo init --global`, or `--auto` with the settings scope): every prompt
@@ -112,11 +119,16 @@ task_verbs = [
     "convert", "deploy", "ship", "clean ?up", "extract", "wire up", "hook up", "configure",
     "introduce", "handle", "improve", "resolve", "generate", "scaffold", "document",
     "redesign", "restyle", "polish", "tweak", "adjust", "allow", "prevent", "make sure", "ensure",
-    "validate", "translate", "localize", "bootstrap", "rotate", "revert",
+    "validate", "translate", "localize", "bootstrap", "rotate", "revert", "install", "uninstall",
+    "pin", "unpin",
 ]
 # A task verb followed by one of these is not a coding task ("write me a haiku", "make sense of
 # this", "drop it", "move on", "make sure you understand").
-not_after_verb = ["me", "us", "you", "sense", "it", "on", "a list", "an? (?:overview|summary)"]
+not_after_verb = [
+    "me", "us", "you", "sense", "it", "on", "a list", "an? (?:overview|summary)",
+    # "install docker", "install the project dependencies": environment chores, not code changes.
+    "docker", "(?:the )?(?:project'?s? )?(?:dependencies|deps|requirements)",
+]
 # A prompt starting with one of these is a question, even if it mentions code.
 question_starts = [
     "what", "what'?s", "why", "how", "where", "when", "who", "which", "explain", "describe", "tell me",
@@ -149,7 +161,13 @@ route_before_edit_exempt = [
 ]
 
 [enforcement]
-# Used only when the /susanoo skill was installed with `susanoo init --enforce`.
+# Hands-off (default): Susanoo asks nothing and blocks no edit in any permission mode, and its
+# briefs treat checkpoints as points to report rather than to stop at; Claude Code's own
+# permission settings decide what needs confirmation. Only the evidence gate stays, because it
+# never asks anything. Set to false to apply the approval, write, and irreversible-action gates
+# outside `autonomous_modes`.
+hands_off = true
+# The settings below are used only when the /susanoo skill was installed with `susanoo init --enforce`.
 # Profiles whose file edits wait for the user to approve the plan.
 approval_profiles = ["standard", "deep"]
 # Claude Code permission modes in which the user chose to let Claude work hands-off. In these
@@ -253,6 +271,47 @@ label = "exploratory or research work"
 patterns = ["research", "evaluate", "explore", "prototype", "spike", "proof of concept", "poc", "experiment\\w*", "compare (?:options|approaches|libraries)", "new library", "unfamiliar"]
 effects = { technical_uncertainty = 2 }
 recommends = ["web_research"]
+
+[[signals]]
+id = "dependency-change"
+label = "dependency change"
+# Adding, removing, or bumping a package is a supply-chain change: worth an audit, not a bigger
+# workflow on its own.
+patterns = [
+    # "dependency injection", "the dependency graph", and React hook deps are not packages.
+    '(?:dev-?)?dependenc(?:y|ies)(?! (?:injection|inversion|graphs?|trees?|cycles?|arrays?|lists?|resolution order))',
+    "lockfiles?", 'package-lock\.json', 'pnpm-lock\.yaml', 'yarn\.lock', 'bun\.lockb?', 'poetry\.lock',
+    'uv\.lock', 'cargo\.lock', 'requirements(?:-dev)?\.txt',
+    "(?:npm|pnpm|yarn|bun|pip3?|uv|poetry|cargo|gem|composer) (?:add|install|i|remove|uninstall|rm|upgrade|update|up)",
+    "go get",
+    # In a coding task, "install X" nearly always means a package ("the install script" does not).
+    '(?:install|uninstall|reinstall) (?!(?:the|a|an|it|its|them|these|those|this|that|script|step|guide|instructions|docs|page|flow|process|command|wizard|button|hooks?|middleware|handlers?|listeners?)s?(?![\w-]))[@\w][\w@./-]*',
+    # "Bump axios to 1.7", "upgrade react from 17": a named package with a version.
+    '(?:upgrade|bump|update|pin|downgrade) [@\w][\w@./-]* (?:to|from) v?\d+(?:\.(?:\d+|x))*',
+    '(?:add|install|remove|uninstall|upgrade|update|bump|pin|drop|swap) (?:the |a |an )?[\w@./-]+ (?:package|library|lib|module|crate|gem|sdk)',
+    "(?:packages?|librar(?:y|ies)) (?:versions?|upgrades?|updates?|bumps?)",
+]
+effects = { external_dependencies = 1 }
+recommends = ["dependency_audit"]
+
+[[signals]]
+id = "dependency-upgrade-broad"
+label = "broad dependency upgrade"
+kind = "scope"
+patterns = [
+    # Needs an upgrade verb and a dependency or version context: "add a README to all packages"
+    # and "the next major version banner" are not upgrades.
+    '(?:upgrade|update|bump)s? (?:all|every|outdated|the outdated) (?:(?:of )?(?:the|our|its) )?(?:[\w-]+ )?(?:dependencies|packages|deps|libraries)',
+    '(?:upgrade|update|bump|migrate)s? (?:[\w@./-]+ )?to (?:the |their |its )?(?:latest|next|new) major versions?',
+    'major (?:version )?(?:dependency|package) (?:bumps?|updates?|upgrades?)',
+    # "Upgrade django from 3 to 5": a jump across major versions ("from 1.2 to 1.3" is not).
+    '(?:upgrade|update|bump|migrate)s? [@\w][\w@./-]* from v?(?P<major>\d+)(?:\.[\dx]+)* to v?(?!(?P=major)(?!\d))\d+(?:\.[\dx]+)*',
+]
+# Several major versions at once: breaking changes can surface anywhere, and only the test suite
+# finds them.
+effects = { affected_components = 2, technical_uncertainty = 2, testing_difficulty = 2, external_dependencies = 2 }
+requires = ["integration_testing"]
+recommends = ["dependency_audit"]
 
 [[signals]]
 id = "small-change"
@@ -480,7 +539,7 @@ verification = ["migration_check", "integration_tests"]
 [[controls]]
 id = "irreversible-action-gate"
 when = { dimension = "irreversibility", min = 2 }
-description = "No deploys, releases, destructive commands, history rewrites, or force pushes without explicit approval."
+description = "No deploys, releases, destructive commands, history rewrites, or force pushes unless the task calls for them. With hands_off = false Susanoo asks before running one; otherwise Claude Code's permission settings decide."
 checkpoint = "Human approval before any irreversible or outward-facing action."
 verification = []
 
@@ -493,7 +552,8 @@ verification = ["integration_tests"]
 
 # ---------------------------------------------------------------------------
 # Verification rules. `levels` sets the baseline per profile; `escalate`
-# raises the level when an assessment dimension reaches `min`; `signals`
+# raises the level when an assessment dimension reaches `min` (or when a
+# `signal` matched); `signals`
 # includes the step only when one of the listed signals matched.
 # ---------------------------------------------------------------------------
 
@@ -544,7 +604,10 @@ id = "dependency_audit"
 title = "Dependency vulnerability audit"
 capability = "dependency_audit"
 levels = { deep = "recommended" }
-escalate = [{ dimension = "external_dependencies", min = 2, level = "recommended" }]
+escalate = [
+    { dimension = "external_dependencies", min = 2, level = "recommended" },
+    { signal = "dependency-change", level = "recommended" },
+]
 
 [[verification]]
 id = "secret_scan"

@@ -81,6 +81,11 @@ def select_steps(
             level = base
             reasons.append(f"{profile.upper()} profile: {base}")
         for esc in rule.get("escalate", []):
+            if "signal" in esc:
+                if esc["signal"] in signals:
+                    level = _raise(level, esc["level"])
+                    reasons.append(f"signal {esc['signal']}: {esc['level']}")
+                continue
             dim = esc["dimension"]
             if assessment.level(dim) >= esc["min"]:
                 level = _raise(level, esc["level"])

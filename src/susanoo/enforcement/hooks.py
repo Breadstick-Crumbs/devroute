@@ -178,7 +178,9 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
             record["work_started"] = True
         if record.pop("compacted", False):
             # PostCompact cannot add context itself; the next tool call carries the reminder.
-            decision.context = gates.summary(state)
+            decision.context = gates.summary(
+                state, gates.autonomous(event, state, config.get("enforcement", {}))
+            )
             decision.notes.append("route summary re-injected on the first tool call after compaction")
         hook_state.save()
         _log(store, state, event_name, decision)
@@ -200,7 +202,7 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
         return 0, ""
 
     if event_name == "session-start":
-        decision = gates.session_start(event, state)
+        decision = gates.session_start(event, state, config)
         if not decision.context:
             return 0, ""
         record.pop("compacted", None)

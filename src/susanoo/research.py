@@ -16,7 +16,7 @@ from typing import Any, Protocol
 
 from susanoo.discovery.models import Inventory, Status
 from susanoo.registry import Registry
-from susanoo.selection import Candidate, ToolRecommendation, candidates_for
+from susanoo.selection import Candidate, SelectionContext, ToolRecommendation, candidates_for
 
 KIND_SECURITY_NOTES: dict[str, str] = {
     "native": "Built into Claude Code and governed by its permission settings.",
@@ -61,6 +61,8 @@ def analyze_gaps(recommendations: list[ToolRecommendation]) -> list[Gap]:
                 else "consider"
             )
             suggestion = f"{verb} {rec.suggestion.name} ({rec.suggestion.kind})"
+            if rec.suggestion.install and rec.suggestion.status is not Status.CONFIGURED_INACCESSIBLE:
+                suggestion += f", install: {rec.suggestion.install}"
         else:
             suggestion = f"run `susanoo research {rec.capability}`"
         gaps.append(
@@ -107,12 +109,16 @@ class LocalRegistryProvider:
 
     name = "local-registry"
 
-    def __init__(self, inventory: Inventory, registry: Registry) -> None:
+    def __init__(
+        self, inventory: Inventory, registry: Registry, context: SelectionContext | None = None
+    ) -> None:
         self.inventory = inventory
         self.registry = registry
+        self.context = context
 
     def search(self, capability: str) -> list[ResearchCandidate]:
-        return [self._convert(c) for c in candidates_for(capability, self.inventory, self.registry)]
+        found = candidates_for(capability, self.inventory, self.registry, self.context)
+        return [self._convert(c) for c in found]
 
     def _convert(self, candidate: Candidate) -> ResearchCandidate:
         notes = [KIND_SECURITY_NOTES.get(candidate.kind, "")]
@@ -158,11 +164,12 @@ def research(
     registry: Registry,
     providers: list[ResearchProvider] | None = None,
     task: str | None = None,
+    context: SelectionContext | None = None,
 ) -> ResearchReport:
     if capability not in registry.capabilities:
         known = ", ".join(sorted(registry.capabilities))
         raise ValueError(f"unknown capability '{capability}'. Known capabilities: {known}")
-    sources: list[ResearchProvider] = providers or [LocalRegistryProvider(inventory, registry)]
+    sources: list[ResearchProvider] = providers or [LocalRegistryProvider(inventory, registry, context)]
     candidates: list[ResearchCandidate] = []
     for provider in sources:
         candidates += provider.search(capability)

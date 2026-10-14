@@ -62,6 +62,24 @@ def test_merge_does_not_mutate_inputs():
         ("[assessment.negation]\nfiller = -1\n", "from 0 to 6"),
         ("[assessment.negation]\nkeep_signals = ['nope']\n", "unknown signal"),
         ('[[signals]]\nid = "bad"\npatterns = ["x"]\ncaps_only_if = "x"\n', "list of strings"),
+        (
+            '[[verification]]\nid = "dependency_audit"\ncapability = "dependency_audit"\n'
+            'escalate = [{ signal = "nope", level = "recommended" }]\n',
+            "unknown escalate signal",
+        ),
+        (
+            '[[verification]]\nid = "dependency_audit"\ncapability = "dependency_audit"\n'
+            'escalate = [{ signal = ["dependency-change"], level = "recommended" }]\n',
+            "unknown escalate signal",
+        ),
+        (
+            '[[verification]]\nid = "dependency_audit"\ncapability = "dependency_audit"\n'
+            'escalate = [{ signal = "dependency-change", dimension = "security_privacy", min = 2, '
+            'level = "required" }]\n',
+            "either 'signal' or 'dimension'",
+        ),
+        ('[enforcement]\nhands_off = "false"\n', "hands_off must be true or false"),
+        ('[selection]\ndefault_package_manager = "pnmp"\n', "default_package_manager must be one of"),
     ],
 )
 def test_invalid_overrides_are_rejected(tmp_path: Path, snippet: str, message: str):

@@ -288,3 +288,14 @@ def test_redact_common_formats():
     text = "sk_live_ABCDEFGHIJKL ghp_" + "a" * 30 + " AKIA" + "B" * 16 + " api_key=xyz"
     out = redact(text)
     assert "ABCDEFGHIJKL" not in out and "aaaa" not in out and "xyz" not in out and "AKIA" not in out
+
+
+def test_dependency_change_recommends_an_audit(config):
+    from susanoo.analyzer import assess
+    from susanoo.verification import select_steps
+
+    steps = {s.rule["id"]: s for s in select_steps(assess("Add the zod package", config), "fast", [], config)}
+    assert steps["dependency_audit"].level == "recommended"
+    assert any("dependency-change" in r for r in steps["dependency_audit"].reasons)
+    plain = {s.rule["id"] for s in select_steps(assess("Add a settings page", config), "fast", [], config)}
+    assert "dependency_audit" not in plain

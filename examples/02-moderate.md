@@ -60,20 +60,21 @@ Available tools:
 - Linting / static analysis [required]: Ruff (cli, installed (unverified)) - `ruff check .`
 - Unit testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
 - Version control [required]: git (cli, installed (unverified))
+- Code navigation [recommended]: Claude Code Grep / Glob / Read (native, verified)
 - Code review [recommended]: Claude Code subagents (native, verified)
 - Type checking [recommended]: mypy (cli, installed (unverified)) - `mypy .`
 
 Missing capabilities:
 
-- Dependency audit [recommended, non-blocking]: consider pip-audit (cli)
+- Dependency audit [recommended, non-blocking]: consider pip-audit (cli), install: pip install pip-audit
 
 Susanoo never installs tools itself; adopting any of these needs your approval.
 
 ## Proposed steps
 
-1. **Investigate** - Read the relevant code, tests, and conventions. Identify every component the change touches.
+1. **Investigate** - Read the relevant code, tests, and conventions. Identify every component the change touches. Navigation: Claude Code Grep / Glob / Read.
 2. **Clarify** - If requirements are ambiguous, ask focused questions. Skip when the task is already precise.
-3. **Plan** **[approval]** - Write a short plan: files to change, approach, tests to add, and risks.
+3. **Plan** **[checkpoint]** - Write a short plan: files to change, approach, tests to add, and risks.
 4. **Implement incrementally** - Build in small steps, running relevant tests after each meaningful step.
 5. **Test** - Add or update automated tests for new behavior and run the required verification.
 6. **Review** - Review the complete diff for correctness, edge cases, and convention fit; delegate to susanoo-reviewer when risk is moderate or higher.
@@ -91,7 +92,9 @@ Susanoo never installs tools itself; adopting any of these needs your approval.
 
 Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.
 
-## Approval checkpoints
+## Checkpoints
+
+Hands-off (the default): report these in your updates and continue; Susanoo waits for no approval. Mandatory safety controls still shape the work (review, sandbox credentials, rollback path), while confirming deploys, pushes, migrations, and other outward-facing actions is left to Claude Code's permission settings. Set `[enforcement] hands_off = false` to stop at each one.
 
 - Approve the implementation plan before files are changed.
 

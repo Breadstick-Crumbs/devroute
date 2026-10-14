@@ -89,6 +89,7 @@ from susanoo.render import (
 )
 from susanoo.research import research
 from susanoo.router import load_profiles
+from susanoo.selection import SelectionContext
 from susanoo.verification import EVIDENCE_STATUSES, execute_plan, reported_evidence
 from susanoo.verification.executor import redact
 
@@ -246,8 +247,11 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
     elif skill:
         ctx.emit(render_brief(plan) + (f"\n{replaced}" if replaced else ""))
     else:
-        modes = set(ctx.config.get("enforcement", {}).get("autonomous_modes", []))
-        live_hands_off = hands_off or message.get("permission_mode") in modes
+        enforcement = ctx.config.get("enforcement", {})
+        modes = set(enforcement.get("autonomous_modes", []))
+        live_hands_off = (
+            hands_off or bool(enforcement.get("hands_off")) or message.get("permission_mode") in modes
+        )
         brief = compact_brief(
             plan,
             plan.record_id or "not recorded",
@@ -919,12 +923,14 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     approved = any(a.get("record_id") == plan.record_id for a in store.read("approvals"))
     if added:
         header += f"\nNew safety controls: {', '.join(added)}."
-    if not approved and target in set(ctx.config.get("enforcement", {}).get("approval_profiles", [])):
+    enforcement = ctx.config.get("enforcement", {})
+    configured_hands_off = bool(enforcement.get("hands_off"))
+    if not approved and not configured_hands_off and target in set(enforcement.get("approval_profiles", [])):
         header += " The plan needs the user's approval again."
     if state.route.get("auto") is True:
-        modes = set(ctx.config.get("enforcement", {}).get("autonomous_modes", []))
+        modes = set(enforcement.get("autonomous_modes", []))
         message = prompt_state.load(ctx.root, session) or {}
-        hands_off = approved or message.get("permission_mode") in modes
+        hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
         ctx.emit(
             header + "\n" + compact_brief(plan, plan.record_id, hands_off, _brief_command(ctx.root), "again")
         )
@@ -958,7 +964,8 @@ def cmd_research(ctx: Context, stdin: TextIO) -> int:
         return EXIT_OK
     inventory = build_inventory(ctx.root, registry)
     try:
-        report = research(ctx.args.capability, inventory, registry, task=ctx.args.task)
+        context = SelectionContext.from_config(ctx.config, task=ctx.args.task or "")
+        report = research(ctx.args.capability, inventory, registry, task=ctx.args.task, context=context)
     except ValueError as exc:
         raise CLIError(str(exc)) from exc
     if not ctx.args.no_record and is_initialized(ctx.root):

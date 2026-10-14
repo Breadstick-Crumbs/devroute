@@ -15,10 +15,10 @@ from susanoo.adapters.claude_code.installer import (
     skill_template,
 )
 from susanoo.cli import main
-from susanoo.config import load_config
 from susanoo.enforcement import gates
 from susanoo.enforcement.state import RouteState, evidence_status
 from susanoo.evaluation import RecordStore
+from tests.conftest import GATED_TOML, gated_config
 
 SESSION = "session-123"
 
@@ -54,7 +54,8 @@ def state(profile: str = "standard", approved: bool = False, controls=None, miss
 
 @pytest.fixture(scope="module")
 def cfg():
-    return load_config()
+    # These tests exercise the gates themselves; by default (hands-off) Susanoo asks nothing.
+    return gated_config()
 
 
 def edit_event(path: str) -> dict:
@@ -231,6 +232,8 @@ def project(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     out = io.StringIO()
     assert main(["init", "--enforce", "--path", str(root)], stdout=out, stderr=io.StringIO()) == 0
+    with (root / ".susanoo" / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write(GATED_TOML)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
     assert (
         main(
@@ -410,3 +413,19 @@ def test_stop_guard_is_per_session(project: Path, monkeypatch):
     hooks_dir = project / ".susanoo" / "records" / "hooks"
     [own] = [json.loads(p.read_text(encoding="utf-8")) for p in hooks_dir.glob("session-123*.json")]
     assert own["stop_blocks"] == 1
+
+
+def test_default_config_blocks_stop_after_an_edit(tmp_path: Path, monkeypatch):
+    """Hands-off (the default) lets the edit through without approval, then holds the turn for evidence."""
+    root = tmp_path / "proj"
+    (root / ".git").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert main(["init", "--enforce", "--path", str(root)], stdout=io.StringIO(), stderr=io.StringIO()) == 0
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    route_args = ["route", "--path", str(root), "--profile", "standard", "Add a settings page"]
+    assert main(route_args, stdout=io.StringIO(), stderr=io.StringIO()) == 0
+    code, out = hook(root, "pre-tool-use", edit_event(str(root / "app.py")), monkeypatch)
+    assert code == 0 and out == ""  # no approval needed
+    code, out = hook(root, "stop", {"session_id": SESSION, "stop_hook_active": False}, monkeypatch)
+    assert json.loads(out)["decision"] == "block"
