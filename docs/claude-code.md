@@ -34,6 +34,7 @@ susanoo init                        # --dry-run to preview, --no-agents to skip 
 | File | Purpose |
 |---|---|
 | `.claude/skills/susanoo/SKILL.md` | The `/susanoo` skill |
+| `.claude/skills/taste-ui/SKILL.md` | Visual direction for UI work, from your taste profile (`--no-taste` to skip; see below) |
 | `.claude/agents/susanoo-reviewer.md` | Read-only independent reviewer subagent |
 | `.claude/agents/susanoo-researcher.md` | Capability research subagent (web tools, never installs) |
 | `.susanoo/config.toml` | Commented project configuration |
@@ -42,6 +43,32 @@ susanoo init                        # --dry-run to preview, --no-agents to skip 
 It does **not** modify `.claude/settings*.json`, `CLAUDE.md`, `.mcp.json`, or anything else you own. The one opt-in exception is `susanoo init --enforce --enforce-scope settings`, which adds Susanoo's own hook entries to `.claude/settings.local.json` (see [enforcement.md](enforcement.md#how-it-is-wired)). If a file already exists with different content, it is left alone and reported as a conflict. `--force` writes a backup before replacing. `susanoo init --uninstall` removes only files that still match what Susanoo installed.
 
 Commit `.claude/skills/susanoo/`, `.claude/agents/susanoo-*.md`, and `.susanoo/config.toml` if you want the whole team to use them.
+
+### Taste profile for UI work
+
+The `taste-ui` skill is how Claude makes visual decisions. Susanoo's own checks never judge aesthetics ([ADR 0008](decisions/0008-ui-ux-workflow.md)).
+
+For any UI task, the skill:
+1. Reads your taste profile, if you have one.
+2. Checks whether that look fits the product. The profile is a quality bar, not a required look. A project's `DESIGN.md`, its tokens, or a client's brand win, and Claude asks you when the fit is unclear.
+3. Proposes three distinct directions.
+4. Builds with design tokens first.
+5. Screenshots the result at the visual check's widths (375, 768 and 1280 px) before handing it back ([ADR 0010](decisions/0010-taste-skill-and-screenshot-helper.md)).
+
+The profile lives in one folder, chosen in this order:
+1. `SUSANOO_TASTE_DIR`;
+2. `[ui] taste_dir` in `~/.susanoo/config.toml`;
+3. `~/.susanoo/taste`.
+
+Susanoo's project configuration cannot change it, and relative paths are rejected. The folder holds `TASTE.md` (your rules, a slop blacklist, and an index of references) and `sites/<slug>/`, one per captured reference site.
+
+```bash
+susanoo taste path                                        # where the profile is, and what it contains
+susanoo taste capture wispr=https://wisprflow.ai/ ...     # computed tokens + screenshots per site
+susanoo taste shoot index.html shots/                     # 375, 768 and 1280 px screenshots + page errors
+```
+
+`capture` and `shoot` need Node.js 22+ and Chrome, Chromium, or Edge. To use another browser, set `SUSANOO_BROWSER` to its absolute path. Node and the browser are never taken from the current folder, and on Windows only `.exe` files count. `capture` hides cookie and consent pop-ups for its screenshots; it never accepts them. Without a profile, the skill uses its built-in slop blacklist and offers to build a profile from 5–10 sites you like.
 
 ## Usage
 

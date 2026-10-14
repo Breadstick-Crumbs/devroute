@@ -36,6 +36,7 @@ from susanoo.adapters.claude_code.installer import (
     _read,
     sha256,
     skill_template,
+    taste_skill_template,
 )
 from susanoo.adapters.claude_code.settings_hooks import apply_settings, plan_settings, settings_hooks
 from susanoo.config import read_data_text
@@ -69,9 +70,11 @@ def user_command() -> str:
     return "susanoo" if shutil.which("susanoo") else hook_command()
 
 
-def file_targets(with_agents: bool) -> list[tuple[str, str]]:
+def file_targets(with_agents: bool, with_taste: bool = True) -> list[tuple[str, str]]:
     """(path relative to the Claude configuration directory, content) for whole-file targets."""
     items = [("skills/susanoo/SKILL.md", skill_template(False))]
+    if with_taste:
+        items.append(("skills/taste-ui/SKILL.md", taste_skill_template()))
     if with_agents:
         for name in ("susanoo-reviewer", "susanoo-researcher"):
             items.append((f"agents/{name}.md", read_data_text("templates", "agents", f"{name}.md")))
@@ -228,11 +231,11 @@ def _plan_playbook(home: Path) -> FileAction:
     return FileAction(PLAYBOOK, "update", "workflow block written; your text kept")
 
 
-def plan_global(*, auto: bool, with_agents: bool, force: bool) -> list[FileAction]:
+def plan_global(*, auto: bool, with_agents: bool, force: bool, with_taste: bool = True) -> list[FileAction]:
     home, manifest = claude_home(), read_manifest()
     actions = [
         _file_action(home, rel, content, manifest["files"].get(rel), force)
-        for rel, content in file_targets(with_agents)
+        for rel, content in file_targets(with_agents, with_taste)
     ]
     settings = plan_settings(
         home,
@@ -247,11 +250,13 @@ def plan_global(*, auto: bool, with_agents: bool, force: bool) -> list[FileActio
     return actions
 
 
-def apply_global(actions: list[FileAction], *, auto: bool, with_agents: bool) -> list[FileAction]:
+def apply_global(
+    actions: list[FileAction], *, auto: bool, with_agents: bool, with_taste: bool = True
+) -> list[FileAction]:
     """Apply a plan from :func:`plan_global`. The manifest is saved after every step, so a partial
     failure still leaves a record of what was written."""
     home, manifest = claude_home(), read_manifest()
-    content = dict(file_targets(with_agents))
+    content = dict(file_targets(with_agents, with_taste))
     files: dict[str, str] = dict(manifest.get("files", {}))
     manifest.update(
         {

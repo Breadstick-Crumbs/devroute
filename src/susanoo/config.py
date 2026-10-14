@@ -262,6 +262,10 @@ def validate(config: Config) -> None:
         _require(when.get("dimension") in DIMENSIONS, f"control '{cid}': unknown dimension in 'when'")
         _check_level(f"control '{cid}' when.min", when.get("min"))
 
+    _require(
+        isinstance(config.get("ui", {}).get("taste_dir", ""), str),
+        "[ui] taste_dir must be a string (a folder path)",
+    )
     ui_domain = config.get("ui", {}).get("domain", "")
     if ui_domain not in ("", "none"):
         from susanoo.ui import domain_ids
