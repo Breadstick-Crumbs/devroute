@@ -5,7 +5,7 @@
 # sensible route, not measured ground truth. Each case says why it has its label.
 #
 # Kept apart from routing-v1 so the original cases, and CI's agreement threshold on them, stay
-# unchanged while the UI routing fixes are made. Run it with:
+# unchanged while the UI routing fixes are made. Run it from a source checkout with:
 #   susanoo eval --suite src/susanoo/data/suites/ui-v1.toml
 #
 # `controls` lists safety controls the route must include. A missing one counts as a

@@ -79,6 +79,12 @@ def load_suite(path: Path | None = None) -> tuple[str, list[dict[str, Any]]]:
 
 def run_suite(config: Config, profiles: dict[str, Profile], path: Path | None = None) -> SuiteResult:
     name, cases = load_suite(path)
+    known_controls = {str(c.get("id")) for c in config.get("controls", [])}
+    for i, case in enumerate(cases):
+        unknown = [c for c in case.get("controls", []) if c not in known_controls]
+        if unknown:
+            # A typo would otherwise read like a routing regression ("missing safety control").
+            raise ConfigError(f"{name}: case {i + 1} lists unknown control(s): {', '.join(unknown)}")
     confusion = {e: dict.fromkeys(PROFILE_ORDER, 0) for e in PROFILE_ORDER}
     results: list[CaseResult] = []
     agree = 0

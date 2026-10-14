@@ -125,6 +125,22 @@ def test_suite_controls_are_checked(tmp_path: Path, config, profiles):
     assert result.risk_floor_violations == 1
     assert [c.id for c in result.failures] == ["missing"]
     assert result.failures[0].problems == ["missing safety control(s): security-review"]
+    typo = write(
+        tmp_path,
+        "typo.toml",
+        '[[cases]]\ntask = "x y z"\nexpected = "fast"\ncontrols = ["security_review"]\n',
+    )
+    with pytest.raises(ConfigError, match="unknown control"):
+        run_suite(config, profiles, typo)
+    both = write(
+        tmp_path,
+        "both.toml",
+        '[[cases]]\ntask = "Fix typo in README"\nexpected = "fast"\nmin_risk = "critical"\n'
+        'controls = ["security-review"]\n',
+    )
+    result = run_suite(config, profiles, both)
+    assert result.risk_floor_violations == 1  # one per case, however many floors it misses
+    assert len(result.failures[0].problems) == 2
 
 
 def test_bundled_ui_suite_keeps_safety_floors(config, profiles):
