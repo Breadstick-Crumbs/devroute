@@ -4,6 +4,11 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- ADR 0008 (proposed): how Susanoo will handle UI and UX work. It requires and records UI checks (a visual check at common widths, accessibility scans in DEEP), gives short domain checklists, and points Claude at design context; it does not judge aesthetics. Not implemented yet beyond the evaluation pieces below.
+- UI reference suite `ui-v1.toml` (15 cases, labeled before any UI heuristic changed): `susanoo eval --suite src/susanoo/data/suites/ui-v1.toml` from a source checkout. With v0.7 heuristics it agrees on 8 of 15 with 0 risk-floor violations; visual redesigns and presentational checkout changes route DEEP.
+- Routing suites can list `controls` a case's route must include; a missing control counts as a risk-floor violation, and an unknown control id is a suite error.
+
 ## [0.7.0] - 2026-10-14
 
 ### Changed

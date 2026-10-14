@@ -42,6 +42,12 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Optional hooks that block completion claims when required evidence is missing | ✅ (v0.2, `--enforce`) |
 | Settings-scoped enforcement option, so gates also apply in resumed sessions and compaction recovery works without a manual snippet ([#29](https://github.com/Breadstick-Crumbs/susanoo/issues/29)) | ✅ (v0.4, `--enforce-scope settings`) |
 | Global auto mode: the default workflow in every project, with automatic routing and autonomy-aware gates ([#34](https://github.com/Breadstick-Crumbs/susanoo/issues/34)) | ✅ (v0.6, `susanoo init --global`) |
+| UI work ([ADR 0008](decisions/0008-ui-ux-workflow.md)): UI reference suite with labeled cases and `controls` checks | ✅ (unreleased) |
+| UI work: required visual check and accessibility scans, with project tools (axe, pa11y, Lighthouse CI, Playwright screenshots) | 🔜 |
+| UI work: UI domain (website, ecommerce, dashboard, mobile, component library) with short checklists in the brief | 🔜 |
+| UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | 🔜 |
+| UI work: visual redesigns and presentational payment-page changes routed without architectural or payment weight, eval-gated | 🔜 |
+| UI work: measure, then reduce, gate friction during bursts of small UI tweaks | 🔬 |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.
 

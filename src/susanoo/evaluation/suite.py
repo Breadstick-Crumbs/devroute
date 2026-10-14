@@ -30,6 +30,7 @@ class CaseResult:
     risk: str
     min_risk: str | None
     passed: bool
+    controls: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
 
@@ -70,11 +71,20 @@ def load_suite(path: Path | None = None) -> tuple[str, list[dict[str, Any]]]:
             raise ConfigError(f"{name}: case {i + 1} needs 'task' and 'expected' (fast|standard|deep)")
         if case.get("min_risk") not in (None, *RISK_ORDER):
             raise ConfigError(f"{name}: case {i + 1} has invalid min_risk")
+        controls = case.get("controls", [])
+        if not isinstance(controls, list) or not all(isinstance(c, str) for c in controls):
+            raise ConfigError(f"{name}: case {i + 1} has invalid controls (a list of control ids)")
     return name, cases
 
 
 def run_suite(config: Config, profiles: dict[str, Profile], path: Path | None = None) -> SuiteResult:
     name, cases = load_suite(path)
+    known_controls = {str(c.get("id")) for c in config.get("controls", [])}
+    for i, case in enumerate(cases):
+        unknown = [c for c in case.get("controls", []) if c not in known_controls]
+        if unknown:
+            # A typo would otherwise read like a routing regression ("missing safety control").
+            raise ConfigError(f"{name}: case {i + 1} lists unknown control(s): {', '.join(unknown)}")
     confusion = {e: dict.fromkeys(PROFILE_ORDER, 0) for e in PROFILE_ORDER}
     results: list[CaseResult] = []
     agree = 0
@@ -91,9 +101,18 @@ def run_suite(config: Config, profiles: dict[str, Profile], path: Path | None = 
         else:
             problems.append(f"expected {expected.upper()}, routed {actual.upper()}")
         min_risk = case.get("min_risk")
+        below_floor = False
         if min_risk and RISK_ORDER.index(assessment.risk.level) < RISK_ORDER.index(min_risk):
-            violations += 1
+            below_floor = True
             problems.append(f"risk {assessment.risk.level} is below the expected minimum {min_risk}")
+        expected_controls: list[str] = case.get("controls", [])
+        applied = {c.id for c in decision.controls}
+        missing = [c for c in expected_controls if c not in applied]
+        if missing:
+            below_floor = True
+            problems.append(f"missing safety control(s): {', '.join(missing)}")
+        if below_floor:
+            violations += 1
         results.append(
             CaseResult(
                 id=case.get("id", f"case-{i + 1}"),
@@ -103,6 +122,7 @@ def run_suite(config: Config, profiles: dict[str, Profile], path: Path | None = 
                 risk=assessment.risk.level,
                 min_risk=min_risk,
                 passed=not problems,
+                controls=expected_controls,
                 problems=problems,
             )
         )

@@ -106,3 +106,47 @@ def test_custom_suite_validation(tmp_path: Path, config, profiles):
     result = run_suite(config, profiles, good)
     assert result.profile_agreement == 0.0
     assert result.failures[0].problems == ["expected DEEP, routed FAST"]
+
+
+def test_suite_controls_are_checked(tmp_path: Path, config, profiles):
+    bad = write(
+        tmp_path, "bad.toml", '[[cases]]\ntask = "x y z"\nexpected = "fast"\ncontrols = "security-review"\n'
+    )
+    with pytest.raises(ConfigError, match="controls"):
+        run_suite(config, profiles, bad)
+    suite = write(
+        tmp_path,
+        "controls.toml",
+        '[[cases]]\nid = "kept"\ntask = "Change how the checkout calculates tax"\nexpected = "deep"\n'
+        'controls = ["security-review", "external-sandbox"]\n\n'
+        '[[cases]]\nid = "missing"\ntask = "Fix typo in README"\nexpected = "fast"\ncontrols = ["security-review"]\n',
+    )
+    result = run_suite(config, profiles, suite)
+    assert result.risk_floor_violations == 1
+    assert [c.id for c in result.failures] == ["missing"]
+    assert result.failures[0].problems == ["missing safety control(s): security-review"]
+    typo = write(
+        tmp_path,
+        "typo.toml",
+        '[[cases]]\ntask = "x y z"\nexpected = "fast"\ncontrols = ["security_review"]\n',
+    )
+    with pytest.raises(ConfigError, match="unknown control"):
+        run_suite(config, profiles, typo)
+    both = write(
+        tmp_path,
+        "both.toml",
+        '[[cases]]\ntask = "Fix typo in README"\nexpected = "fast"\nmin_risk = "critical"\n'
+        'controls = ["security-review"]\n',
+    )
+    result = run_suite(config, profiles, both)
+    assert result.risk_floor_violations == 1  # one per case, however many floors it misses
+    assert len(result.failures[0].problems) == 2
+
+
+def test_bundled_ui_suite_keeps_safety_floors(config, profiles):
+    # ADR 0008: the UI suite's agreement is tracked as the UI routing work lands, but its
+    # safety labels (min_risk, controls) must hold from the start.
+    path = Path(__file__).resolve().parents[1] / "src" / "susanoo" / "data" / "suites" / "ui-v1.toml"
+    result = run_suite(config, profiles, path)
+    assert result.total >= 15
+    assert result.risk_floor_violations == 0
