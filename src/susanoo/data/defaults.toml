@@ -138,7 +138,8 @@ question_starts = [
 ]
 # A task routed with one of these phrases runs hands-off, like an autonomous permission mode.
 autonomy = [
-    "autonomous(?:ly)?", "do(?: not|n.?t) ask me(?: anything)?", "without asking me", "no questions",
+    "autonomous(?:ly)?", "do(?: not|n.?t) ask me(?: anything)?", 'do(?: not|n.?t) ask(?=\s*(?:[,.;:!?]|$))',
+    "without asking me", "no questions",
     "just do it", "on your own", "do(?: not|n.?t) (?:check in|wait for me)(?: until (?:it.?s )?done)?",
     "no need to (?:ask|check with|confirm with) me",
 ]

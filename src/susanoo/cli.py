@@ -53,6 +53,7 @@ from susanoo.discovery import build_inventory
 from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.auto import (
     auto_settings,
+    autonomy_requested,
     close_superseded,
     compact_brief,
     grant_autonomy,
@@ -258,6 +259,9 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
             live_hands_off,
             _brief_command(ctx.root),
             lead="from your description, never lower than the user's message",
+            # Autonomy asked for earlier in the task still holds when Claude routes it anew.
+            asked_autonomy=hands_off
+            or (state is not None and autonomy_requested(store, state.route, state.record_id, {})),
         )
         ctx.emit(brief + (f"\n{replaced}" if replaced else ""))
     return EXIT_OK
@@ -931,9 +935,11 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
         modes = set(enforcement.get("autonomous_modes", []))
         message = prompt_state.load(ctx.root, session) or {}
         hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
-        ctx.emit(
-            header + "\n" + compact_brief(plan, plan.record_id, hands_off, _brief_command(ctx.root), "again")
+        asked_autonomy = autonomy_requested(store, state.route, old, message)
+        brief = compact_brief(
+            plan, plan.record_id, hands_off, _brief_command(ctx.root), "again", asked_autonomy=asked_autonomy
         )
+        ctx.emit(header + "\n" + brief)
     else:
         ctx.emit(header + "\n\n" + render_brief(plan))
     return EXIT_OK

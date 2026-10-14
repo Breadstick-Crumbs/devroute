@@ -132,9 +132,19 @@ def unrouted_note(command: str) -> str:
 
 
 def compact_brief(
-    plan: TaskPlan, record_id: str, hands_off: bool, command: str, lead: str = "automatically"
+    plan: TaskPlan,
+    record_id: str,
+    hands_off: bool,
+    command: str,
+    lead: str = "automatically",
+    asked_autonomy: bool = False,
 ) -> str:
-    """A short brief for Claude's context: what to do, not every detail of the assessment."""
+    """A short brief for Claude's context: what to do, not every detail of the assessment.
+
+    ``hands_off`` drops the approval check-in. ``asked_autonomy`` (the user asked in words not to be
+    asked) also drops the prompt to ask clarifying questions: hands-off is about permission prompts,
+    not about guessing what the user meant.
+    """
     a, d = plan.assessment, plan.decision
     lines = [
         f"Susanoo routed this task {lead} (record {record_id}).",
@@ -164,6 +174,13 @@ def compact_brief(
             "Missing tools: " + "; ".join(missing) + ". Checks that need them are not required here; "
             "mention the gap in the final report. Never install anything without the user's approval."
         )
+    if a.confidence == "low" and not asked_autonomy:
+        lines.append(
+            "Low confidence in this route: " + " ".join(a.confidence_notes) + " Before editing, ask the "
+            "user one to three focused questions about scope and expected behavior, unless their message "
+            "or the conversation already answers them. These are questions about the task, not an "
+            "approval request."
+        )
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
         "If this route understates the task (data loss, security, payments, production, or a wider change "
@@ -183,8 +200,13 @@ def compact_brief(
         )
     if hands_off or d.profile not in ("standard", "deep"):
         lines.append(
-            "Work autonomously: do not wait for approval. Show the brief in two or three lines, do the "
-            "task, then verify."
+            "Do not wait for approval: show the brief in two or three lines, do the task, then verify."
+            + (
+                ""
+                if asked_autonomy
+                else " If the request is ambiguous in a way that changes what you build, ask the user "
+                "instead of guessing."
+            )
             + (
                 " The safety controls still apply to how you work; Claude Code's permission settings "
                 "handle confirmations."
@@ -194,8 +216,13 @@ def compact_brief(
         )
     else:
         lines.append(
-            "Show the brief in two or three lines, investigate read-only, then present a short plan and "
-            "wait for the user's approval (one check-in). File edits are blocked until the user approves; "
+            "Show the brief in two or three lines, investigate read-only, then present a short plan"
+            + (
+                ""
+                if asked_autonomy
+                else ", with questions about anything ambiguous that changes what you build,"
+            )
+            + " and wait for the user's approval (one check-in). File edits are blocked until the user approves; "
             f"approval is recorded with `{command} approve`, which the user confirms."
         )
     lines.append(
@@ -204,6 +231,17 @@ def compact_brief(
         "completed|partial|abandoned --source agent`."
     )
     return "\n".join(lines)
+
+
+def autonomy_requested(
+    store: RecordStore, route: dict[str, Any], record_id: str, message: dict[str, Any]
+) -> bool:
+    """Whether the user asked in words not to be asked: on the route, its approvals, or the latest message."""
+    if route.get("autonomous") is True or message.get("hands_off") is True:
+        return True
+    return any(
+        a.get("record_id") == record_id and a.get("checkpoint") == "autonomy" for a in store.read("approvals")
+    )
 
 
 def _now() -> str:
@@ -338,7 +376,12 @@ def on_prompt(
             grant_autonomy(store, state.record_id, session)
         return (
             "Susanoo: this continues the task in progress."
-            + (" The user asked for autonomous work: do not wait for approval." if hands_off else "")
+            + (
+                " The user asked for autonomous work: do not wait for approval, and do not stop to ask "
+                "clarifying questions."
+                if hands_off
+                else ""
+            )
             + " "
             + gates.summary(state, hands_off or gates.autonomous(event, state, config.get("enforcement", {})))
             + (
@@ -362,4 +405,4 @@ def on_prompt(
     if hands_off:
         grant_autonomy(store, record_id, session)
     live_hands_off = hands_off or gates.autonomous(event, None, config.get("enforcement", {}))
-    return compact_brief(plan, record_id, live_hands_off, command)
+    return compact_brief(plan, record_id, live_hands_off, command, asked_autonomy=hands_off)

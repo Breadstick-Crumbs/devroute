@@ -66,6 +66,10 @@ def test_autonomy_phrases():
     assert wants_autonomy("Add retries to the webhook handler, work autonomously", cfg)
     assert wants_autonomy("Fix the flaky test, don't ask me anything", cfg)
     assert not wants_autonomy("Add retries to the webhook handler", cfg)
+    # A bare "don't ask" counts only where it ends its clause, not as part of a feature.
+    assert wants_autonomy("Fix the settings page form validation, don't ask", cfg)
+    assert wants_autonomy("Don't ask, just fix the settings page", cfg)
+    assert not wants_autonomy("Don't ask for the password twice on the login form", cfg)
 
 
 # --- autonomy in the gates ----------------------------------------------------------------
@@ -196,7 +200,8 @@ def test_project_auto_routes_tasks_and_ignores_questions(tmp_path: Path):
     assert RecordStore(root).read("routes") == []
     context = _prompt(root, "Add pagination to the /users API endpoint")
     assert "Susanoo routed this task automatically" in context and "STANDARD" in context
-    assert "Work autonomously" in context and "wait for the user's approval" not in context
+    assert "Do not wait for approval" in context and "wait for the user's approval" not in context
+    assert "ask the user instead of guessing" in context
     routes = RecordStore(root).read("routes")
     assert len(routes) == 1 and routes[0]["session_id"] == SESSION and routes[0]["auto"] is True
 
@@ -220,16 +225,30 @@ def test_follow_ups_continue_and_riskier_tasks_escalate(tmp_path: Path):
 def test_autonomy_request_routes_hands_off(tmp_path: Path):
     root = _auto_project(tmp_path)
     context = _prompt(root, "Add pagination to the /users API endpoint, work autonomously")
-    assert "Work autonomously: do not wait for approval" in context
+    assert "Do not wait for approval" in context
+    assert "instead of guessing" not in context  # the user asked not to be asked
     assert RecordStore(root).read("routes")[-1]["autonomous"] is True
     event = {**EDIT, "session_id": SESSION, "cwd": str(root), "permission_mode": "default"}
     event["tool_input"] = {"file_path": str(root / "app.py")}
     assert handle("pre-tool-use", event)[1] == ""
 
 
+def test_low_confidence_prompt_gets_questions_through_the_hook(tmp_path: Path):
+    root = _auto_project(tmp_path)
+    context = _prompt(root, "can you build the feature")
+    assert "Low confidence in this route:" in context and "focused questions" in context
+
+
+def test_mid_task_autonomy_stops_the_questions(tmp_path: Path):
+    root = _auto_project(tmp_path)
+    assert "instead of guessing" in _prompt(root, "Add pagination to the /users API endpoint")
+    note = _prompt(root, "also add a page size limit, work autonomously")
+    assert "do not stop to ask clarifying questions" in note
+
+
 def test_autonomous_permission_mode_brief_does_not_wait(tmp_path: Path):
     root = _auto_project(tmp_path)
-    assert "do not wait for approval" in _prompt(
+    assert "Do not wait for approval" in _prompt(
         root, "Add pagination to the /users API endpoint", "bypassPermissions"
     )
 
@@ -642,6 +661,28 @@ def test_compact_brief_names_installed_extensions_and_gap_hints(tmp_path: Path, 
     assert "Installed tools that fit:" in brief and "code-graph (skill, user)" in brief
     assert "Payment sandbox (consider Stripe CLI (cli), install: https://docs.stripe.com/stripe-cli)" in brief
     assert "Never install anything without the user's approval" in brief
+
+
+def test_compact_brief_asks_about_the_task_when_confidence_is_low(tmp_path: Path, home: Path):
+    from susanoo.enforcement.auto import compact_brief
+    from susanoo.pipeline import plan_task
+
+    root = _project(tmp_path)
+    vague = plan_task("make it better", root, load_config(), home=home)
+    assert vague.assessment.confidence == "low"
+    brief = compact_brief(vague, "su-1", True, "susanoo")
+    assert "Low confidence in this route:" in brief and "focused questions about scope" in brief
+    assert "Do not wait for approval" in brief  # questions about the task, not an approval request
+    # The user asked in words not to be asked: no prompt to ask, also not for low confidence.
+    quiet = compact_brief(vague, "su-1", True, "susanoo", asked_autonomy=True)
+    assert "Low confidence in this route:" not in quiet and "instead of guessing" not in quiet
+    gated = compact_brief(vague, "su-1", False, "susanoo")
+    assert "Low confidence in this route:" in gated and "wait for the user's approval" in gated
+    assert "questions about anything ambiguous" in gated
+    gated_quiet = compact_brief(vague, "su-1", False, "susanoo", asked_autonomy=True)
+    assert "questions about anything ambiguous" not in gated_quiet
+    clear = plan_task("Add pagination to the /users API endpoint", root, load_config(), home=home)
+    assert "Low confidence in this route:" not in compact_brief(clear, "su-1", True, "susanoo")
 
 
 @pytest.mark.parametrize("prompt", ["Install docker on my machine", "install the project dependencies"])

@@ -262,7 +262,7 @@ def test_agent_route_follows_an_autonomy_request(tmp_path: Path):
     _prompt(root, "The settings page is broken, work autonomously")
     code, out, err = run(root, "route", "Fix the settings page form validation")
     assert code == 0, err
-    assert "do not wait for approval" in out
+    assert "Do not wait for approval" in out and "instead of guessing" not in out
     record = RecordStore(root).read("routes")[-1]
     assert record["autonomous"] is True
     assert [a["record_id"] for a in RecordStore(root).read("approvals")] == [record["id"]]
@@ -565,7 +565,22 @@ def test_raise_with_autonomy_does_not_ask_for_approval_again(tmp_path: Path):
     code, out, err = run(root, "raise", "deep", "--reason", reason)
     assert code == 0, err
     assert "New safety controls" in out and "approval again" not in out
-    assert "do not wait for approval" in out
+    assert "Do not wait for approval" in out and "instead of guessing" not in out
+
+
+def test_mid_task_autonomy_carries_into_raise_and_new_routes(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "Add pagination to the /users API endpoint")
+    _prompt(root, "also add a page size limit, work autonomously")
+    assert RecordStore(root).read("routes")[-1]["autonomous"] is False  # granted as an approval
+    code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
+    assert code == 0, err
+    assert "instead of guessing" not in out
+    # Claude routes the task anew after a message without the request: it still holds.
+    _prompt(root, "also handle the empty page case")
+    code, out, err = run(root, "route", "Handle the empty page case in the /users pagination")
+    assert code == 0, err
+    assert "This replaces route" in out and "instead of guessing" not in out
 
 
 # --- no way around the floors in a session ----------------------------------------------------
@@ -614,7 +629,7 @@ def test_raise_under_hands_off_does_not_ask_for_approval_again(tmp_path: Path):
     _approved_route(root, "Add pagination to the /users API endpoint")
     code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
     assert code == 0, err
-    assert "approval again" not in out and "Work autonomously" in out
+    assert "approval again" not in out and "Do not wait for approval" in out
 
 
 # --- route before the first edit ----------------------------------------------------------------
