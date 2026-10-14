@@ -264,7 +264,7 @@ def _refuse_extra_config(ctx: Context) -> None:
     if getattr(ctx.args, "config", None):
         raise CLIError(
             "--config is not accepted in a Claude Code session with automatic routing: it could weaken "
-            "the route's safety controls. Change the project's .susanoo/config.toml instead."
+            "the route's safety controls. Ask the user to change Susanoo's configuration if needed."
         )
 
 
@@ -899,15 +899,14 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
     close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}")
-    # The same task with more process: checks already run still count. A plan approval covers
-    # the plan the user saw, so it carries over only when the profile and controls are unchanged
-    # (a stricter profile adds phases). Autonomy asked for in the user's own words always carries.
+    # The same task with more process: checks already run still count. A plan approval covers the
+    # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
+    # adds a check), so only autonomy asked for in the user's own words carries over.
     for item in store.read("evidence"):
         if item.get("record_id") == old:
             store.append("evidence", {**item, "record_id": plan.record_id, "carried_from": old})
     for item in store.read("approvals"):
-        same_plan = not added and target == state.profile
-        if item.get("record_id") == old and (same_plan or item.get("checkpoint") == "autonomy"):
+        if item.get("record_id") == old and item.get("checkpoint") == "autonomy":
             store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
     hook_state = SessionState(ctx.root, session)
     if hook_state.data.get("record_id") == old:

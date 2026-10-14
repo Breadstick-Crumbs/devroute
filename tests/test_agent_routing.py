@@ -348,7 +348,7 @@ def test_raise_to_a_stricter_profile_needs_the_plan_approved_again(tmp_path: Pat
     assert [a["record_id"] for a in RecordStore(root).read("approvals")] == [old["id"]]
 
 
-def test_raise_to_the_same_profile_keeps_the_plan_approval(tmp_path: Path):
+def test_raise_that_adds_controls_drops_the_plan_approval(tmp_path: Path):
     root = _project(tmp_path)
     old = _approved_route(root, "Redesign the plugin architecture across the api, ui, and worker modules")
     assert old["profile"] == "deep"
@@ -356,10 +356,9 @@ def test_raise_to_the_same_profile_keeps_the_plan_approval(tmp_path: Path):
     assert code == 0, err
     store = RecordStore(root)
     new = store.read("routes")[-1]
-    if set(new["controls"]) == set(old["controls"]):
-        assert {a["record_id"] for a in store.read("approvals")} == {old["id"], new["id"]}
-    else:
-        assert [a["record_id"] for a in store.read("approvals")] == [old["id"]]
+    assert new["profile"] == "deep" and set(old["controls"]) < set(new["controls"])
+    assert [a["record_id"] for a in store.read("approvals")] == [old["id"]]
+    assert "approval again" in out
 
 
 def test_raise_rejects_no_record(tmp_path: Path):
@@ -463,10 +462,16 @@ def test_negated_profile_names_do_not_count():
         "please don't ever use the fast workflow",
         "rather than the fast workflow use deep",
         "I don't think we should use the fast workflow",
+        "you can't use the fast workflow",
+        "we weren't going to use the fast workflow",
+        "we werent going to use the fast workflow",
+        "Please do NOT, under any circumstances, use the fast workflow",
     ):
         assert "fast" not in prompt_state.named_profiles(message), message
     assert prompt_state.named_profiles("I want the fast workflow") == ["fast"]
-    assert prompt_state.named_profiles("not the deep profile, use the fast workflow") == ["fast"]
+    assert prompt_state.named_profiles("Use the fast workflow. I don't need a plan.") == ["fast"]
+    # A negation earlier in the same sentence counts against every later name (strict on purpose).
+    assert prompt_state.named_profiles("not the deep profile, use the fast workflow") == []
 
 
 def test_no_profile_check_without_automatic_routing(tmp_path: Path):
