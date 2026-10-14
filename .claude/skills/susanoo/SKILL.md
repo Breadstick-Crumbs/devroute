@@ -47,11 +47,11 @@ Show the user a compact summary: mode and why, complexity / risk / uncertainty, 
 
 ## 3. Respect checkpoints
 
-- FAST with no approval checkpoints: proceed directly.
-- Otherwise, stop at every checkpoint listed in the brief and wait for the user's explicit approval. Present the plan before editing files in STANDARD and DEEP.
+- Hands-off (the default; the brief's section is titled "Checkpoints"): share the plan in a few lines and carry on. Report checkpoints in your updates instead of stopping at them, and do not ask questions you can answer yourself. Claude Code's own permission settings decide what needs confirmation.
+- If the brief's section is titled "Approval checkpoints" (the project set `[enforcement] hands_off = false`), or the user asked to review the plan first: stop at every checkpoint and wait for the user's explicit approval, and present the plan before editing files in STANDARD and DEEP.
 - When the user approves the plan, record it with `susanoo approve` (the user may be asked to confirm the command). Never run it without the user's approval.
-- Mandatory safety controls always apply, whatever profile was chosen.
-- If the brief understates the task (data loss, security, payments, production, or a wider change than it says), raise the route: `susanoo raise standard|deep --reason "<the risk you found>"`. It keeps the evidence already recorded; present the changed plan for approval again. Never pick a lighter profile than the brief unless the user asked for it.
+- Mandatory safety controls always apply to how the work is done, whatever profile was chosen. Hands-off leaves confirming outward-facing actions to Claude Code's permission settings.
+- If the brief understates the task (data loss, security, payments, production, or a wider change than it says), raise the route: `susanoo raise standard|deep --reason "<the risk you found>"`. It keeps the evidence already recorded; present the changed plan again (and wait for approval only when the brief says "Approval checkpoints"). Never pick a lighter profile than the brief unless the user asked for it.
 - If a Susanoo hook blocks or questions an action, follow its message. Do not work around it.
 
 ## 4. Execute the selected profile

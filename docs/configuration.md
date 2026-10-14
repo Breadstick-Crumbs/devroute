@@ -122,7 +122,7 @@ Keep this narrow. Ignoring text can only lower risk.
 `id`, `when = { dimension, min }`, `description`, `checkpoint`, `verification` (step ids forced to required).
 
 ### `[[verification]]`
-`id`, `title`, `capability`, `levels = { fast|standard|deep = "required"|"recommended" }`, `escalate = [{ dimension, min, level }]`, `signals` (only include when one matched).
+`id`, `title`, `capability`, `levels = { fast|standard|deep = "required"|"recommended" }`, `escalate = [{ dimension, min, level } | { signal, level }]`, `signals` (only include when one matched).
 
 ### Dimensions
 `implementation_complexity`, `architectural_complexity`, `affected_components`, `technical_uncertainty`, `external_dependencies`, `security_privacy`, `data_integrity`, `irreversibility`, `testing_difficulty`, `parallelization`.
@@ -131,13 +131,13 @@ Keep this narrow. Ignoring text can only lower risk.
 Run `susanoo research --list`.
 
 ### `[enforcement]`
-Settings for opt-in hook enforcement: `approval_profiles`, `evidence_profiles`, `max_stop_blocks`, `edit_tools`, `shell_write_patterns`, `irreversible_commands`, and `autonomous_modes` (Claude Code permission modes in which Susanoo adds no approvals or questions; default: acceptEdits, auto, dontAsk, bypassPermissions; set it to `[]` to keep every gate in every mode). See [enforcement.md](enforcement.md).
+Settings for opt-in hook enforcement: `hands_off` (default `true`: Susanoo asks nothing and blocks no edit in any permission mode, only the evidence gate applies, and briefs report checkpoints instead of stopping at them; set `false` for the approval and confirmation gates), `approval_profiles`, `evidence_profiles`, `max_stop_blocks`, `edit_tools`, `shell_write_patterns`, `irreversible_commands`, and `autonomous_modes` (Claude Code permission modes in which Susanoo adds no approvals or questions; default: acceptEdits, auto, dontAsk, bypassPermissions; set it to `[]` to keep every gate in every mode). See [enforcement.md](enforcement.md).
 
 ### `[auto]`
 Automatic routing of prompts (`susanoo init --global`, or `--auto` with the settings scope). A prompt is a task when, after leading `polite` phrases ("please", "can you", "ok now", ...), it starts with one of `task_verbs` and has at least `min_words` words; it is a question when it starts with one of `question_starts`; anything else is ambiguous. Questions and ambiguous prompts are not routed by the hook; they get a short note, and Claude routes them itself if they need code changes (never lower than the keyword result for the prompt). With `route_before_edit = true` (the default), the first edit of a project file for such a prompt, with no route open, is denied once so Claude routes first; a retry goes through. `route_before_edit_exempt` lists project paths it leaves alone (shell-style patterns; by default agent memory such as `CLAUDE.md` and `AGENTS.md`, and `.claude/`). `skip_prefix` (default `?`) marks a prompt as never routed, and a task containing an `autonomy` phrase ("work autonomously", "don't ask") runs hands-off. All entries are regular expressions.
 
 ### `[selection]`
-`code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers.
+`code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers. `task_keyword_bonus` (default 3): added to a tool whose `task_keywords` appear in the task ("postgres" picks psql over sqlite3); smaller than the gap between an installed and a missing tool. `default_package_manager` (default `npm`; also `pnpm`, `yarn`, `bun`): the JavaScript package manager for install hints when the project names none (package.json `packageManager`) and has no lockfile. Package-script commands always use the manager discovery checked for (npm without a lockfile), so a ready check never runs a binary that was not found.
 
 ## Checking the effect of a change
 

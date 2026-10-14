@@ -1,6 +1,6 @@
 # 0005: Safety controls derive from risk, not from the chosen profile
 
-**Status:** accepted (v0.1)
+**Status:** accepted (v0.1); approval checkpoints are reported, not enforced, while hands-off ([0007](0007-hands-off-by-default.md)).
 
 ## Context
 

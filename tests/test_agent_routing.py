@@ -19,7 +19,7 @@ from susanoo.evaluation.suite import load_suite
 from susanoo.paths import install_manifest_path, records_dir
 from susanoo.pipeline import message_floor
 from susanoo.router import Profile, route
-from tests.conftest import write
+from tests.conftest import GATED_TOML, write
 from tests.test_cli import run
 
 SESSION = "sess-agent-1"
@@ -35,12 +35,15 @@ def isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, home: Path) -> Non
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
 
 
-def _project(tmp_path: Path) -> Path:
+def _project(tmp_path: Path, gated: bool = False) -> Path:
     root = tmp_path / "proj"
     write(root, "app.py", "x = 1\n")
     (root / ".git").mkdir()
     code, _, err = run(root, "init", "--enforce", "--enforce-scope", "settings", "--auto")
     assert code == 0, err
+    if gated:  # Susanoo's own approvals and confirmations (off by default: hands-off)
+        with (root / ".susanoo" / "config.toml").open("a", encoding="utf-8") as fh:
+            fh.write(GATED_TOML)
     return root
 
 
@@ -217,7 +220,7 @@ def test_profile_override_keeps_the_floor_controls(tmp_path: Path, profile: str)
 
 
 def test_replacing_a_stricter_route_keeps_its_levels(tmp_path: Path):
-    root = _project(tmp_path)
+    root = _project(tmp_path, gated=True)
     _prompt(root, "Drop the legacy_orders table, work autonomously")
     store = RecordStore(root)
     deep = store.read("routes")[-1]
@@ -340,7 +343,7 @@ def test_raise_keeps_evidence_and_hook_state(tmp_path: Path):
 
 def test_raise_to_a_stricter_profile_needs_the_plan_approved_again(tmp_path: Path):
     """DEEP adds phases the user never approved; only autonomy given in words carries over."""
-    root = _project(tmp_path)
+    root = _project(tmp_path, gated=True)
     old = _approved_route(root, "Add pagination to the /users API endpoint")
     code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
     assert code == 0, err
@@ -349,7 +352,7 @@ def test_raise_to_a_stricter_profile_needs_the_plan_approved_again(tmp_path: Pat
 
 
 def test_raise_that_adds_controls_drops_the_plan_approval(tmp_path: Path):
-    root = _project(tmp_path)
+    root = _project(tmp_path, gated=True)
     old = _approved_route(root, "Redesign the plugin architecture across the api, ui, and worker modules")
     assert old["profile"] == "deep"
     code, out, err = run(root, "raise", "deep", "--reason", "it also touches the payments module")
@@ -369,7 +372,7 @@ def test_raise_rejects_no_record(tmp_path: Path):
 
 
 def test_raise_reason_adds_controls_and_asks_for_approval_again(tmp_path: Path):
-    root = _project(tmp_path)
+    root = _project(tmp_path, gated=True)
     old = _approved_route(root, "Add pagination to the /users API endpoint")
     reason = "it deletes all customer records in the production database"
     code, out, err = run(root, "raise", "deep", "--reason", reason)
@@ -604,6 +607,14 @@ def test_a_lost_prompt_record_keeps_the_open_route_floor(tmp_path: Path, damage:
     assert code == 0, err
     new = RecordStore(root).read("routes")[-1]
     assert new["profile"] == "deep" and set(deep["controls"]) <= set(new["controls"])
+
+
+def test_raise_under_hands_off_does_not_ask_for_approval_again(tmp_path: Path):
+    root = _project(tmp_path)
+    _approved_route(root, "Add pagination to the /users API endpoint")
+    code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
+    assert code == 0, err
+    assert "approval again" not in out and "Work autonomously" in out
 
 
 # --- route before the first edit ----------------------------------------------------------------

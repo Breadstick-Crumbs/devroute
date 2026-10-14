@@ -70,6 +70,7 @@ class Inventory:
     findings: list[Finding]
     warnings: list[str] = field(default_factory=list)
     source_files: int = 0
+    package_manager: str | None = None  # JavaScript package manager (npm, pnpm, yarn, bun)
 
     def by_kind(self, kind: str) -> list[Finding]:
         return [f for f in self.findings if f.kind == kind]
@@ -95,6 +96,7 @@ class Inventory:
             "verified": self.verified,
             "languages": self.languages,
             "source_files": self.source_files,
+            "package_manager": self.package_manager,
             "findings": [f.to_dict() for f in self.findings],
             "warnings": self.warnings,
         }

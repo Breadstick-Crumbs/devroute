@@ -13,6 +13,11 @@
 #   pyproject_tools  [tool.<name>] sections in pyproject.toml
 #   mcp_patterns     substrings matched against configured MCP server names
 #   env              environment variables that indicate availability
+# Selection keys (optional):
+#   package_managers  JavaScript package managers the tool needs (npm-only `npm audit` etc.)
+#   task_keywords     words in the task that make the tool the better pick ("postgres" -> psql)
+# `{js_add_dev}` / `{js_create}` in `install` and `{js_run}` in `run` follow the project's package manager
+# ([[package_managers]] at the end of this file).
 # run: capability -> argv used by `susanoo verify --execute` (argv lists, never a shell)
 
 [[tools]]
@@ -125,17 +130,17 @@ install = "pip install pytest"
 
 [[tools]]
 id = "npm-test-script"
-name = "npm test script"
+name = "package.json test script"
 kind = "script"
 capabilities = ["unit_testing"]
 languages = ["javascript", "typescript"]
 npm_scripts = ["test"]
-run = { unit_testing = ["npm", "test"] }
+run = { unit_testing = ["{js_run}", "test"] }
 reliability = 3
 context_cost = 1
 setup_cost = 1
 security_exposure = 1
-notes = "Runs the project's own package.json test script."
+notes = "Runs the project's own package.json test script with its package manager."
 
 [[tools]]
 id = "make-test"
@@ -155,6 +160,7 @@ id = "jest"
 name = "Jest"
 kind = "cli"
 capabilities = ["unit_testing"]
+task_keywords = ["jest"]
 languages = ["javascript", "typescript"]
 npm_packages = ["jest"]
 files = ["jest.config.*"]
@@ -163,13 +169,14 @@ reliability = 3
 context_cost = 1
 setup_cost = 1
 security_exposure = 1
-install = "npm install --save-dev jest"
+install = "{js_add_dev} jest"
 
 [[tools]]
 id = "vitest"
 name = "Vitest"
 kind = "cli"
 capabilities = ["unit_testing"]
+task_keywords = ["vitest"]
 languages = ["javascript", "typescript"]
 npm_packages = ["vitest"]
 files = ["vitest.config.*"]
@@ -178,7 +185,7 @@ reliability = 3
 context_cost = 1
 setup_cost = 1
 security_exposure = 1
-install = "npm install --save-dev vitest"
+install = "{js_add_dev} vitest"
 
 [[tools]]
 id = "go-test"
@@ -287,7 +294,7 @@ reliability = 3
 context_cost = 1
 setup_cost = 1
 security_exposure = 1
-install = "npm install --save-dev eslint"
+install = "{js_add_dev} eslint"
 
 [[tools]]
 id = "mypy"
@@ -337,7 +344,7 @@ reliability = 3
 context_cost = 1
 setup_cost = 1
 security_exposure = 1
-install = "npm install --save-dev typescript"
+install = "{js_add_dev} typescript"
 
 [[tools]]
 id = "bandit"
@@ -405,6 +412,7 @@ id = "npm-audit"
 name = "npm audit"
 kind = "cli"
 capabilities = ["dependency_audit"]
+package_managers = ["npm"]
 languages = ["javascript", "typescript"]
 binaries = ["npm"]
 files = ["package-lock.json"]
@@ -414,6 +422,38 @@ context_cost = 1
 setup_cost = 1
 security_exposure = 1
 notes = "Requires a package-lock.json; queries the npm registry over the network."
+
+[[tools]]
+id = "pnpm-audit"
+name = "pnpm audit"
+kind = "cli"
+capabilities = ["dependency_audit"]
+package_managers = ["pnpm"]
+languages = ["javascript", "typescript"]
+binaries = ["pnpm"]
+files = ["pnpm-lock.yaml"]
+run = { dependency_audit = ["pnpm", "audit", "--audit-level", "high"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Audits pnpm-lock.yaml; queries the npm registry over the network."
+
+[[tools]]
+id = "bun-audit"
+name = "bun audit"
+kind = "cli"
+capabilities = ["dependency_audit"]
+package_managers = ["bun"]
+languages = ["javascript", "typescript"]
+binaries = ["bun"]
+files = ["bun.lock"]
+run = { dependency_audit = ["bun", "audit", "--audit-level=high"] }
+reliability = 2
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Audits bun.lock (Bun 1.2.15 or later); queries the npm registry over the network."
 
 [[tools]]
 id = "govulncheck"
@@ -463,6 +503,7 @@ id = "playwright"
 name = "Playwright"
 kind = "cli"
 capabilities = ["browser_testing", "integration_testing"]
+task_keywords = ["playwright"]
 npm_packages = ["@playwright/test", "playwright"]
 python_packages = ["playwright", "pytest-playwright"]
 files = ["playwright.config.*"]
@@ -471,13 +512,14 @@ reliability = 3
 context_cost = 1
 setup_cost = 2
 security_exposure = 1
-install = "npm init playwright@latest   (or: pip install pytest-playwright && playwright install)"
+install = "{js_create} playwright@latest   (or: pip install pytest-playwright && playwright install)"
 
 [[tools]]
 id = "cypress"
 name = "Cypress"
 kind = "cli"
 capabilities = ["browser_testing"]
+task_keywords = ["cypress"]
 languages = ["javascript", "typescript"]
 npm_packages = ["cypress"]
 files = ["cypress.config.*"]
@@ -486,7 +528,7 @@ reliability = 3
 context_cost = 1
 setup_cost = 2
 security_exposure = 1
-install = "npm install --save-dev cypress"
+install = "{js_add_dev} cypress"
 
 [[tools]]
 id = "browser-mcp"
@@ -517,6 +559,7 @@ id = "psql"
 name = "psql"
 kind = "cli"
 capabilities = ["database_tooling"]
+task_keywords = ["postgres", "postgresql", "psql"]
 binaries = ["psql"]
 reliability = 3
 context_cost = 1
@@ -528,6 +571,7 @@ id = "sqlite3"
 name = "sqlite3"
 kind = "cli"
 capabilities = ["database_tooling"]
+task_keywords = ["sqlite", "sqlite3"]
 binaries = ["sqlite3"]
 reliability = 3
 context_cost = 1
@@ -539,6 +583,7 @@ id = "alembic"
 name = "Alembic"
 kind = "cli"
 capabilities = ["migration_checks", "database_tooling"]
+task_keywords = ["alembic", "sqlalchemy"]
 languages = ["python"]
 binaries = ["alembic"]
 python_packages = ["alembic"]
@@ -556,6 +601,7 @@ id = "django-migrations"
 name = "Django migration check"
 kind = "script"
 capabilities = ["migration_checks"]
+task_keywords = ["django"]
 languages = ["python"]
 files = ["manage.py"]
 python_packages = ["django"]
@@ -570,6 +616,7 @@ id = "prisma"
 name = "Prisma"
 kind = "cli"
 capabilities = ["migration_checks", "database_tooling"]
+task_keywords = ["prisma"]
 languages = ["javascript", "typescript"]
 npm_packages = ["prisma"]
 files = ["prisma/schema.prisma"]
@@ -578,13 +625,14 @@ reliability = 3
 context_cost = 1
 setup_cost = 2
 security_exposure = 2
-install = "npm install --save-dev prisma"
+install = "{js_add_dev} prisma"
 
 [[tools]]
 id = "stripe-cli"
 name = "Stripe CLI"
 kind = "cli"
 capabilities = ["payment_sandbox"]
+task_keywords = ["stripe"]
 binaries = ["stripe"]
 reliability = 3
 context_cost = 1
@@ -610,6 +658,7 @@ id = "k6"
 name = "k6"
 kind = "cli"
 capabilities = ["performance_testing"]
+task_keywords = ["k6", "load test", "load testing"]
 binaries = ["k6"]
 reliability = 3
 context_cost = 1
@@ -727,3 +776,40 @@ binary = "pipenv"
 run_prefix = ["pipenv", "run"]
 markers = ["Pipfile", "Pipfile.lock"]
 unless_markers = ["uv.lock"]
+
+# JavaScript package managers. The project's manager comes from package.json "packageManager",
+# else the first entry whose lockfile exists; without either, `[selection]
+# default_package_manager` applies. Only the packaged catalog defines these.
+#   markers  lockfiles that identify the manager
+#   add_dev  replaces {js_add_dev} in install hints
+#   create   replaces {js_create} in install hints (project initializers)
+#   run      replaces {js_run} in run commands (`bun test` is Bun's own test runner, so package
+#            scripts always go through `run`)
+
+[[package_managers]]
+id = "pnpm"
+markers = ["pnpm-lock.yaml"]
+add_dev = "pnpm add -D"
+create = "pnpm create"
+run = ["pnpm", "run"]
+
+[[package_managers]]
+id = "bun"
+markers = ["bun.lock", "bun.lockb"]
+add_dev = "bun add -d"
+create = "bun create"
+run = ["bun", "run"]
+
+[[package_managers]]
+id = "yarn"
+markers = ["yarn.lock"]
+add_dev = "yarn add -D"
+create = "yarn create"
+run = ["yarn", "run"]
+
+[[package_managers]]
+id = "npm"
+markers = ["package-lock.json", "npm-shrinkwrap.json"]
+add_dev = "npm install --save-dev"
+create = "npm init"
+run = ["npm", "run"]

@@ -221,3 +221,38 @@ min_risk = "high"
 id = "coverage-utilities"
 task = "Increase test coverage for the string utilities"
 expected = "fast"
+
+# Dependency changes (labeled before the dependency-change signal was written).
+
+[[cases]]
+id = "dep-add-one"
+task = "Add the zod package with pnpm"
+expected = "fast"
+
+[[cases]]
+id = "dep-remove-unused"
+task = "Remove the unused lodash dependency"
+expected = "fast"
+
+[[cases]]
+id = "dep-replace-library"
+task = "Replace moment with date-fns across the codebase"
+expected = "standard"
+
+[[cases]]
+id = "dep-upgrade-all-majors"
+task = "Upgrade all npm dependencies to their latest major versions"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "dep-security-bump"
+task = "Bump axios to fix the security advisory"
+expected = "standard"
+min_risk = "moderate"
+
+[[cases]]
+id = "dep-major-jump"
+# Added in review of #41, labeled before tuning: a jump across major versions of a framework.
+task = "Upgrade django from 3 to 5"
+expected = "standard"

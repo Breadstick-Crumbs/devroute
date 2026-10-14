@@ -20,7 +20,7 @@ Hooks live in exactly one place, chosen with `--enforce-scope`. Claude Code does
 | Resumed sessions (`claude --resume`, `--continue`) | **Not enforced** | Enforced |
 | Compaction recovery | Needs the [settings snippet](#compaction-recovery) | Included |
 | Settings files | Never touched | Only Susanoo's own hook entries (commands starting with `susanoo hook`) in `settings.local.json` are added or removed; everything else in the file is kept. A file that is not valid JSON, has an unexpected shape, or is a symbolic link is never rewritten; `init` stops instead. |
-| Cost in sessions without a route | None | Every Edit, Write, and shell command, and the end of every turn (`Stop`), starts `susanoo hook`, which finds no route and allows it (a short Python start-up each time). `susanoo approve` and `--accept-missing-evidence` always ask, in any session. |
+| Cost in sessions without a route | None | Every Edit, Write, and shell command, and the end of every turn (`Stop`), starts `susanoo hook`, which finds no route and allows it (a short Python start-up each time). `susanoo approve` always asks, in any session; with `hands_off = false`, so does `--accept-missing-evidence`. |
 
 `.claude/settings.local.json` is your personal settings file. Claude Code normally keeps it out of git; check that yours is ignored before committing.
 
@@ -36,25 +36,27 @@ Every hook calls `susanoo hook <event>`. That command reads the event JSON, look
 
 | Gate | Hook | Behavior |
 |---|---|---|
-| **Plan approval** | `PreToolUse` on Edit/Write/MultiEdit/NotebookEdit | In STANDARD and DEEP, edits to files inside the project are **denied** until the plan is approved. Claude receives the reason, so it presents the plan instead. Reading and searching stay allowed, and so do edits outside the project. |
-| **Approval integrity** | `PreToolUse` on Bash/PowerShell | `susanoo approve` always gets `ask`, which means a permission prompt you have to accept. Claude cannot approve its own plan. The same applies to `susanoo outcome --accept-missing-evidence`. |
-| **Shell writes before approval** | `PreToolUse` on Bash/PowerShell | Before approval, commands that look like they modify files or the environment (redirection, `sed -i`, `rm`, `git commit`, package installs, ...) get `ask` instead of running silently. |
-| **Irreversible actions** | `PreToolUse` on Bash/PowerShell | While the `irreversible-action-gate` control is active, pushes, history rewrites, deploys, infrastructure apply/destroy, publishing, migrations, and destructive SQL get `ask`. |
+| **Plan approval** | `PreToolUse` on Edit/Write/MultiEdit/NotebookEdit | Unless hands-off (the default): in STANDARD and DEEP, edits to files inside the project are **denied** until the plan is approved. Claude receives the reason, so it presents the plan instead. Reading and searching stay allowed, and so do edits outside the project. |
+| **Approval integrity** | `PreToolUse` on Bash/PowerShell | `susanoo approve` always gets `ask`, in every mode and also hands-off, which means a permission prompt you have to accept, so Claude cannot approve its own plan (hands-off needs no approval, so this costs no prompt in practice, but an approval Claude recorded itself would count if you later set `hands_off = false`). With `hands_off = false`, `susanoo outcome --accept-missing-evidence` gets `ask` too; hands-off refuses it instead. |
+| **Shell writes before approval** | `PreToolUse` on Bash/PowerShell | Unless hands-off: before approval, commands that look like they modify files or the environment (redirection, `sed -i`, `rm`, `git commit`, package installs, ...) get `ask` instead of running silently. |
+| **Irreversible actions** | `PreToolUse` on Bash/PowerShell | Unless hands-off (by default these commands do not ask, also in normal mode; Claude Code's permission settings decide): while the `irreversible-action-gate` control is active, pushes, history rewrites, deploys, infrastructure apply/destroy, publishing, migrations, and destructive SQL get `ask`. |
 | **Evidence** | `Stop` | Once work has started (a file was changed) and the plan, if one is required, is approved, Claude cannot end the turn while required verification lacks passing evidence. Runnable checks need a passing result that Susanoo executed itself. Checks done by hand need a reported `passed`, or a reported `skipped` with the reason. A reported `failed` does not count. Ending a turn to present a plan or ask a question is never blocked. |
 | **Compaction recovery** | `SessionStart` (source `compact`) | After context compaction, a short summary of the active route (profile, approval state, controls, outstanding verification) is put back into Claude's context. Included in the settings scope. Claude Code does not fire this event for hooks declared in a skill, so the skill scope needs the [settings snippet](#compaction-recovery). The other gates keep working after compaction without it. |
-| **Route integrity** | `PreToolUse` on Bash/PowerShell | While a plan is unapproved, closing the route (`susanoo outcome`) or replacing it (`susanoo route`) needs your confirmation, so the gates cannot be dropped silently. |
+| **Route integrity** | `PreToolUse` on Bash/PowerShell | Unless hands-off: while a plan is unapproved, closing the route (`susanoo outcome`) or replacing it (`susanoo route`) needs your confirmation, so the gates cannot be dropped silently. |
 | **Route before edit** | `PreToolUse` on Edit/Write/MultiEdit/NotebookEdit | With automatic routing only. When your message was not routed (it got the Susanoo note) and Claude edits a file inside the project with no route open, that first edit is **denied** once, and Claude is told to run `susanoo route` first. A retry goes through, so an edit that is not part of a coding task is only delayed. It never asks you anything, so it applies in every permission mode. Agent memory and settings (`CLAUDE.md`, `AGENTS.md`, `.claude/`) are exempt (`[auto] route_before_edit_exempt`). Turn it off with `[auto] route_before_edit = false`. |
 
 ## Autonomy
 
-Susanoo follows the autonomy you chose in Claude Code instead of adding questions on top:
+Susanoo is **hands-off by default** (`[enforcement] hands_off = true`): in every permission mode it adds no approvals and no questions, and Claude Code's own permission settings decide what needs confirmation (deploys, pushes, file edits). Only the evidence gate stays, because it never asks anything. The briefs follow suit: checkpoints are titled "Checkpoints" and are reported, not waited at.
+
+To get the approval, shell-write, irreversible-action, and route-integrity gates back, set `hands_off = false`. They then apply like this:
 
 - **Normal (default) permission mode:** the gates above apply. That is at most one check-in per task, the plan approval for STANDARD and DEEP, plus confirmation for irreversible commands while that control is active.
 - **Autonomous mode:** when Claude Code runs in one of `[enforcement] autonomous_modes` (default: acceptEdits, auto, dontAsk, bypassPermissions), every Susanoo approval and question is off, and Claude Code's own permission settings decide what needs confirmation. The mode is read from each hook event, so switching modes mid-task takes effect immediately. Recording a task as completed without evidence (`--accept-missing-evidence`) is refused in these modes rather than asked about.
 - **Autonomy asked for in words:** when an automatically routed task says "work autonomously", "don't ask", or similar (at the start or end of the message, outside quotes; also in a follow-up), that counts as approving the plan. The irreversible-action confirmation stays, because only a permission mode hands everything to Claude Code.
 - **In every mode** the evidence gate stays: Claude cannot end the turn while required checks lack passing evidence. So does the route-before-edit gate. Neither asks you anything.
 
-Set `autonomous_modes = []` in your configuration to keep every gate in every mode.
+With `hands_off = false`, also set `autonomous_modes = []` to keep every gate in every mode.
 
 Related integrity rule, active with or without enforcement: `susanoo outcome --status completed --source agent` is refused while required verification lacks passing evidence. People recording outcomes themselves (`--source human`) are trusted.
 
@@ -74,6 +76,7 @@ All gate settings live in `[enforcement]` (see `src/susanoo/data/defaults.toml`)
 
 ```toml
 [enforcement]
+hands_off = true          # false: the approval and confirmation gates apply (see Autonomy)
 approval_profiles = ["standard", "deep"]
 evidence_profiles = ["fast", "standard", "deep"]
 max_stop_blocks = 3
@@ -95,7 +98,7 @@ It does nothing in sessions without an active route. Without it, the gates still
 
 ## Live test results
 
-`scripts/live_enforcement_check.py` runs each check in a throwaway project against a real headless Claude Code session, sending every turn to one process the way an interactive session works. It sets `autonomous_modes = []` in those projects so the gates themselves are exercised in every permission mode; with the default settings, the hands-off modes skip them by design (see [Autonomy](#autonomy)). Results with **Claude Code 2.1.296** (Windows, Sonnet):
+`scripts/live_enforcement_check.py` runs each check in a throwaway project against a real headless Claude Code session, sending every turn to one process the way an interactive session works. It sets `hands_off = false` and `autonomous_modes = []` in those projects so the gates themselves are exercised in every permission mode; with the default settings, Susanoo skips them by design (see [Autonomy](#autonomy)). Results with **Claude Code 2.1.296** (Windows, Sonnet):
 
 | Check | Result |
 |---|---|

@@ -29,6 +29,7 @@ from susanoo.paths import (
     project_mode,
 )
 from susanoo.pipeline import TaskPlan, message_floor, plan_task, route_record
+from susanoo.selection import EXTENSION_KINDS, installed_extensions
 from susanoo.verification.executor import redact
 
 SKIP, QUESTION, AMBIGUOUS, TASK = "skip", "question", "ambiguous", "task"
@@ -144,11 +145,24 @@ def compact_brief(
         lines.append("Ignored as out of scope: " + ", ".join(repr(n) for n in a.negated) + ".")
     for control in d.controls:
         lines.append(f"Safety control {control.id}: {control.description}")
-    missing = [g.title for g in plan.gaps if g.blocking]
+    tools = []
+    for rec in plan.recommendations:
+        if rec.selected is None:
+            continue
+        extras = installed_extensions(rec)
+        if rec.selected.kind in EXTENSION_KINDS:
+            tools.append(f"{rec.title}: {rec.selected.name}")
+        elif extras:
+            tools.append(
+                f"{rec.title}: {rec.selected.name}, or the installed " + ", ".join(c.name for c in extras)
+            )
+    if tools:
+        lines.append("Installed tools that fit: " + "; ".join(tools) + ".")
+    missing = [f"{g.title} ({g.suggestion})" for g in plan.gaps if g.blocking]
     if missing:
         lines.append(
-            "Missing tools: " + ", ".join(missing) + ". Checks that need them are not required here; "
-            "say so in the final report."
+            "Missing tools: " + "; ".join(missing) + ". Checks that need them are not required here; "
+            "mention the gap in the final report. Never install anything without the user's approval."
         )
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
@@ -171,6 +185,12 @@ def compact_brief(
         lines.append(
             "Work autonomously: do not wait for approval. Show the brief in two or three lines, do the "
             "task, then verify."
+            + (
+                " The safety controls still apply to how you work; Claude Code's permission settings "
+                "handle confirmations."
+                if d.controls
+                else ""
+            )
         )
     else:
         lines.append(
@@ -320,7 +340,7 @@ def on_prompt(
             "Susanoo: this continues the task in progress."
             + (" The user asked for autonomous work: do not wait for approval." if hands_off else "")
             + " "
-            + gates.summary(state)
+            + gates.summary(state, hands_off or gates.autonomous(event, state, config.get("enforcement", {})))
             + (
                 " If this is a separate task, finish the open one or record its outcome first "
                 f"(`{command} outcome latest --status partial --source agent`)."

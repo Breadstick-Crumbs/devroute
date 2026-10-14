@@ -31,6 +31,17 @@ def config() -> Config:
     return load_config()
 
 
+def gated_config() -> Config:
+    """The configuration with Susanoo's own approvals and confirmations on (``hands_off = false``)."""
+    config = load_config()
+    config["enforcement"]["hands_off"] = False
+    return config
+
+
+# Appended to a project's .susanoo/config.toml to exercise the gates through the hooks.
+GATED_TOML = "\n[enforcement]\nhands_off = false\n"
+
+
 @pytest.fixture(scope="session")
 def profiles() -> dict[str, Profile]:
     return load_profiles()
