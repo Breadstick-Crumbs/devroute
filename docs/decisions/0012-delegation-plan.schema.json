@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Breadstick-Crumbs/susanoo/docs/decisions/0011-delegation-plan.schema.json",
+  "$id": "https://github.com/Breadstick-Crumbs/susanoo/docs/decisions/0012-delegation-plan.schema.json",
   "title": "Susanoo delegation plan (version 1, proposed)",
-  "description": "Sketch for ADR 0011. Tool-neutral: names no executor. Structural rules only; the cross-field rules (no overlapping owns or serial_paths between concurrent units, acyclic ordering, one provider per interface, floors matching the parent route, symlink-safe and normalized paths) are checked by `susanoo delegate check`, which JSON Schema cannot express.",
+  "description": "Sketch for ADR 0012. Tool-neutral: names no executor. Structural rules only; the cross-field rules (no overlapping owns or serial_paths between concurrent units, acyclic ordering, one provider per interface, floors matching the parent route, symlink-safe and normalized paths) are checked by `susanoo delegate check`, which JSON Schema cannot express.",
   "type": "object",
   "additionalProperties": false,
   "required": [
