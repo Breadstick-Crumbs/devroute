@@ -10,6 +10,8 @@ from statistics import mean
 from typing import Any
 
 OUTCOME_STATUSES = ("completed", "partial", "failed", "abandoned")
+# An outcome's separate token counts (``token_counts``), named as the Claude API reports usage.
+TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 
 
 @dataclass
@@ -25,6 +27,13 @@ class ProfileSummary:
     mean_interventions: float | None = None
     total_tokens: int | None = None
     total_cost_usd: float | None = None
+    mean_tokens: float | None = None
+    timed: int = 0  # outcomes with a duration
+    with_tokens: int = 0  # outcomes with a token count
+    captured: int = 0  # outcomes with values captured from Claude Code transcripts
+    with_token_counts: int = 0  # outcomes with separate token counts
+    token_count_totals: dict[str, int] = field(default_factory=dict)
+    tool_calls: dict[str, int] = field(default_factory=dict)
     executed_checks: int = 0
     executed_failures: int = 0
     reported_checks: int = 0
@@ -34,6 +43,13 @@ class ProfileSummary:
         return self.completed / self.with_outcome if self.with_outcome else None
 
     @property
+    def cache_hit_ratio(self) -> float | None:
+        """Cache reads over all input: cache reads, cache writes, and fresh input."""
+        t = self.token_count_totals
+        total = sum(t.get(k, 0) for k in TOKEN_FIELDS if k != "output_tokens")
+        return t.get("cache_read_input_tokens", 0) / total if total else None
+
+    @property
     def check_failure_rate(self) -> float | None:
         return self.executed_failures / self.executed_checks if self.executed_checks else None
 
@@ -41,6 +57,7 @@ class ProfileSummary:
         data = asdict(self)
         data["completion_rate"] = self.completion_rate
         data["check_failure_rate"] = self.check_failure_rate
+        data["cache_hit_ratio"] = self.cache_hit_ratio
         return data
 
 
@@ -88,6 +105,7 @@ def summarize(
 
     summaries: dict[str, ProfileSummary] = {}
     minutes: dict[str, list[float]] = {}
+    tokens: dict[str, list[int]] = {}
     interventions: dict[str, list[float]] = {}
     overrides: dict[str, list[str]] = {}
 
@@ -127,12 +145,20 @@ def summarize(
             interventions.setdefault(profile, []).append(float(outcome["human_interventions"]))
         if isinstance(outcome.get("tokens"), int):
             summary.total_tokens = (summary.total_tokens or 0) + outcome["tokens"]
+            tokens.setdefault(profile, []).append(outcome["tokens"])
+        if isinstance(outcome.get("captured"), dict):
+            summary.captured += 1
+        _add_usage(summary, outcome.get("token_counts"), outcome.get("tool_calls"))
         if isinstance(outcome.get("cost_usd"), int | float):
             summary.total_cost_usd = round((summary.total_cost_usd or 0.0) + float(outcome["cost_usd"]), 4)
 
     for profile, summary in summaries.items():
         if minutes.get(profile):
             summary.mean_minutes = round(mean(minutes[profile]), 1)
+            summary.timed = len(minutes[profile])
+        if tokens.get(profile):
+            summary.mean_tokens = round(mean(tokens[profile]))
+            summary.with_tokens = len(tokens[profile])
         if interventions.get(profile):
             summary.mean_interventions = round(mean(interventions[profile]), 2)
 
@@ -140,6 +166,21 @@ def summarize(
     ordered += [s for p, s in summaries.items() if p not in ("fast", "standard", "deep")]
     insights, notes = _insights(ordered, overrides, min_samples)
     return Report(profiles=ordered, insights=insights, notes=notes)
+
+
+def _add_usage(summary: ProfileSummary, counts: object, calls: object) -> None:
+    valid: dict[str, int] = {}
+    for key in TOKEN_FIELDS:
+        value = counts.get(key) if isinstance(counts, dict) else None
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            valid[key] = value
+    if valid:
+        summary.with_token_counts += 1
+        for key, value in valid.items():
+            summary.token_count_totals[key] = summary.token_count_totals.get(key, 0) + value
+    for name, count in calls.items() if isinstance(calls, dict) else []:
+        if isinstance(name, str) and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+            summary.tool_calls[name] = summary.tool_calls.get(name, 0) + count
 
 
 def _insights(

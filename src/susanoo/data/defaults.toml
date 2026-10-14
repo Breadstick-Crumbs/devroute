@@ -80,6 +80,9 @@ critical_risk_floor = "standard"
 [records]
 # Records are written to .susanoo/records/ only after `susanoo init`.
 store_task_text = true
+# Fill outcomes' tokens, duration, and tool calls from Claude Code session transcripts (usage
+# numbers, timestamps, and tool names only). Opt-in.
+capture_usage = false
 
 [context]
 # Repository context adjustments (explained in every assessment that uses them).

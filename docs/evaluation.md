@@ -51,6 +51,7 @@ To compare workflows (for example STANDARD vs DEEP on medium-risk tasks):
    susanoo outcome <record> --status completed --minutes 42 --interventions 1 \
      --tokens 180000 --cost 2.10 --regressions 0 --source human --notes "pair 3, arm B"
    ```
+   With `[records] capture_usage = true`, `--tokens` and `--minutes` can be left out: Susanoo fills them from the route's Claude Code session transcript, with separate fresh-input, cache-write, cache-read, and output counts and calls per tool ([configuration](configuration.md#capture-tokens-and-duration-from-claude-code)). Values you pass are kept.
 7. **Analyze.** `susanoo report --json` gives per-profile aggregates. Report sample sizes, spread, and the full protocol with any result. With fewer than about ten pairs per comparison, describe observations rather than conclusions.
 
 ## 3. Learning loop
@@ -69,7 +70,7 @@ Each recommendation names the configuration to review. **Susanoo never applies c
 | Record | Fields |
 |---|---|
 | `routes.jsonl` | id, timestamp, version, task or task hash, profile, recommended, overridden, composite scores, dimension levels, signals, areas, controls, gaps, planned verification |
-| `outcomes.jsonl` | record id, status, source (human/agent), duration, interventions, tokens, cost, regressions, agents, tools, notes |
+| `outcomes.jsonl` | record id, status, source (human/agent/susanoo), duration, interventions, tokens, cost, regressions, agents, tools, notes; with transcript capture also `token_counts` (fresh input, cache writes, cache reads, output), `tool_calls` (calls per tool name), and `captured` (which fields came from the transcript, message count, time window) |
 | `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail |
 | `research.jsonl` | capability, decision, candidates, validation steps, limitations |
 
