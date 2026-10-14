@@ -199,6 +199,17 @@ def validate(config: Config) -> None:
     floor = config.get("routing", {}).get("critical_risk_floor", "fast")
     _require(floor in PROFILE_ORDER, f"[routing] critical_risk_floor must be one of {PROFILE_ORDER}")
 
+    auto = config.get("auto", {})
+    _require(
+        isinstance(auto.get("route_before_edit", True), bool),
+        "[auto] route_before_edit must be true or false",
+    )
+    exempt = auto.get("route_before_edit_exempt", [])
+    _require(
+        isinstance(exempt, list) and all(isinstance(p, str) for p in exempt),
+        "[auto] route_before_edit_exempt must be a list of strings",
+    )
+
     _check_dimension_map("[assessment] baseline", config.get("assessment", {}).get("baseline", {}))
 
     seen: set[str] = set()

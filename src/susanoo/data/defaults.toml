@@ -99,8 +99,9 @@ default_package_manager = "npm"
 
 [auto]
 # Automatic routing (`susanoo init --global`, or `--auto` with the settings scope): every prompt
-# is classified, and only clear coding tasks are routed. When unsure, Susanoo stays out of the
-# way: questions and ambiguous prompts pass through untouched.
+# is classified, and only clear coding tasks are routed. Questions and ambiguous prompts get a
+# short note instead, and Claude routes them itself if they need code changes (never lower than
+# the keyword result for the prompt).
 # A prompt starting with this prefix is never routed.
 skip_prefix = "?"
 # Leading phrases removed before classifying ("please", "can you", "ok now", ...).
@@ -146,6 +147,17 @@ min_words = 3
 # arrives within `follow_up_minutes` of the routing; otherwise it replaces the open task.
 continuation = ["also", "and", "then", "now", "ok(?:ay)?", "next", "plus", "instead", "actually", "but", "same"]
 follow_up_minutes = 20
+# Route before the first edit: when a prompt got the note and Claude edits a project file with no
+# route open, that first edit is denied once and Claude is told to run `susanoo route` first; a
+# retry goes through. It never asks the user, so it applies in every permission mode. Edits made
+# through shell commands are not covered.
+route_before_edit = true
+# Files the route-before-edit gate leaves alone (paths relative to the project, shell-style
+# patterns): agent memory and Claude Code settings are not coding tasks.
+route_before_edit_exempt = [
+    "CLAUDE.md", "*/CLAUDE.md", "CLAUDE.local.md", "*/CLAUDE.local.md", "AGENTS.md", "*/AGENTS.md",
+    ".claude/*",
+]
 
 [enforcement]
 # Hands-off (default): Susanoo asks nothing and blocks no edit in any permission mode, and its

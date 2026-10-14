@@ -7,6 +7,7 @@ Failures never block work: an internal error exits 1 (Claude Code shows a non-bl
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from typing import Any
 
 from susanoo.config import load_config
 from susanoo.enforcement import gates
+from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.prompt import session_file
 from susanoo.enforcement.state import RouteState, active_route
 from susanoo.evaluation.store import RecordStore
@@ -72,6 +74,69 @@ def _log(store: RecordStore, state: RouteState | None, event_name: str, decision
         )
 
 
+def _exempt(file_path: str, root: Path, config: dict[str, Any]) -> bool:
+    """Whether ``file_path`` matches `[auto] route_before_edit_exempt` (agent memory and settings)."""
+    patterns = config.get("auto", {}).get("route_before_edit_exempt", [])
+    path = Path(os.path.expanduser(file_path))
+    try:
+        absolute = os.path.realpath(path if path.is_absolute() else root / path)
+        relative = Path(os.path.relpath(absolute, os.path.realpath(root))).as_posix()
+    except (OSError, ValueError):
+        return False
+    return any(fnmatch.fnmatch(relative, str(pattern)) for pattern in patterns)
+
+
+def _route_first(
+    event: dict[str, Any], root: Path, config: dict[str, Any], store: RecordStore, session: str
+) -> gates.Decision | None:
+    """Route before the first edit: with automatic routing, a message that was not routed (it got
+    the Susanoo note) and leads to an edit of a project file, with no route open, gets that first
+    edit denied once, so Claude routes the task and its gates apply. A retry goes through, so an
+    edit that is not part of a coding task is only delayed. It never asks the user anything, so it
+    applies in every permission mode. Edits made through shell commands are not covered.
+    """
+    if not session or not config.get("auto", {}).get("route_before_edit", True):
+        return None
+    if str(event.get("tool_name", "")) not in set(config.get("enforcement", {}).get("edit_tools", [])):
+        return None
+    raw_input = event.get("tool_input")
+    tool_input: dict[str, Any] = raw_input if isinstance(raw_input, dict) else {}
+    file_path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+    if not file_path or not gates._inside(file_path, root) or _exempt(file_path, root, config):
+        return None
+    message = prompt_state.load(root, session)
+    # Only messages that got the note ("question" and "ambiguous" in the classifier); a task was
+    # routed by the hook, and "?" or a slash command asked for no routing.
+    if not message or message.get("kind") not in ("question", "ambiguous"):
+        return None
+    at = str(message.get("at", ""))
+    marker = str(message.get("id") or at)
+    if not at or prompt_state.nudged(root, session, marker):
+        return None
+    if any(
+        r.get("session_id") == session and str(r.get("created_at", "")) >= at for r in store.read("routes")
+    ):
+        return None  # Claude routed after this message (and that route is closed by now)
+    from susanoo.enforcement.auto import auto_settings  # heavy; only reached for this edit
+
+    settings = auto_settings(root)
+    if not settings:
+        return None  # automatic routing was turned off after the message
+    if not prompt_state.mark_nudged(root, session, marker):
+        return None  # without the mark a retry would be denied again: fail open instead
+    command = str(settings.get("command") or "susanoo")
+    return gates.Decision(
+        permission="deny",
+        reason=(
+            "Susanoo: this message was not routed, and this edit changes a project file. If you are working "
+            f'on a coding task, run `{command} route "<the task in one line>"` first, follow the brief it '
+            "prints, then retry the edit. If this edit is not part of a coding task, retry it as it is: it "
+            "will go through."
+        ),
+        notes=["route before edit: first edit for an unrouted message denied once"],
+    )
+
+
 def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
     """Return (exit_code, stdout) for one hook invocation."""
     if event_name not in HOOK_EVENTS:
@@ -93,8 +158,12 @@ def handle(event_name: str, event: dict[str, Any]) -> tuple[int, str]:
             {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": context}}
         )
     if state is None:
-        # Approval integrity applies even without an active route.
         if event_name == "pre-tool-use":
+            first = _route_first(event, root, config, store, session)
+            if first is not None:
+                _log(store, None, event_name, first)
+                return 0, _pre_tool_use_output(first)
+            # Approval integrity applies even without an active route.
             decision = gates.pre_tool_use(event, None, root, config)
             return 0, _pre_tool_use_output(decision)
         return 0, ""

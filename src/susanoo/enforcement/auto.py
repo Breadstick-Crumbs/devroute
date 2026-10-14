@@ -303,6 +303,7 @@ def on_prompt(
         session,
         {
             "at": _now(),
+            "id": new_record_id(),  # unique per message (stamps are to the second)
             "kind": kind,
             "floor": message.to_dict() if message else None,
             "hands_off": hands_off,
