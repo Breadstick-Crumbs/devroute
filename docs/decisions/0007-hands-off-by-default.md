@@ -1,6 +1,6 @@
 # 0007: Hands-off by default
 
-**Status:** accepted (unreleased). Supersedes [0005](0005-safety-controls-independent-of-profile.md) and [0006](0006-model-judgment-above-a-keyword-floor.md) where they conflict, as described below.
+**Status:** accepted (v0.7). Supersedes [0005](0005-safety-controls-independent-of-profile.md) and [0006](0006-model-judgment-above-a-keyword-floor.md) where they conflict, as described below.
 
 ## Context
 
