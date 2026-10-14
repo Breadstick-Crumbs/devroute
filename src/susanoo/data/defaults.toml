@@ -141,15 +141,10 @@ keep = [
 signals = ["architecture-change"]
 verbs = ["redesign", "re-design", "revamp", "refresh", "restyle", "re-style", "polish"]
 
-[[assessment.presentational.rules]]
-# Styling a payment page is not payment logic. "Fix", "update", and "move" are not here: a fix is
-# a behavior change, and an update or move can change the flow.
-signals = ["payments"]
-verbs = [
-    "change", "make", "adjust", "tighten", "loosen", "align", "center", "centre", "increase", "reduce",
-    "tweak", "restyle", "re-style", "recolor", "recolour", "polish", "style",
-]
-require_appearance = true
+# There is deliberately no rule for `payments`: a heuristic never removes payment controls, even
+# for "Change the checkout button color" (decided 2026-10-15 after three reviews found payment
+# changes phrased as styling). A user who knows a task is only visual can ask for a lighter
+# workflow; the payment controls stay either way.
 
 [complexity]
 weights = { implementation_complexity = 0.35, architectural_complexity = 0.25, affected_components = 0.25, testing_difficulty = 0.15 }

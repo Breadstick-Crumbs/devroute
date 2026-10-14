@@ -27,15 +27,11 @@ def _route(task: str):
 @pytest.mark.parametrize(
     ("task", "ignored"),
     [
-        ("Change the checkout button color to green", "payments / billing"),
-        ("Make the checkout form layout responsive on small screens", "payments / billing"),
-        ("Tighten the padding on the payment form", "payments / billing"),
-        ("Recolor the billing page buttons to match the brand", "payments / billing"),
         ("Redesign the pricing page layout for mobile", "architectural change"),
         ("Redesign the onboarding screens in the React Native app", "architectural change"),
     ],
 )
-def test_visual_edits_drop_payment_and_architecture_weight(task: str, ignored: str):
+def test_visual_redesigns_drop_architectural_weight(task: str, ignored: str):
     a, d = _route(task)
     assert any(p.startswith(ignored) for p in a.presentational)
     assert not {"payments", "architecture-change"} & a.signal_ids()
@@ -46,6 +42,12 @@ def test_visual_edits_drop_payment_and_architecture_weight(task: str, ignored: s
 @pytest.mark.parametrize(
     "task",
     [
+        # A heuristic never removes payment controls, not even for styling (user decision, 2026-10-15).
+        "Change the checkout button color to green",
+        "Make the checkout form layout responsive on small screens",
+        "Tighten the padding on the payment form",
+        "Recolor the billing page buttons to match the brand",
+        "Restyle the checkout page",
         "Fix the checkout button",  # no look word: may be a submit bug
         "Redesign the checkout page",  # redesign without a look word stays payment work
         "Change the checkout form validation messages",  # validation decides what is submitted
@@ -162,20 +164,22 @@ def test_architectural_redesigns_stay_architectural(task: str):
 
 def test_briefs_say_what_was_ignored(tmp_path: Path, home: Path):
     write(tmp_path, "src/App.tsx", "export const App = () => null;\n")
-    plan = plan_task("Change the checkout button color to green", tmp_path, load_config(), home=home)
-    assert "Ignored as a purely visual change: payments / billing ('checkout')" in render_brief(plan)
+    plan = plan_task("Redesign the pricing page layout for mobile", tmp_path, load_config(), home=home)
+    assert "Ignored as a purely visual change: architectural change ('redesign')" in render_brief(plan)
     short = compact_brief(plan, "su-1", True, "susanoo")
     assert "Ignored as a purely visual change" in short and "raise the route" in short
 
 
 def test_the_users_message_still_sets_the_floor():
-    # Claude may describe a payment task in visual words; the user's own message keeps its controls.
+    # Claude may describe an architectural task in visual words; the user's message keeps it DEEP.
     config = load_config()
-    floor = message_floor("The checkout button no longer charges the card, fix it", config)
+    floor = message_floor(
+        "Refactor the monolith into microservices for orders, inventory, and shipping", config
+    )
     assert floor is not None
-    a = assess("Change the checkout button color to green", config, floor=floor)
+    a = assess("Redesign the orders page", config, floor=floor)
     d = route(a, load_profiles(), config, minimum=floor.profile)
-    assert {c.id for c in d.controls} >= PAYMENT_CONTROLS
+    assert d.profile == "deep"
 
 
 @pytest.mark.parametrize(
@@ -209,8 +213,8 @@ def test_presentational_configuration_is_validated(tmp_path: Path, toml: str, me
 def test_presentational_rule_can_be_turned_off(tmp_path: Path):
     write(tmp_path, ".susanoo/config.toml", "[assessment.presentational]\nrules = []\n")
     config = load_config(tmp_path)
-    a = assess("Change the checkout button color to green", config)
-    assert "payments" in a.signal_ids() and not a.presentational
+    a = assess("Redesign the pricing page layout for mobile", config)
+    assert "architecture-change" in a.signal_ids() and not a.presentational
 
 
 def test_long_or_tricky_input_is_fast():

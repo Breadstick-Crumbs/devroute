@@ -46,7 +46,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | UI work: required visual check and accessibility scans, with project tools (axe, pa11y, Playwright screenshots; Lighthouse CI detected) | ✅ (unreleased) |
 | UI work: UI domain (website, ecommerce, dashboard, mobile, component library) with short checklists in the brief, and the website performance budget | ✅ (unreleased) |
 | UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | ✅ (unreleased) |
-| UI work: visual redesigns and presentational payment-page changes routed without architectural or payment weight, eval-gated | ✅ (unreleased) |
+| UI work: visual redesigns routed without architectural weight, eval-gated (payment-page styling deliberately keeps its payment controls) | ✅ (unreleased) |
 | UI work: measure, then reduce, gate friction during bursts of small UI tweaks | 🔬 |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.

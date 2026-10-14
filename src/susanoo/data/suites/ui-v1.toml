@@ -61,21 +61,26 @@ id = "ui-mobile-onboarding-redesign"
 task = "Redesign the onboarding screens in the React Native app"
 expected = "standard"
 
-# --- Presentational changes on payment pages. Only markup and styling change, so payment
-# controls add process without protecting anything. Labeled for the routing fix (slice 4).
+# --- Presentational changes on payment pages. First labeled as styling only; relabeled DEEP with
+# the payment controls when the user decided heuristics never remove them (see each case).
 
 [[cases]]
 id = "ui-checkout-button-color"
-# A color on the checkout page: no payment data, amounts, or provider calls are touched.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled FAST as presentational.
 task = "Change the checkout button color to green"
-expected = "fast"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 [[cases]]
 id = "ui-checkout-form-responsive"
-# Layout of an existing form across breakpoints. Fields, validation, and submission stay as
-# they are.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled STANDARD as presentational.
 task = "Make the checkout form layout responsive on small screens"
-expected = "standard"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 # --- Payment logic, or payment logic mixed with UI work. These must keep every payment
 # control. A false negative here is a safety bug, so the labels err strict.
@@ -184,21 +189,30 @@ controls = ["security-review", "data-safety", "external-sandbox"]
 
 [[cases]]
 id = "ui4-recolor-billing-buttons"
-# Colors only.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled FAST as presentational.
 task = "Recolor the billing page buttons to match the brand"
-expected = "fast"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 [[cases]]
 id = "ui4-payment-form-padding"
-# Spacing only.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled FAST as presentational.
 task = "Tighten the padding on the payment form"
-expected = "fast"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 [[cases]]
 id = "ui4-restyle-checkout-page"
-# A whole page restyled is more than one value: plan and check it across widths.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled STANDARD as presentational.
 task = "Restyle the checkout page"
-expected = "standard"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 [[cases]]
 id = "ui4-redesign-settings-dark-mode"

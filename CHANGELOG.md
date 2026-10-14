@@ -5,16 +5,16 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
-- **Visual-only UI work is no longer routed like architecture or payment logic** (ADR 0008).
-  - **What changes:** "Redesign the pricing page layout for mobile" routes STANDARD instead of DEEP, and "Change the checkout button color to green" routes FAST without the payment controls. Briefs list what was ignored.
-  - **What counts as purely visual:** a task that is short, one clause, and fits a closed vocabulary and structure (`[assessment.presentational]`). It has a styling verb, an object of payment-page words, at most one page name from a short list, and UI nouns, and a tail of only look words, "to <color or size>", and "on/for <platform or look>".
-  - **What keeps every signal:** anything that could turn the object into something else, and any word for payment logic, providers, data, state, flows, card or text fields, APIs, or authentication, also when hyphenated. "Fix the checkout button on mobile", "Update the checkout form layout for Apple Pay", "Change the checkout layout to a modal", "Change the Stripe checkout button color", and "Change how the checkout calculates tax" all keep DEEP with every payment control.
+- **A visual redesign is no longer routed like an architectural change** (ADR 0008).
+  - **What changes:** "Redesign the pricing page layout for mobile" and "Redesign the onboarding screens in the React Native app" route STANDARD instead of DEEP. Briefs list what was ignored. Payment-page styling ("Change the checkout button color to green") deliberately keeps DEEP and every payment control: a heuristic never removes payment controls.
+  - **What counts as a visual redesign:** a task that is short, one clause, and fits a closed vocabulary and structure (`[assessment.presentational]`). It has a redesign verb, an object of at most one page name from a short list and UI nouns, and a tail of only look words, "to <color or size>", and "on/for <platform or look>".
+  - **What keeps it architectural:** another architectural phrase ("with microservices", "into web views", "the container components", "the micro-frontend pages"), anything that turns the object into something else, or any word for data, state, flows, routing, APIs, or authentication, also when hyphenated.
   - **Also new:**
     - `visual-redesign`, `responsive-layout`, and `visual-tweak` signals;
     - "build a/the ..." counts as new functionality (not for a project, docs, or image);
     - navbar, sidebar, footer, and spacing count as UI;
     - signals can limit their caps with `caps_if_signals`.
-  - **How it was checked:** every reference-suite case keeps its route. Three adversarial reviews found escapes in earlier versions (a regular expression, a vocabulary without structure, an open page-name slot); each escape is now a test, and the third found no remaining realistic payment escape. Three details were tuned after seeing a suite result: a look phrase may come before the object, "restyle" counts as a visual redesign, and a page name may only come before the object.
+  - **How it was checked:** every reference-suite case keeps its route. A rule that also removed payment controls for styling-only tasks was built and dropped: three adversarial reviews kept finding payment changes phrased as styling. Their phrasings are now tests that require every payment control. Three details were tuned after seeing a suite result: a look phrase may come before the object, "restyle" counts as a visual redesign, and a page name may only come before the object.
 - The automatic-routing brief says "Do not wait for approval" instead of "Work autonomously", and asks Claude to ask you instead of guessing when an ambiguity would change what it builds. When the assessment has low confidence, it tells Claude to ask one to three focused questions about scope before editing. Neither appears once you asked for autonomy in the task ("work autonomously", "don't ask", also mid-task, after a raise, or when Claude routes the task anew). Hands-off still adds no approvals or confirmations (ADR 0009).
 - A bare "don't ask" at the end of a clause ("fix it, don't ask") now counts as asking for autonomy; before, only "don't ask me" did. "Don't ask for the password twice" still does not.
 
