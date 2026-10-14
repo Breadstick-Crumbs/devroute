@@ -1,0 +1,134 @@
+# UI domains and checklists (ADR 0008).
+#
+# A UI task's brief shows the universal baseline and, when a domain is chosen, that domain's
+# checklist. The domain comes from, in order: `[ui] domain` in configuration, words in the task,
+# then project detection (dependencies and files, read-only). These are heuristics, not a
+# verified classification, and the checklists are short reminders, not a design review.
+#
+# Domain keys:
+#   task_phrases         regular expressions for phrases that name the product ("landing page",
+#                        "admin dashboard"), matched on word boundaries, case-insensitive
+#   task_words           generic words ("chart", "cart"), tried only when no domain's phrase matched
+#   npm_packages         package.json dependencies; an entry ending in "/" matches a scope ("@shopify/")
+#   unless_npm_packages  not this domain when any of these is a dependency
+#   fallback             detected only when no other domain is (Storybook alongside an app)
+#   files                project files or globs (not recursive)
+#   checklist            5-8 items shown in the full brief
+#   focus                one line for the short automatic-routing brief
+#   sources              what the checklist rests on, said plainly
+# Within each step (phrases, then words, then detection), domains are tried in file order, so
+# more specific ones come first.
+
+schema_version = 1
+
+[baseline]
+title = "UI baseline (every UI change)"
+checklist = [
+    "Text contrast at least 4.5:1 (3:1 for large text and for UI components and focus indicators); WCAG 2.2 AA 1.4.3 and 1.4.11.",
+    "Pointer targets at least 24x24 CSS px, or enough space around them (WCAG 2.2 AA 2.5.8); 44x44 (2.5.5, level AAA) is the better aim.",
+    "Everything works with the keyboard alone, in a sensible order, with a visible focus indicator that sticky headers or banners never fully hide (2.1.1, 2.4.3, 2.4.7, 2.4.11).",
+    "Empty, loading, and error states, plus long content and very long words.",
+    "Check at 375, 768, and 1280 CSS px wide (common widths, not a standard).",
+    "Use the project's design tokens and components rather than one-off values.",
+]
+focus = "contrast 4.5:1, targets 24x24 px, keyboard and visible focus, empty/loading/error states, 375/768/1280 px, design tokens over one-off values"
+sources = "WCAG 2.2 (W3C), level AA unless noted; the states, long-content, and design-token items are common practice, and the widths are conventions."
+
+[[domains]]
+id = "mobile"
+title = "Mobile app"
+task_phrases = ["mobile app(?:s|lications?)?", "react native", "expo", "flutter", "swiftui", "jetpack compose", "ios app(?:s|lications?)?", "android app(?:s|lications?)?"]
+npm_packages = ["react-native", "expo"]
+files = ["pubspec.yaml"]
+checklist = [
+    "Follow the platform's own guidelines (Apple Human Interface Guidelines, Material Design) for navigation and controls.",
+    "Touch targets of 44x44 pt on iOS (the size Apple's guidelines recommend) and at least 48x48 dp on Android (Material).",
+    "Primary actions within thumb reach; respect safe areas, notches, and the on-screen keyboard.",
+    "Text scales with the system font size without clipping or overlap.",
+    "Screen reader labels and order (VoiceOver, TalkBack).",
+    "Clear states on slow or no network.",
+    "Dark mode and reduced motion follow the system setting.",
+]
+focus = "platform guidelines, touch targets 44 pt / 48 dp, thumb reach and safe areas, text scaling, screen reader labels"
+sources = "Apple Human Interface Guidelines and Material Design (check the current versions); thumb reach and network states are common practice."
+
+[[domains]]
+id = "component-library"
+title = "Component library or design system"
+task_phrases = ["design system", "component library", "storybook", "ui kit"]
+npm_packages = ["storybook", "@storybook/"]
+# With an app framework, Storybook documents an app's components; that is not a library. Some
+# apps use no router, so the domain is also only a fallback when nothing else is detected.
+unless_npm_packages = [
+    "next", "nuxt", "gatsby", "astro", "react-router", "react-router-dom", "@remix-run/react",
+    "@sveltejs/kit", "@angular/router", "vue-router", "react-native", "expo",
+    "@tanstack/react-router", "@tanstack/react-start", "wouter", "@solidjs/router",
+]
+fallback = true
+checklist = [
+    "Every variant and state has a story: default, hover, focus, active, disabled, loading, error.",
+    "Roles, names, and keyboard behavior follow the WAI-ARIA Authoring Practices pattern for the component.",
+    "Design tokens only; works in every supported theme (light, dark, high contrast).",
+    "No breaking prop or style changes without a deprecation path and a changelog entry.",
+    "Long labels, right-to-left text, and narrow containers do not break the layout.",
+]
+focus = "a story per variant and state, WAI-ARIA keyboard patterns, tokens and themes, no unannounced breaking changes"
+sources = "WAI-ARIA Authoring Practices (W3C); the rest is common practice for shared components."
+
+[[domains]]
+id = "ecommerce"
+title = "E-commerce and checkout"
+task_phrases = ["checkout", "storefront", "e-?commerce", "shopping carts?", "online (?:shop|store)s?", "web ?shops?", "product (?:pages?|listings?|details?)"]
+task_words = ["carts?", "baskets?"]
+# Storefront packages only: other @shopify packages are admin apps, React Native, or lint configs.
+npm_packages = ["@shopify/hydrogen", "@shopify/hydrogen-react", "@shopify/storefront-api-client", "shopify-buy", "@medusajs/medusa", "@vendure/core", "@saleor/sdk", "@commercetools/platform-sdk"]
+checklist = [
+    "Guest checkout, and only the fields the order needs.",
+    "Inline validation with specific messages that say how to fix the input; entered data survives an error.",
+    "The total, with shipping and taxes, is visible before the final step.",
+    "Correct input types and autocomplete attributes for address and payment fields.",
+    "Trust signals near payment: security, returns, contact.",
+    "On product pages, price, availability, and the add-to-cart action are visible without scrolling on a phone.",
+]
+focus = "guest checkout, few fields, inline validation that keeps input, total with shipping and tax up front, autocomplete attributes"
+sources = "Commonly cited checkout fundamentals. Baymard Institute's checkout research finds checkout design a frequent reason for abandoned purchases; its detailed guidelines are mostly paywalled and are not quoted here."
+
+[[domains]]
+id = "dashboard"
+title = "Dashboard or data-heavy app"
+task_phrases = ["dashboards?", "admin (?:panel|console|ui|area)s?", "data ?(?:tables?|grids?)", "back ?office", "analytics (?:dashboards?|pages?|views?)"]
+task_words = ["charts?", "kpis?", "analytics"]
+npm_packages = [
+    "recharts", "echarts", "echarts-for-react", "chart.js", "react-chartjs-2", "@nivo/core", "d3",
+    "ag-grid-community", "ag-grid-react", "@tanstack/react-table", "@tanstack/table-core",
+    "@mui/x-data-grid", "react-admin", "@tremor/react",
+]
+checklist = [
+    "Summary first, then drill down; a few headline metrics (practitioners suggest about 3-5).",
+    "Tables: sticky header, key column pinned, visible sort state, keyboard row selection.",
+    "Comfortable and compact density where people scan many rows.",
+    "Consistent number formats and units; numbers right-aligned.",
+    "Charts label axes and units and never rely on color alone (WCAG 1.4.1).",
+    "Every widget has loading, empty, and error states; large data sets are paginated or virtualized.",
+    "Filter and sort state stays visible.",
+]
+focus = "summary first, few headline metrics, table sticky header / pinned column / visible sort, density, units and alignment, no color-only charts"
+sources = "Practitioner guidance (for example Stephanie Walter on complex data tables, UX Studio on dashboards), not peer-reviewed research; WCAG for color."
+
+[[domains]]
+id = "website"
+title = "Marketing or content website"
+task_phrases = ["landing pages?", "marketing (?:sites?|pages?|websites?)", "home ?pages?", "pricing pages?", "hero (?:sections?|banners?)", "blog (?:posts?|pages?)"]
+task_words = ["blogs?", "seo"]
+npm_packages = ["astro", "gatsby", "@11ty/eleventy", "@docusaurus/core", "vitepress", "hexo"]
+files = ["hugo.toml", "hugo.yaml", "_config.yml"]
+checklist = [
+    "Clear visual hierarchy and one primary call to action per view.",
+    "Readable line length (about 45-75 characters is a common typographic guideline).",
+    "Real content at realistic lengths, not lorem ipsum.",
+    "Core Web Vitals \"good\": LCP at most 2.5 s, INP at most 200 ms, CLS at most 0.1, at the 75th percentile of real page loads; reserve space for images and embeds.",
+    "A title, a meta description, and Open Graph tags; one h1 and headings in order.",
+    "Meaningful alt text for informative images; empty alt for decorative ones.",
+]
+focus = "clear hierarchy, one primary call to action, readable line length, real content, Core Web Vitals (LCP 2.5 s, INP 200 ms, CLS 0.1), title/meta/Open Graph"
+sources = "Core Web Vitals thresholds (web.dev); WCAG for alt text; the rest is common practice."

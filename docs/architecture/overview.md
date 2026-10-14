@@ -27,9 +27,10 @@ src/susanoo/
   enforcement/         Opt-in workflow enforcement      gates (pure decisions), hooks (Claude Code bridge)
   adapters/claude_code Claude Code integration          discovery of skills/agents/MCP, installer
   pipeline.py          Orchestration                    plan_task(task, root, config) -> TaskPlan
+  ui.py                UI domains and checklists       choose_domain(task, config, detected) -> UIContext
   render.py            Execution brief and reports
   cli.py               Command-line interface
-  data/                defaults.toml, profiles/, tools.toml, capabilities.toml, suites/, templates/
+  data/                defaults.toml, profiles/, tools.toml, capabilities.toml, ui_domains.toml, suites/, templates/
 ```
 
 ### Task Intelligence Engine (`analyzer/`)

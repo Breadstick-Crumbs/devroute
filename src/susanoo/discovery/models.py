@@ -71,6 +71,8 @@ class Inventory:
     warnings: list[str] = field(default_factory=list)
     source_files: int = 0
     package_manager: str | None = None  # JavaScript package manager (npm, pnpm, yarn, bun)
+    # UI domains the project's dependencies and files point to ({"id", "evidence"}), in catalog order.
+    ui_domains: list[dict[str, str]] = field(default_factory=list)
 
     def by_kind(self, kind: str) -> list[Finding]:
         return [f for f in self.findings if f.kind == kind]

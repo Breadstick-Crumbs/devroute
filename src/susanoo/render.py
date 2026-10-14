@@ -12,6 +12,7 @@ from susanoo.evaluation.suite import SuiteResult
 from susanoo.pipeline import TaskPlan
 from susanoo.research import ResearchReport
 from susanoo.selection import installed_extensions
+from susanoo.ui import UIContext
 from susanoo.verification import Evidence
 
 # Phases where the selected code-navigation tool is named in the brief.
@@ -124,6 +125,9 @@ def render_brief(plan: TaskPlan) -> str:
         names = ", ".join(f"{f.name} ({f.kind})" for f in useful[:8])
         lines += [f"Claude Code skills and subagents available: {names}", ""]
 
+    if plan.ui is not None:
+        lines += render_ui(plan.ui)
+
     lines += ["## Proposed steps", ""]
     nav = next(
         (r.selected for r in plan.recommendations if r.capability == "code_navigation" and r.selected), None
@@ -187,11 +191,28 @@ def render_brief(plan: TaskPlan) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_ui(ui: UIContext) -> list[str]:
+    """The UI section of a brief: domain and why, then the baseline and the domain checklist."""
+    domain = f"{ui.title} ({ui.reason})" if ui.title else ui.reason
+    guess = " This is a heuristic, not a verified classification." if ui.heuristic else ""
+    lines = ["## UI", "", f"UI domain: {domain}.{guess}", ""]
+    for checklist in (ui.baseline, ui.checklist):
+        if checklist is None:
+            continue
+        lines += [f"{checklist.title}:", ""]
+        lines += [f"- {item}" for item in checklist.checklist]
+        lines += ["", f"Sources: {checklist.sources}", ""]
+    return lines
+
+
 def render_inventory(inv: Inventory) -> str:
     lines = [f"# Capability inventory: {inv.root}", ""]
     if inv.languages:
         langs = ", ".join(f"{k} ({v})" for k, v in inv.languages.items())
         lines += [f"Languages: {langs}", ""]
+    if inv.ui_domains:
+        found = ", ".join(f"{d['id']} (from {d['evidence']})" for d in inv.ui_domains)
+        lines += [f"UI domains suggested by dependencies: {found}", ""]
     groups = [
         ("Build systems", "build_system"),
         ("Python environment manager", "environment"),

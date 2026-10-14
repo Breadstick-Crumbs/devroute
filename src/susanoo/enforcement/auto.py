@@ -181,6 +181,11 @@ def compact_brief(
             "or the conversation already answers them. These are questions about the task, not an "
             "approval request."
         )
+    if plan.ui is not None:
+        ui = plan.ui
+        domain = f"{ui.domain} ({ui.reason})" if ui.domain else ui.reason
+        focus = ui.baseline.focus + (f"; {ui.checklist.focus}" if ui.checklist else "")
+        lines.append(f"UI domain: {domain}. Check: {focus}.")
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
         "If this route understates the task (data loss, security, payments, production, or a wider change "

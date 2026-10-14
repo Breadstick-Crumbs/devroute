@@ -17,6 +17,7 @@ from susanoo.registry import Registry, load_registry
 from susanoo.research import Gap, analyze_gaps
 from susanoo.router import Profile, RouteDecision, load_profiles, recommended_profile, route
 from susanoo.selection import SelectionContext, ToolRecommendation, recommend
+from susanoo.ui import UIContext, choose_domain
 from susanoo.verification import (
     VerificationPlan,
     build_plan,
@@ -38,6 +39,7 @@ class TaskPlan:
     not_required: list[str]
     record_id: str | None = None
     hands_off: bool = False  # `[enforcement] hands_off`: checkpoints are reported, not waited at
+    ui: UIContext | None = None  # UI tasks only: domain, why, and the checklists (ADR 0008)
 
     def to_dict(self, include_inventory: bool = False) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -61,6 +63,7 @@ class TaskPlan:
             "verification": self.verification.to_dict(),
             "not_required": self.not_required,
             "hands_off": self.hands_off,
+            "ui": self.ui.to_dict() if self.ui else None,
             "environment": {
                 "root": self.inventory.root,
                 "languages": self.inventory.languages,
@@ -117,7 +120,10 @@ def plan_task(
     )
     profile = profiles[decision.profile]
 
-    selected_steps = select_steps(assessment, decision.profile, decision.controls, config)
+    ui = choose_domain(task, config, inventory.ui_domains) if "ui" in assessment.signal_ids() else None
+    selected_steps = select_steps(
+        assessment, decision.profile, decision.controls, config, ui_domain=ui.domain if ui else None
+    )
     profile_reqs = [
         CapabilityRequirement(
             c["id"], c.get("level", "recommended"), [f"{profile.title} profile: {c.get('reason', '')}"]
@@ -149,6 +155,7 @@ def plan_task(
         gaps=gaps,
         verification=verification,
         not_required=not_required,
+        ui=ui,
         hands_off=bool(config.get("enforcement", {}).get("hands_off", False)),
     )
 
@@ -228,6 +235,7 @@ def route_record(
         "verification": [{"id": s.id, "level": s.level, "mode": s.mode} for s in plan.verification.steps],
         "checkpoints": plan.decision.checkpoints,
         "phases": [p.title for p in plan.profile.phases],
+        "ui_domain": plan.ui.domain if plan.ui else None,
         # Binds the route to the Claude Code session that created it (enforcement hooks).
         "session_id": session_id,
     }

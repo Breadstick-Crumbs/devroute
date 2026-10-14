@@ -161,6 +161,12 @@ route_before_edit_exempt = [
     ".claude/*", "*/.claude/*",
 ]
 
+[ui]
+# UI domain for UI tasks (ADR 0008): "" picks one from the task's words, then from the project's
+# dependencies; a domain id (website, ecommerce, dashboard, mobile, component-library) fixes it;
+# "none" shows only the generic UI baseline. Domains and checklists live in ui_domains.toml.
+domain = ""
+
 [enforcement]
 # Hands-off (default): Susanoo asks nothing and blocks no edit in any permission mode, and its
 # briefs treat checkpoints as points to report rather than to stop at; Claude Code's own
@@ -626,6 +632,15 @@ levels = { standard = "recommended", deep = "recommended" }
 # Only when the project already has screenshot baselines; otherwise the step is left out.
 only_with_tool = true
 instructions = "Update baselines only for intended changes, and say so in the report."
+
+[[verification]]
+id = "performance_budget"
+title = "Performance budget"
+capability = "performance_budget"
+signals = ["ui"]
+ui_domains = ["website"]
+levels = { standard = "recommended", deep = "recommended" }
+instructions = "Lighthouse CI gives lab numbers (no INP; Total Blocking Time stands in). Core Web Vitals thresholds apply to real-user data at the 75th percentile, so a lab pass is not a Core Web Vitals pass."
 
 [[verification]]
 id = "security_scan"

@@ -62,9 +62,16 @@ def _raise(current: str | None, new: str) -> str:
 
 
 def select_steps(
-    assessment: Assessment, profile: str, controls: list[Control], config: Config
+    assessment: Assessment,
+    profile: str,
+    controls: list[Control],
+    config: Config,
+    ui_domain: str | None = None,
 ) -> list[SelectedStep]:
-    """Pick verification rules and their level from profile, risk escalations, and controls."""
+    """Pick verification rules and their level from profile, risk escalations, and controls.
+
+    A rule with `ui_domains` applies only when the task's UI domain is one of them.
+    """
     signals = assessment.signal_ids()
     control_steps: dict[str, list[str]] = {}
     for control in controls:
@@ -77,6 +84,9 @@ def select_steps(
         reasons: list[str] = []
         required_signals = rule.get("signals")
         if required_signals and not signals & set(required_signals) and rule["id"] not in control_steps:
+            continue
+        rule_domains = rule.get("ui_domains")
+        if rule_domains and ui_domain not in rule_domains and rule["id"] not in control_steps:
             continue
         base = rule.get("levels", {}).get(profile)
         if base:

@@ -262,6 +262,15 @@ def validate(config: Config) -> None:
         _require(when.get("dimension") in DIMENSIONS, f"control '{cid}': unknown dimension in 'when'")
         _check_level(f"control '{cid}' when.min", when.get("min"))
 
+    ui_domain = config.get("ui", {}).get("domain", "")
+    if ui_domain not in ("", "none"):
+        from susanoo.ui import domain_ids
+
+        _require(
+            isinstance(ui_domain, str) and ui_domain in domain_ids(),
+            f'[ui] domain must be one of {", ".join(domain_ids())}, "none", or "" (got {ui_domain!r})',
+        )
+
     for rule in config.get("verification", []):
         rid = rule.get("id", "?")
         _require(isinstance(rule.get("capability"), str), f"verification '{rid}': missing 'capability'")
@@ -273,6 +282,16 @@ def validate(config: Config) -> None:
             isinstance(rule.get("only_with_tool", False), bool),
             f"verification '{rid}': 'only_with_tool' must be true or false",
         )
+        rule_domains = rule.get("ui_domains", [])
+        _require(
+            isinstance(rule_domains, list) and all(isinstance(d, str) for d in rule_domains),
+            f"verification '{rid}': 'ui_domains' must be a list of UI domain ids",
+        )
+        if rule_domains:
+            from susanoo.ui import domain_ids
+
+            unknown = sorted(set(rule_domains) - set(domain_ids()))
+            _require(not unknown, f"verification '{rid}': unknown UI domain(s): {', '.join(unknown)}")
         _require(
             rule.get("evidence", "any") in ("any", "reported"),
             f"verification '{rid}': 'evidence' must be \"reported\" (or left out)",
