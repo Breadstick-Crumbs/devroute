@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 
 import pytest
 
 from susanoo.analyzer import Floor, assess
-from susanoo.config import PROFILE_ORDER, Config
+from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.enforcement import handle
 from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.hooks import SessionState
 from susanoo.evaluation.store import RecordStore
 from susanoo.evaluation.suite import load_suite
-from susanoo.paths import install_manifest_path
+from susanoo.paths import install_manifest_path, records_dir
 from susanoo.pipeline import message_floor
 from susanoo.router import Profile, route
 from tests.conftest import write
@@ -602,3 +604,177 @@ def test_a_lost_prompt_record_keeps_the_open_route_floor(tmp_path: Path, damage:
     assert code == 0, err
     new = RecordStore(root).read("routes")[-1]
     assert new["profile"] == "deep" and set(deep["controls"]) <= set(new["controls"])
+
+
+# --- route before the first edit ----------------------------------------------------------------
+
+
+def _edit(root: Path, path: Path | str, mode: str = "default") -> dict[str, str]:
+    event = {
+        "session_id": SESSION,
+        "cwd": str(root),
+        "tool_name": "Edit",
+        "tool_input": {"file_path": str(path)},
+        "permission_mode": mode,
+    }
+    code, out = handle("pre-tool-use", event)
+    assert code == 0
+    return json.loads(out)["hookSpecificOutput"] if out else {}
+
+
+@pytest.mark.parametrize("mode", ["default", "acceptEdits", "bypassPermissions"])
+def test_first_edit_of_an_unrouted_message_is_denied_once(tmp_path: Path, mode: str):
+    root = _project(tmp_path)
+    _prompt(root, "app.py is missing the hello() function that should return the string 'hi'", mode)
+    first = _edit(root, root / "app.py", mode)
+    assert first["permissionDecision"] == "deny"
+    assert "susanoo route" in first["permissionDecisionReason"]
+    assert "ask the user" not in first["permissionDecisionReason"]
+    assert _edit(root, root / "app.py", mode) == {}  # a retry goes through
+    logged = RecordStore(root).read("enforcement")
+    assert [e["permission"] for e in logged] == ["deny"]
+
+
+def test_each_new_unrouted_message_gets_its_own_nudge(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+    _prompt(root, "The header is misaligned too")
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+
+
+def test_no_nudge_once_claude_routed(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned on mobile", "bypassPermissions")
+    assert run(root, "route", "Fix the footer alignment on mobile")[0] == 0
+    assert _edit(root, root / "app.py", "bypassPermissions") == {}
+    # The route is closed, and more edits follow for the same message: still no nudge.
+    assert run(root, "outcome", "latest", "--status", "partial", "--source", "agent")[0] == 0
+    assert _edit(root, root / "app.py", "bypassPermissions") == {}
+
+
+@pytest.mark.parametrize("message", ["?add a hello function to app.py", "/fix-issue 12", "!ls"])
+def test_no_nudge_for_messages_that_asked_for_no_routing(tmp_path: Path, message: str):
+    root = _project(tmp_path)
+    _prompt(root, message)
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_no_nudge_for_edits_outside_the_project(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "What does app.py do?")
+    assert _edit(root, tmp_path / "scratch" / "notes.md") == {}
+
+
+def test_no_nudge_for_routed_tasks(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "Fix typo in README")  # routed by the hook (FAST)
+    assert _edit(root, root / "README.md") == {}
+
+
+def test_route_before_edit_can_be_switched_off(tmp_path: Path):
+    root = _project(tmp_path)
+    config = root / ".susanoo" / "config.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "\n[auto]\nroute_before_edit = false\n", encoding="utf-8"
+    )
+    _prompt(root, "The footer is misaligned")
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_no_nudge_without_automatic_routing(tmp_path: Path):
+    root = tmp_path / "plain"
+    write(root, "app.py", "x = 1\n")
+    (root / ".git").mkdir()
+    assert run(root, "init")[0] == 0
+    _prompt(root, "The footer is misaligned")
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_a_failed_nudge_mark_fails_open_and_keeps_the_floor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _project(tmp_path)
+    _prompt(root, "The payments refund flow drops production customer data, it is broken")
+    before = prompt_state.load(root, SESSION)
+    real_replace = os.replace
+
+    def failing_replace(src: object, dst: object) -> None:
+        if str(dst).endswith(".nudged.json"):
+            raise OSError(28, "No space left on device")
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    for _ in range(3):  # never a loop of denials
+        assert _edit(root, root / "app.py") == {}
+    assert prompt_state.load(root, SESSION) == before  # the floor record is untouched
+    assert not list((records_dir(root) / "hooks").glob("*.tmp"))
+
+
+def test_the_nudge_never_rewrites_the_prompt_record(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    path = prompt_state.session_file(root, SESSION, ".prompt")
+    before = path.read_bytes()
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.md", "docs/CLAUDE.md", "AGENTS.md", ".claude/settings.local.json"])
+def test_agent_memory_and_settings_are_exempt(tmp_path: Path, name: str):
+    root = _project(tmp_path)
+    _prompt(root, "remember that we use pytest here")
+    assert _edit(root, name) == {}
+    assert _edit(root, root / name) == {}
+
+
+def test_a_route_from_before_the_message_does_not_count(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned on mobile")
+    assert run(root, "route", "Fix the footer alignment on mobile")[0] == 0
+    assert run(root, "outcome", "latest", "--status", "partial", "--source", "agent")[0] == 0
+    time.sleep(1.1)  # records are stamped to the second
+    _prompt(root, "The header is misaligned too")
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+
+
+def test_a_route_from_another_session_does_not_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned on mobile")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "another-session")
+    assert run(root, "route", "--session", "another-session", "Fix the footer")[0] == 0
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+
+
+def test_no_nudge_once_automatic_routing_is_turned_off(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    manifest = install_manifest_path(root)
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest.write_text(json.dumps({**data, "auto": False}), encoding="utf-8")
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_notebooks_are_covered_and_a_missing_path_is_not(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The analysis notebook gives wrong totals")
+    notebook = {
+        "session_id": SESSION,
+        "cwd": str(root),
+        "tool_name": "NotebookEdit",
+        "tool_input": {"notebook_path": str(root / "analysis.ipynb")},
+        "permission_mode": "default",
+    }
+    no_path = {**notebook, "tool_name": "Edit", "tool_input": {}}
+    assert handle("pre-tool-use", no_path)[1] == ""
+    out = json.loads(handle("pre-tool-use", notebook)[1])["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+
+
+def test_route_before_edit_settings_are_validated(tmp_path: Path):
+    root = _project(tmp_path)
+    config = root / ".susanoo" / "config.toml"
+    original = config.read_text(encoding="utf-8")
+    for bad in ('route_before_edit = "true"', 'route_before_edit_exempt = "CLAUDE.md"'):
+        config.write_text(original + f"\n[auto]\n{bad}\n", encoding="utf-8")
+        with pytest.raises(ConfigError):
+            load_config(root)

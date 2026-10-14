@@ -8,13 +8,16 @@ any workflow the user named, so that:
 - a route Claude describes in its own words is never lower than the user's message alone;
 - only the user can choose a lighter workflow than Susanoo's.
 
-One file per session, overwritten on every prompt.
+One file per session, written only by the prompt hook and overwritten on every prompt. A separate
+marker file records that the route-before-edit gate already stopped an edit for that prompt, so
+the floor is never rewritten (or lost) by a tool-call hook.
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -83,3 +86,31 @@ def load(root: Path, session: str | None) -> dict[str, Any] | None:
 
 def floor(data: dict[str, Any] | None) -> Floor | None:
     return Floor.from_dict(data.get("floor")) if data else None
+
+
+def nudged(root: Path, session: str, message_id: str) -> bool:
+    """Whether the route-before-edit gate already stopped an edit for message ``message_id``."""
+    try:
+        data = json.loads(session_file(root, session, ".nudged").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("message") == message_id
+
+
+def mark_nudged(root: Path, session: str, message_id: str) -> bool:
+    """Record the nudge for message ``message_id``; ``False`` when it could not be recorded.
+
+    Written to a temporary file and moved into place, so a parallel hook never reads half of it.
+    A newer message makes the mark stale by itself.
+    """
+    path = session_file(root, session, ".nudged")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps({"message": message_id}), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        return False
+    return True

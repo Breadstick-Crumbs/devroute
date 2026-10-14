@@ -121,9 +121,12 @@ def check_unrouted(base: Path, args: argparse.Namespace) -> live.Result:
     agent = [r for r in routes if r.get("routed_by") == "agent"]
     changed = (root / "app.py").read_text(encoding="utf-8") != live.APP
     noted = any((root / ".susanoo" / "records" / "hooks").glob("*.prompt.json"))
+    nudged = sum(
+        1 for e in live.records(root, "enforcement") if "route before edit" in " ".join(e.get("notes", []))
+    )
     res.details.append(
         f"routes: {len(routes)}; routed by Claude: {len(agent)}; app.py changed: {'yes' if changed else 'no'}; "
-        f"prompt hook ran: {'yes' if noted else 'NO'}"
+        f"prompt hook ran: {'yes' if noted else 'NO'}; route-before-edit denials: {nudged}"
     )
     if agent:
         res.details.append(f"profile {agent[0].get('profile')}, task {str(agent[0].get('task'))[:80]!r}")
