@@ -171,6 +171,9 @@ critical_risk_floor = "standard"
 [records]
 # Records are written to .susanoo/records/ only after `susanoo init`.
 store_task_text = true
+# Fill outcomes' tokens, duration, and tool calls from Claude Code session transcripts (usage
+# numbers, timestamps, and tool names only). Opt-in.
+capture_usage = false
 
 [context]
 # Repository context adjustments (explained in every assessment that uses them).
@@ -257,6 +260,10 @@ route_before_edit_exempt = [
 # dependencies; a domain id (website, ecommerce, dashboard, mobile, component-library) fixes it;
 # "none" shows only the generic UI baseline. Domains and checklists live in ui_domains.toml.
 domain = ""
+# Folder with your personal taste profile (TASTE.md and captured reference sites) for the taste-ui
+# skill; "" means ~/.susanoo/taste. Read only from the user configuration (~/.susanoo/config.toml) or
+# SUSANOO_TASTE_DIR (an absolute path), never from Susanoo's project configuration.
+taste_dir = ""
 
 [enforcement]
 # Hands-off (default): Susanoo asks nothing and blocks no edit in any permission mode, and its
@@ -711,6 +718,15 @@ id = "type_check"
 title = "Type checking"
 capability = "type_checking"
 levels = { standard = "recommended", deep = "required" }
+
+# The project's own boundary rules (ADR 0011). Left out when no boundary tool is configured.
+[[verification]]
+id = "architecture_check"
+title = "Architecture boundary check"
+capability = "architecture_boundaries"
+levels = { standard = "recommended", deep = "recommended" }
+only_with_tool = true
+instructions = "A violation means the change crosses a layer or module boundary the project defined: change the code, or flag the conflict to the user. Never loosen the rules to make the check pass without their agreement."
 
 [[verification]]
 id = "integration_tests"

@@ -34,6 +34,7 @@ susanoo init                        # --dry-run to preview, --no-agents to skip 
 | File | Purpose |
 |---|---|
 | `.claude/skills/susanoo/SKILL.md` | The `/susanoo` skill |
+| `.claude/skills/taste-ui/SKILL.md` | Visual direction for UI work, from your taste profile (`--no-taste` to skip; see below) |
 | `.claude/agents/susanoo-reviewer.md` | Read-only independent reviewer subagent |
 | `.claude/agents/susanoo-researcher.md` | Capability research subagent (web tools, never installs) |
 | `.susanoo/config.toml` | Commented project configuration |
@@ -42,6 +43,32 @@ susanoo init                        # --dry-run to preview, --no-agents to skip 
 It does **not** modify `.claude/settings*.json`, `CLAUDE.md`, `.mcp.json`, or anything else you own. The one opt-in exception is `susanoo init --enforce --enforce-scope settings`, which adds Susanoo's own hook entries to `.claude/settings.local.json` (see [enforcement.md](enforcement.md#how-it-is-wired)). If a file already exists with different content, it is left alone and reported as a conflict. `--force` writes a backup before replacing. `susanoo init --uninstall` removes only files that still match what Susanoo installed.
 
 Commit `.claude/skills/susanoo/`, `.claude/agents/susanoo-*.md`, and `.susanoo/config.toml` if you want the whole team to use them.
+
+### Taste profile for UI work
+
+The `taste-ui` skill is how Claude makes visual decisions. Susanoo's own checks never judge aesthetics ([ADR 0008](decisions/0008-ui-ux-workflow.md)).
+
+For any UI task, the skill:
+1. Reads your taste profile, if you have one.
+2. Checks whether that look fits the product. The profile is a quality bar, not a required look. A project's `DESIGN.md`, its tokens, or a client's brand win, and Claude asks you when the fit is unclear.
+3. Proposes three distinct directions.
+4. Builds with design tokens first.
+5. Screenshots the result at the visual check's widths (375, 768 and 1280 px) before handing it back ([ADR 0010](decisions/0010-taste-skill-and-screenshot-helper.md)).
+
+The profile lives in one folder, chosen in this order:
+1. `SUSANOO_TASTE_DIR`;
+2. `[ui] taste_dir` in `~/.susanoo/config.toml`;
+3. `~/.susanoo/taste`.
+
+Susanoo's project configuration cannot change it, and relative paths are rejected. The folder holds `TASTE.md` (your rules, a slop blacklist, and an index of references) and `sites/<slug>/`, one per captured reference site.
+
+```bash
+susanoo taste path                                        # where the profile is, and what it contains
+susanoo taste capture wispr=https://wisprflow.ai/ ...     # tokens, screenshots, navbar/scroll/hover motion, mobile menu
+susanoo taste shoot index.html shots/                     # 375, 768 and 1280 px screenshots + page errors
+```
+
+`capture` and `shoot` need Node.js 22+ and Chrome, Chromium, or Edge. To use another browser, set `SUSANOO_BROWSER` to its absolute path. Node and the browser are never taken from the current folder, and on Windows only `.exe` files count. `capture` hides cookie and consent pop-ups for its screenshots; it never accepts them. For each site, `capture` writes `motion.json`, a scroll frame strip, and mobile screenshots. `motion.json` covers how the navbar behaves on scroll, which elements pin, move at parallax speed or animate, what changes on hover, how the mobile menu opens, and the motion libraries' own settings. Without a profile, the skill uses its built-in slop blacklist and offers to build a profile from 5–10 sites you like.
 
 ## Usage
 
@@ -55,7 +82,7 @@ What happens:
 1. Claude runs `susanoo route --stdin` with your task and receives the execution brief.
 2. Claude summarizes the brief: mode, complexity, risk, uncertainty, mandatory controls, missing capabilities, steps, verification, and checkpoints. If confidence is low, it asks clarifying questions first.
 3. **Checkpoints:** by default Claude shares the plan and keeps going, reporting checkpoints instead of stopping at them. With `[enforcement] hands_off = false` (the brief then says "Approval checkpoints"), Claude stops for your approval, including plan approval before editing in STANDARD and DEEP.
-4. Claude executes the profile using its native tools. DEEP work uses plan mode, an isolated branch or worktree, and the `susanoo-reviewer` subagent for independent review.
+4. Claude executes the profile using its native tools. DEEP work uses plan mode, an isolated branch or worktree, and the `susanoo-reviewer` subagent for independent review. STANDARD and DEEP briefs name the project's architecture context (architecture documents, decision-record folders, architecture sections of `AGENTS.md` or `CLAUDE.md`, and boundary rules such as import-linter contracts or ArchUnit), and Claude reads the relevant ones before designing and flags a conflict instead of working around it ([ADR 0011](decisions/0011-architecture-context.md)).
 5. Claude runs `susanoo verify --execute` and records the checks it performed itself with `susanoo evidence`. For UI tasks that includes the visual check: Claude renders the change at 375, 768, and 1280 px and records what it checked and where the screenshots are (`--note`), or a skip with the reason when nothing visible changed. Susanoo records the claim; it does not see the screenshots. UI briefs also name the UI domain (website, ecommerce, dashboard, mobile app, component library) and why it was chosen, with a short checklist for it and a WCAG 2.2 AA baseline; `[ui] domain` in configuration fixes the domain. They also list the project's design context (`DESIGN.md`, token files, Storybook, a Figma MCP server) for Claude to read and follow, or suggest adding a `DESIGN.md` when there is none; Susanoo never creates one.
 6. Claude reports results, separating checks that ran from checks that did not, and records the outcome with `susanoo outcome`.
 

@@ -105,6 +105,23 @@ Project tool entries are repository-controlled. Susanoo ignores their `version_a
 store_task_text = false   # only a SHA-256 of the task is stored
 ```
 
+### Capture tokens and duration from Claude Code
+
+```toml
+[records]
+capture_usage = true   # off by default
+```
+
+When an outcome is recorded (`susanoo outcome`, or Susanoo closing a route a new task replaced), Susanoo reads the route's Claude Code session transcript (`<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<session>.jsonl` and its subagents' transcripts) and fills the outcome's fields that were not given. Only assistant messages written between the route's creation and the outcome count, and work after the session's next route belongs to that route.
+
+- `token_counts`: fresh input, cache writes, cache reads, and output tokens, kept apart (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`), so prompt-cache use stays visible. Left out when you pass `--tokens`, so it never disagrees with `tokens`. Cache reads cost far less than fresh input, so weight them separately in any cost estimate.
+- `tokens`: the sum of the four.
+- `duration_minutes`: from the route's creation to its last assistant message.
+- `tool_calls`: calls per tool name (`Read`, `Grep`, `mcp__<server>__<tool>`), counted from tool-use blocks without reading their inputs or results.
+- `cost_usd`: only when the transcript itself records a cost (older Claude Code versions did). Susanoo does not estimate prices.
+
+`captured` lists the fields that came from the transcript. Only usage numbers, timestamps, message ids, and tool names are read, never message text or tool inputs and results. The transcript format is not a documented interface: when it is missing or changes, nothing is captured and the outcome is recorded as before. Routes made outside a Claude Code session have no session id and are never captured; work after `/clear` or in a resumed session with a new session id is not counted. Reading stops, and nothing is captured, after about 2 seconds or 64 MB, so a route left open for a very long session may get no capture; this keeps the prompt hook fast.
+
 ## Reference
 
 ### `[assessment]`
@@ -165,6 +182,9 @@ Automatic routing of prompts (`susanoo init --global`, or `--auto` with the sett
 
 ### `[ui]`
 `domain` (default `""`): the UI domain for UI tasks ([ADR 0008](decisions/0008-ui-ux-workflow.md)). Empty picks one from the task's words, then from the project's dependencies and files; `website`, `ecommerce`, `dashboard`, `mobile`, or `component-library` fixes it; `"none"` shows only the generic UI baseline. Set it in the project's `.susanoo/config.toml` or in `~/.susanoo/config.toml`. The domains, their task words, detection hints, and checklists are in [`ui_domains.toml`](../src/susanoo/data/ui_domains.toml); a `[[verification]]` rule with `ui_domains = [...]` applies only to those domains (the performance budget is `website` only). The same file's `[design_context]` lists where design documents, tokens, and Storybook are looked for and what UI briefs say about them.
+
+### Architecture context
+Where STANDARD and DEEP briefs look for architecture documents, decision records, architecture sections of agent instructions, and boundary rules, and what they say about them, is packaged data in [`architecture.toml`](../src/susanoo/data/architecture.toml) ([ADR 0011](decisions/0011-architecture-context.md)). Boundary tools Susanoo can run (import-linter, dependency-cruiser, eslint-plugin-boundaries) are registry entries with the `architecture_boundaries` capability; the `architecture_check` step that runs them is recommended in STANDARD and DEEP and left out when no such tool is configured. Register another boundary tool with a `.susanoo/tools.toml` entry that lists `architecture_boundaries` and a `run` command for it.
 
 ### `[selection]`
 `code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers. `task_keyword_bonus` (default 3): added to a tool whose `task_keywords` appear in the task ("postgres" picks psql over sqlite3); smaller than the gap between an installed and a missing tool. `default_package_manager` (default `npm`; also `pnpm`, `yarn`, `bun`): the JavaScript package manager for install hints when the project names none (package.json `packageManager`) and has no lockfile. Package-script commands always use the manager discovery checked for (npm without a lockfile), so a ready check never runs a binary that was not found.

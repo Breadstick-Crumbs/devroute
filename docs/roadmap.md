@@ -44,9 +44,12 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Global auto mode: the default workflow in every project, with automatic routing and autonomy-aware gates ([#34](https://github.com/Breadstick-Crumbs/susanoo/issues/34)) | ✅ (v0.6, `susanoo init --global`) |
 | UI work ([ADR 0008](decisions/0008-ui-ux-workflow.md)): UI reference suite with labeled cases and `controls` checks | ✅ (unreleased) |
 | UI work: required visual check and accessibility scans, with project tools (axe, pa11y, Playwright screenshots; Lighthouse CI detected) | ✅ (unreleased) |
+| UI work ([ADR 0010](decisions/0010-taste-skill-and-screenshot-helper.md)): `taste-ui` skill installed by `susanoo init`, personal taste profile, `susanoo taste shoot / capture` | ✅ (unreleased) |
 | UI work: UI domain (website, ecommerce, dashboard, mobile, component library) with short checklists in the brief, and the website performance budget | ✅ (unreleased) |
 | UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | ✅ (unreleased) |
 | UI work: visual redesigns routed without architectural weight, eval-gated (payment-page styling deliberately keeps its payment controls) | ✅ (unreleased) |
+| Architecture context ([ADR 0011](decisions/0011-architecture-context.md)): STANDARD and DEEP briefs name architecture documents, decision records, `AGENTS.md`/`CLAUDE.md` architecture sections, and boundary rules; import-linter, dependency-cruiser, and eslint-plugin-boundaries run as a recommended check | ✅ (unreleased) |
+| Architecture context: run ArchUnit rules (needs a Maven or Gradle test runner) | 🔜 |
 | UI work: measure, then reduce, gate friction during bursts of small UI tweaks | 🔬 |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.
@@ -57,7 +60,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 |---|---|
 | Local route, outcome, and evidence records; per-profile summaries; gated recommendations | ✅ |
 | Deterministic routing evaluation suite | ✅ |
-| Automatic capture of duration, tokens, and cost from Claude Code session data where available | 🔜 |
+| Automatic capture of duration, tokens, and cost from Claude Code session data where available (opt-in `[records] capture_usage`; cost only when the transcript records one) | ✅ (unreleased) |
 | Workflow comparison harness: paired tasks run under different profiles with blinded review | 🔜 |
 | Exportable, anonymized benchmark format for sharing results | 🔜 |
 

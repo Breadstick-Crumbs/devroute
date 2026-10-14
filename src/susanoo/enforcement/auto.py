@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from susanoo.architecture import architecture_line
 from susanoo.config import PROFILE_ORDER, Config
 from susanoo.discovery.executables import save_path_cache, use_path_cache
 from susanoo.enforcement import gates
@@ -195,6 +196,8 @@ def compact_brief(
         lines.append(compact_design_line(ui.design))
         if ui.taste_note:
             lines.append(ui.taste_note)
+    if plan.architecture is not None:
+        lines.append(architecture_line(plan.architecture, compact=True))
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
         "If this route understates the task (data loss, security, payments, production, or a wider change "
@@ -286,19 +289,22 @@ def unfinished_work(root: Path, state: RouteState, session: str) -> bool:
     return _has_unfinished_work(state, _session_record(root, session, state.record_id))
 
 
-def close_superseded(store: RecordStore, state: RouteState, notes: str) -> None:
+def close_superseded(store: RecordStore, state: RouteState, notes: str, config: Config) -> None:
     """Close a route that a new one replaces, so its gates stop. Not counted as a failure."""
-    store.append(
-        "outcomes",
-        {
-            "record_id": state.record_id,
-            "recorded_at": _now(),
-            "status": "abandoned",
-            "source": "susanoo",
-            "notes": notes,
-            "unmet_verification": sorted(state.missing + state.failing),
-        },
-    )
+    outcome: dict[str, Any] = {
+        "record_id": state.record_id,
+        "recorded_at": _now(),
+        "status": "abandoned",
+        "source": "susanoo",
+        "notes": notes,
+        "unmet_verification": sorted(state.missing + state.failing),
+    }
+    if config.get("records", {}).get("capture_usage") is True:
+        # Imported only when on, so the prompt hook loads nothing extra by default.
+        from susanoo.adapters.claude_code.usage import fill_outcome
+
+        fill_outcome(outcome, state.route, store, config)
+    store.append("outcomes", outcome)
 
 
 def _session_record(root: Path, session: str, record_id: str) -> dict[str, Any]:
@@ -410,7 +416,10 @@ def on_prompt(
     if state is not None:
         # The open task is superseded (a riskier or unrelated new task): close it, so its gates stop.
         close_superseded(
-            store, state, f"superseded by {record_id} (a new task arrived before an outcome was recorded)"
+            store,
+            state,
+            f"superseded by {record_id} (a new task arrived before an outcome was recorded)",
+            config,
         )
     record = route_record(plan, record_id, config, session)
     if record.get("task"):
