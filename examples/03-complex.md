@@ -114,6 +114,10 @@ Dashboard or data-heavy app:
 
 Sources: Practitioner guidance (for example Stephanie Walter on complex data tables, UX Studio on dashboards), not peer-reviewed research; WCAG for color.
 
+## Architecture
+
+Architecture context: None found. Follow the structure of the code you change; if the change adds a layer, a module boundary, or a new dependency direction, say so in the plan.
+
 ## Proposed steps
 
 1. **Requirements and architecture analysis** **[checkpoint]** - Establish requirements, constraints, and the architecture. Surface open questions instead of guessing. Navigation: Claude Code Grep / Glob / Read.
