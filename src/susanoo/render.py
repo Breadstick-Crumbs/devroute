@@ -8,7 +8,7 @@ from typing import Any
 from susanoo.analyzer import Assessment
 from susanoo.architecture import architecture_label, architecture_line
 from susanoo.discovery.models import Inventory, Status
-from susanoo.evaluation.report import Report
+from susanoo.evaluation.report import TOKEN_FIELDS, Report
 from susanoo.evaluation.suite import SuiteResult
 from susanoo.pipeline import TaskPlan
 from susanoo.research import ResearchReport
@@ -310,6 +310,49 @@ def _fmt(value: Any, suffix: str = "") -> str:
     return f"{value}{suffix}"
 
 
+def _fmt_tokens(value: float | None) -> str:
+    if value is None:
+        return "-"
+    for limit, unit in ((1e9, "B"), (1e6, "M"), (1e3, "k")):
+        if value >= limit:
+            return f"{value / limit:.1f}{unit}"
+    return f"{value:.0f}"
+
+
+def _with_n(text: str, n: int) -> str:
+    return f"{text} (n={n})" if n else text
+
+
+def _token_usage(report: Report) -> list[str]:
+    """Per-profile means of the separate token counts, the cache-hit ratio, and the top tools."""
+    counted = [s for s in report.profiles if s.with_token_counts]
+    if not counted:
+        return []
+    lines = [
+        "",
+        "## Token usage by profile",
+        "",
+        "| Profile | Outcomes | Fresh input | Cache writes | Cache reads | Output | Cache-hit ratio |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for s in counted:
+        means = [_fmt_tokens(s.token_count_totals.get(k, 0) / s.with_token_counts) for k in TOKEN_FIELDS]
+        lines.append(
+            f"| {s.profile.upper()} | {s.with_token_counts} | {' | '.join(means)} | {_fmt(s.cache_hit_ratio, '%')} |"
+        )
+    lines += [
+        "",
+        "Means per outcome. Cache-hit ratio: cache reads / (cache reads + cache writes + fresh input).",
+    ]
+    tools = [s for s in counted if s.tool_calls]
+    if tools:
+        lines += ["", "Most used tools:"]
+        for s in tools:
+            top = sorted(s.tool_calls.items(), key=lambda item: (-item[1], item[0]))[:8]
+            lines.append(f"- {s.profile.upper()}: " + ", ".join(f"{name} {count}" for name, count in top))
+    return lines
+
+
 def render_report(
     routes: list[dict[str, Any]], report: Report, outcomes: dict[str, dict[str, Any]], last: int
 ) -> str:
@@ -334,14 +377,35 @@ def render_report(
         "",
         "## By profile",
         "",
-        "| Profile | Routes | Outcomes | Completed | Mean min | Mean interventions | Checks run | Check failures |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Profile | Routes | Outcomes | Completed | Mean min | Mean tokens | Mean interventions | Checks run "
+        "| Check failures |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for s in report.profiles:
         lines.append(
             f"| {s.profile.upper()} | {s.routes} | {s.with_outcome} | {_fmt(s.completion_rate, '%')} | "
-            f"{_fmt(s.mean_minutes)} | {_fmt(s.mean_interventions)} | {s.executed_checks} | {_fmt(s.check_failure_rate, '%')} |"
+            f"{_with_n(_fmt(s.mean_minutes), s.timed)} | {_with_n(_fmt_tokens(s.mean_tokens), s.with_tokens)} | "
+            f"{_fmt(s.mean_interventions)} | {s.executed_checks} | {_fmt(s.check_failure_rate, '%')} |"
         )
+    if any(s.timed or s.with_tokens for s in report.profiles):
+        captured = sum(s.captured for s in report.profiles)
+        lines += [
+            "",
+            "Minutes and tokens are means over the outcomes that record them (n). Tokens include cached input. "
+            + (
+                f"{captured} outcome(s) took them from Claude Code session transcripts. "
+                if captured
+                else "Set `[records] capture_usage = true` to take them from Claude Code session transcripts. "
+            )
+            + "Routes Susanoo closed because a new task replaced them count too. "
+            + "Tasks routed to different profiles differ in size, so this is not a comparison of workflows.",
+        ]
+    costs = [
+        f"{s.profile.upper()} ${s.total_cost_usd:g}" for s in report.profiles if s.total_cost_usd is not None
+    ]
+    if costs:
+        lines += ["", f"Total cost where recorded: {', '.join(costs)}."]
+    lines += _token_usage(report)
     lines += ["", "## Recommendations for review", ""]
     if report.insights:
         for i in report.insights:

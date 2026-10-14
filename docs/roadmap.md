@@ -59,7 +59,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 |---|---|
 | Local route, outcome, and evidence records; per-profile summaries; gated recommendations | ✅ |
 | Deterministic routing evaluation suite | ✅ |
-| Automatic capture of duration, tokens, and cost from Claude Code session data where available | 🔜 |
+| Automatic capture of duration, tokens, and cost from Claude Code session data where available (opt-in `[records] capture_usage`; cost only when the transcript records one) | ✅ (unreleased) |
 | Workflow comparison harness: paired tasks run under different profiles with blinded review | 🔜 |
 | Exportable, anonymized benchmark format for sharing results | 🔜 |
 
