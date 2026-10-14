@@ -132,9 +132,19 @@ def unrouted_note(command: str) -> str:
 
 
 def compact_brief(
-    plan: TaskPlan, record_id: str, hands_off: bool, command: str, lead: str = "automatically"
+    plan: TaskPlan,
+    record_id: str,
+    hands_off: bool,
+    command: str,
+    lead: str = "automatically",
+    asked_autonomy: bool = False,
 ) -> str:
-    """A short brief for Claude's context: what to do, not every detail of the assessment."""
+    """A short brief for Claude's context: what to do, not every detail of the assessment.
+
+    ``hands_off`` drops the approval check-in. ``asked_autonomy`` (the user asked in words not to be
+    asked) also drops the prompt to ask clarifying questions: hands-off is about permission prompts,
+    not about guessing what the user meant.
+    """
     a, d = plan.assessment, plan.decision
     lines = [
         f"Susanoo routed this task {lead} (record {record_id}).",
@@ -164,6 +174,12 @@ def compact_brief(
             "Missing tools: " + "; ".join(missing) + ". Checks that need them are not required here; "
             "mention the gap in the final report. Never install anything without the user's approval."
         )
+    if a.confidence == "low" and not asked_autonomy:
+        lines.append(
+            "Low confidence: " + " ".join(a.confidence_notes) + " Before editing, ask the user one to "
+            "three focused questions about scope and expected behavior, unless the conversation already "
+            "answers them. These are questions about the task, not an approval request."
+        )
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
         "If this route understates the task (data loss, security, payments, production, or a wider change "
@@ -183,8 +199,13 @@ def compact_brief(
         )
     if hands_off or d.profile not in ("standard", "deep"):
         lines.append(
-            "Work autonomously: do not wait for approval. Show the brief in two or three lines, do the "
-            "task, then verify."
+            "Do not wait for approval: show the brief in two or three lines, do the task, then verify."
+            + (
+                ""
+                if asked_autonomy
+                else " If the request is ambiguous in a way that changes what you build, ask the user "
+                "instead of guessing."
+            )
             + (
                 " The safety controls still apply to how you work; Claude Code's permission settings "
                 "handle confirmations."
@@ -362,4 +383,4 @@ def on_prompt(
     if hands_off:
         grant_autonomy(store, record_id, session)
     live_hands_off = hands_off or gates.autonomous(event, None, config.get("enforcement", {}))
-    return compact_brief(plan, record_id, live_hands_off, command)
+    return compact_brief(plan, record_id, live_hands_off, command, asked_autonomy=hands_off)

@@ -12,3 +12,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0006](0006-model-judgment-above-a-keyword-floor.md) | With automatic routing, Claude decides where keywords are unsure, never below the keyword floor of the user's message |
 | [0007](0007-hands-off-by-default.md) | Hands-off by default: Susanoo asks nothing; Claude Code's permissions decide; the evidence gate stays |
 | [0008](0008-ui-ux-workflow.md) | UI work: require and record visual and accessibility checks, give domain checklists, never judge aesthetics (proposed) |
+| [0009](0009-clarifying-questions-under-hands-off.md) | Hands-off covers permission prompts, not clarifying questions: Claude asks about the task when confidence is low |

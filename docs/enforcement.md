@@ -49,6 +49,8 @@ Every hook calls `susanoo hook <event>`. That command reads the event JSON, look
 
 Susanoo is **hands-off by default** (`[enforcement] hands_off = true`): in every permission mode it adds no approvals and no questions, and Claude Code's own permission settings decide what needs confirmation (deploys, pushes, file edits). Only the evidence gate stays, because it never asks anything. The briefs follow suit: checkpoints are titled "Checkpoints" and are reported, not waited at.
 
+Hands-off is about permission prompts, not about guessing ([ADR 0009](decisions/0009-clarifying-questions-under-hands-off.md)). The automatic-routing brief tells Claude to ask you about the task when an ambiguity would change what it builds, and to ask one to three focused questions before editing when Susanoo's assessment has low confidence. Neither appears when your message asked for autonomy ("work autonomously", "don't ask"). Nothing waits for an answer.
+
 To get the approval, shell-write, irreversible-action, and route-integrity gates back, set `hands_off = false`. They then apply like this:
 
 - **Normal (default) permission mode:** the gates above apply. That is at most one check-in per task, the plan approval for STANDARD and DEEP, plus confirmation for irreversible commands while that control is active.

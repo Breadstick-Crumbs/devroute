@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- The automatic-routing brief says "Do not wait for approval" instead of "Work autonomously", and asks Claude to ask you instead of guessing when an ambiguity would change what it builds. When the assessment has low confidence, it tells Claude to ask one to three focused questions about scope before editing. Neither appears when your message asked for autonomy ("work autonomously", "don't ask"). Hands-off still adds no approvals or confirmations (ADR 0009).
+
 ### Added
 - ADR 0008 (proposed): how Susanoo will handle UI and UX work. It requires and records UI checks (a visual check at common widths, accessibility scans in DEEP), gives short domain checklists, and points Claude at design context; it does not judge aesthetics. Not implemented yet beyond the evaluation pieces below.
 - UI reference suite `ui-v1.toml` (15 cases, labeled before any UI heuristic changed): `susanoo eval --suite src/susanoo/data/suites/ui-v1.toml` from a source checkout. With v0.7 heuristics it agrees on 8 of 15 with 0 risk-floor violations; visual redesigns and presentational checkout changes route DEEP.

@@ -258,6 +258,7 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
             live_hands_off,
             _brief_command(ctx.root),
             lead="from your description, never lower than the user's message",
+            asked_autonomy=hands_off,
         )
         ctx.emit(brief + (f"\n{replaced}" if replaced else ""))
     return EXIT_OK
@@ -931,9 +932,11 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
         modes = set(enforcement.get("autonomous_modes", []))
         message = prompt_state.load(ctx.root, session) or {}
         hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
-        ctx.emit(
-            header + "\n" + compact_brief(plan, plan.record_id, hands_off, _brief_command(ctx.root), "again")
+        asked_autonomy = state.route.get("autonomous") is True
+        brief = compact_brief(
+            plan, plan.record_id, hands_off, _brief_command(ctx.root), "again", asked_autonomy=asked_autonomy
         )
+        ctx.emit(header + "\n" + brief)
     else:
         ctx.emit(header + "\n\n" + render_brief(plan))
     return EXIT_OK
