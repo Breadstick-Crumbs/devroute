@@ -47,6 +47,8 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | UI work: UI domain (website, ecommerce, dashboard, mobile, component library) with short checklists in the brief, and the website performance budget | ✅ (unreleased) |
 | UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | ✅ (unreleased) |
 | UI work: visual redesigns and presentational payment-page changes routed without architectural or payment weight, eval-gated | 🔜 |
+| Architecture context ([ADR 0011](decisions/0011-architecture-context.md)): STANDARD and DEEP briefs name architecture documents, decision records, `AGENTS.md`/`CLAUDE.md` architecture sections, and boundary rules; import-linter, dependency-cruiser, and eslint-plugin-boundaries run as a recommended check | ✅ (unreleased) |
+| Architecture context: run ArchUnit rules (needs a Maven or Gradle test runner) | 🔜 |
 | UI work: measure, then reduce, gate friction during bursts of small UI tweaks | 🔬 |
 
 **Acceptance criteria:** decomposition output is machine-readable and testable; delegation never assigns overlapping files to parallel units; the verification gate can be enabled per project and is covered by tests.
