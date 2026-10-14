@@ -25,6 +25,10 @@ from typing import Any
 from susanoo.analyzer.models import Floor
 from susanoo.paths import records_dir
 
+# Message kinds from the prompt classifier (``auto.classify``). Defined here, in the light module,
+# so the tool-call hooks can test a saved message's kind without importing the router.
+SKIP, QUESTION, AMBIGUOUS, TASK = "skip", "question", "ambiguous", "task"
+
 # A workflow the user named in their own message: `--profile fast`, "the fast workflow",
 # "profile: fast". Not "a fast route" or "fast mode".
 _NAMED = re.compile(

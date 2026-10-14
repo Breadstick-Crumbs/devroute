@@ -77,9 +77,8 @@ def _log(store: RecordStore, state: RouteState | None, event_name: str, decision
 def _exempt(file_path: str, root: Path, config: dict[str, Any]) -> bool:
     """Whether ``file_path`` matches `[auto] route_before_edit_exempt` (agent memory and settings)."""
     patterns = config.get("auto", {}).get("route_before_edit_exempt", [])
-    path = Path(os.path.expanduser(file_path))
     try:
-        absolute = os.path.realpath(path if path.is_absolute() else root / path)
+        absolute = os.path.realpath(gates.tool_path(file_path, root))
         relative = Path(os.path.relpath(absolute, os.path.realpath(root))).as_posix()
     except (OSError, ValueError):
         return False
@@ -105,9 +104,9 @@ def _route_first(
     if not file_path or not gates._inside(file_path, root) or _exempt(file_path, root, config):
         return None
     message = prompt_state.load(root, session)
-    # Only messages that got the note ("question" and "ambiguous" in the classifier); a task was
-    # routed by the hook, and "?" or a slash command asked for no routing.
-    if not message or message.get("kind") not in ("question", "ambiguous"):
+    # Only messages that got the note (questions and ambiguous messages); a task was routed by the
+    # hook, and "?" or a slash command asked for no routing.
+    if not message or message.get("kind") not in (prompt_state.QUESTION, prompt_state.AMBIGUOUS):
         return None
     at = str(message.get("at", ""))
     marker = str(message.get("id") or at)

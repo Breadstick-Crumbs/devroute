@@ -18,6 +18,7 @@ from susanoo.config import PROFILE_ORDER, Config
 from susanoo.discovery.executables import save_path_cache, use_path_cache
 from susanoo.enforcement import gates
 from susanoo.enforcement import prompt as prompt_state
+from susanoo.enforcement.prompt import AMBIGUOUS, QUESTION, SKIP, TASK
 from susanoo.enforcement.state import RouteState
 from susanoo.evaluation.store import RecordStore, new_record_id
 from susanoo.paths import (
@@ -32,7 +33,6 @@ from susanoo.pipeline import TaskPlan, message_floor, plan_task, route_record
 from susanoo.selection import EXTENSION_KINDS, installed_extensions
 from susanoo.verification.executor import redact
 
-SKIP, QUESTION, AMBIGUOUS, TASK = "skip", "question", "ambiguous", "task"
 _CLAUSE_START = re.compile(r"(?:^|[,;:.!?–—]\s*|\s-\s|\s(?:and|then|but|so)\s)", re.IGNORECASE)
 _QUOTED = re.compile(r"\"[^\"]*\"|'[^'\s][^']*'|`[^`]*`|“[^”]*”|‘[^’]*’")
 _CLAUSES = re.compile(r"[,;:.!?–—]|\s-\s")

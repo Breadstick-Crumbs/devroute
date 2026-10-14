@@ -75,17 +75,21 @@ def _writes(command: str, cfg: dict[str, Any]) -> str | None:
     return _matches(_unquoted(command), list(cfg.get("shell_write_patterns", [])))
 
 
-def _inside(file_path: str, root: Path) -> bool:
+def tool_path(file_path: str, root: Path) -> Path:
+    """A tool's file path as an absolute path: ``~`` expanded, Git Bash style ``/d/...`` on
+    Windows and Windows separators elsewhere converted, relative paths taken from ``root``."""
     raw = os.path.expanduser(file_path)
-    # Git Bash style /d/... on Windows; Windows separators elsewhere.
     raw = (
         _GIT_BASH_DRIVE.sub(lambda m: f"{m.group(1)}:/", raw)
         if os.name == "nt"
         else raw.replace(chr(92), "/")
     )
     path = Path(raw)
-    if not path.is_absolute():
-        path = root / path
+    return path if path.is_absolute() else root / path
+
+
+def _inside(file_path: str, root: Path) -> bool:
+    path = tool_path(file_path, root)
     try:
         a = os.path.normcase(os.path.realpath(path))
         b = os.path.normcase(os.path.realpath(root))

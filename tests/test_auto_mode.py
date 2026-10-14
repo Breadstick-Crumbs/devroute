@@ -307,6 +307,23 @@ def test_global_records_live_in_home_and_respect_opt_out(isolated: Path, tmp_pat
     assert _prompt(root, "Add a dark mode toggle to the settings page") == ""
 
 
+def test_route_before_edit_respects_the_global_opt_out(isolated: Path, tmp_path: Path):
+    _global()
+    root = _project(tmp_path)
+    edit = {
+        "session_id": SESSION,
+        "cwd": str(root),
+        "tool_name": "Edit",
+        "tool_input": {"file_path": str(root / "app.py")},
+        "permission_mode": "default",
+    }
+    _prompt(root, "The footer is misaligned")
+    assert json.loads(handle("pre-tool-use", edit)[1])["hookSpecificOutput"]["permissionDecision"] == "deny"
+    (root / OFF_FILE).write_text("", encoding="utf-8")
+    _prompt(root, "The header is misaligned too")
+    assert handle("pre-tool-use", edit) == (0, "")
+
+
 def test_home_directory_is_never_a_project(isolated: Path, home: Path):
     _global()
     assert _prompt(home, "Add pagination to the /users API endpoint") == ""
