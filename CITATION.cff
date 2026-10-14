@@ -9,8 +9,8 @@ abstract: >-
   and verified test evidence through Claude Code hooks.
 authors:
   - name: "Susanoo contributors"
-version: 0.6.0
-date-released: "2026-10-13"
+version: 0.7.0
+date-released: "2026-10-14"
 license: Apache-2.0
 repository-code: "https://github.com/Breadstick-Crumbs/susanoo"
 url: "https://github.com/Breadstick-Crumbs/susanoo"

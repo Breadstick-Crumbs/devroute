@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-14
+
 ### Changed
 - **Breaking: irreversible commands no longer ask by default, also in Claude Code's normal mode.** With `--enforce`, the irreversible-action confirmation (force push, history rewrite, deploy and publish, `terraform destroy`, `kubectl delete`, destructive SQL) used to ask in normal and plan mode; with the new default `hands_off = true` it does not, so a command you allowlisted in Claude Code runs without any confirmation. Existing `--enforce` installs get this on upgrade. Set `[enforcement] hands_off = false` to bring it back. See ADR 0007.
 - **Hands-off by default:** `[enforcement] hands_off = true` turns off Susanoo's own approvals and confirmations (plan approval, shell writes before approval, irreversible actions, route integrity) in every Claude Code permission mode; Claude Code's permission settings decide what needs confirmation. The evidence gate stays, `susanoo approve` still asks (an approval Claude recorded itself would count later), and `--accept-missing-evidence` is refused instead of asked about. Briefs title the section "Checkpoints" and mark phases `[checkpoint]`, and the skill and playbook report checkpoints instead of stopping at them. Set `hands_off = false` for the previous behavior.

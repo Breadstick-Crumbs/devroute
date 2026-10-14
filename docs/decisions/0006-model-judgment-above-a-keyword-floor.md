@@ -1,6 +1,6 @@
 # 0006: Claude's judgment above a keyword floor
 
-**Status:** accepted (Unreleased). Extends [0002](0002-deterministic-heuristic-routing.md) for automatic routing. After a raise, the plan is approved again only with `hands_off = false` ([0007](0007-hands-off-by-default.md)).
+**Status:** accepted (v0.7). Extends [0002](0002-deterministic-heuristic-routing.md) for automatic routing. After a raise, the plan is approved again only with `hands_off = false` ([0007](0007-hands-off-by-default.md)).
 
 ## Context
 
