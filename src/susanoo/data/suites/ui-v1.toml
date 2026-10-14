@@ -1,0 +1,132 @@
+# UI reference suite v1 (ADR 0008).
+#
+# Labeled before any UI signal, threshold, or verification rule was changed, and before these
+# tasks were run through Susanoo. Like routing-v1, the labels are the maintainers' judgment of a
+# sensible route, not measured ground truth. Each case says why it has its label.
+#
+# Kept apart from routing-v1 so the original cases, and CI's agreement threshold on them, stay
+# unchanged while the UI routing fixes are made. Run it with:
+#   susanoo eval --suite src/susanoo/data/suites/ui-v1.toml
+#
+# `controls` lists safety controls the route must include. A missing one counts as a
+# risk-floor violation, like risk below `min_risk`. It is used here to pin down that
+# presentational exemptions never remove payment controls from payment-logic changes.
+
+# --- Small visual changes: one property or one component, no logic.
+
+[[cases]]
+id = "ui-button-color"
+# One design value on one component. Nothing to plan; a glance at the result is enough.
+task = "Change the primary button color to blue"
+expected = "fast"
+
+[[cases]]
+id = "ui-navbar-spacing"
+# Spacing inside one component, no behavior change.
+task = "Tighten the spacing in the navbar"
+expected = "fast"
+
+[[cases]]
+id = "ui-button-variant"
+# Additive: a new variant of a shared component that leaves the existing variants alone.
+task = "Add a small size variant to the Button component"
+expected = "fast"
+
+# --- Visual work that needs a plan and a visual check, but is not an architectural change.
+
+[[cases]]
+id = "ui-pricing-redesign-mobile"
+# A layout redesign of one page across breakpoints: worth a plan and screenshots at each width.
+# "Redesign" here is visual, not a change to the system's architecture, and a pricing *page*
+# shows prices without computing or charging them.
+task = "Redesign the pricing page layout for mobile"
+expected = "standard"
+
+[[cases]]
+id = "ui-orders-table"
+# A new data view with sorting, filtering, and the empty/loading/error states. Reads existing
+# data; no schema change is asked for.
+task = "Add a sortable, filterable orders table to the admin dashboard"
+expected = "standard"
+
+[[cases]]
+id = "ui-landing-page"
+# A new marketing page with several sections: plan, responsive check, and a performance look.
+task = "Build a marketing landing page with a hero section, feature grid, and testimonials"
+expected = "standard"
+
+[[cases]]
+id = "ui-mobile-onboarding-redesign"
+# A visual redesign of a few screens in a mobile app, like the pricing page redesign.
+task = "Redesign the onboarding screens in the React Native app"
+expected = "standard"
+
+# --- Presentational changes on payment pages. Only markup and styling change, so payment
+# controls add process without protecting anything. Labeled for the routing fix (slice 4).
+
+[[cases]]
+id = "ui-checkout-button-color"
+# A color on the checkout page: no payment data, amounts, or provider calls are touched.
+task = "Change the checkout button color to green"
+expected = "fast"
+
+[[cases]]
+id = "ui-checkout-form-responsive"
+# Layout of an existing form across breakpoints. Fields, validation, and submission stay as
+# they are.
+task = "Make the checkout form layout responsive on small screens"
+expected = "standard"
+
+# --- Payment logic, or payment logic mixed with UI work. These must keep every payment
+# control. A false negative here is a safety bug, so the labels err strict.
+
+[[cases]]
+id = "ui-checkout-multistep-rebuild"
+# Rebuilding the checkout *flow* with a new multi-step form rewires how card and address data
+# are collected, validated, and submitted, and how the order is created. That is payment
+# logic, not styling, and checkout is where errors cost money and customers, so it keeps DEEP
+# with the full payment controls rather than STANDARD.
+task = "Rebuild the checkout flow UI with a new multi-step form"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui-checkout-tax"
+# Changes the amount customers are charged.
+task = "Change how the checkout calculates tax"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui-checkout-restyle-and-refund"
+# A styling word next to a payment-logic fix: the logic part decides.
+task = "Restyle the checkout page and fix the refund button so it calls Stripe again"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui-pricing-page-shows-discount"
+# "Show" on a pricing page, but the discount has to be calculated and must match what billing
+# charges. Payment logic.
+task = "Show the annual billing discount on the pricing page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+# --- "Redesign" that is architectural even though a page is named.
+
+[[cases]]
+id = "ui-redesign-schema-behind-page"
+# The object of "redesign" is the database schema; the page only says where it is used.
+task = "Redesign the database schema behind the orders page"
+expected = "deep"
+min_risk = "moderate"
+
+[[cases]]
+id = "ui-redesign-frontend-state"
+# Re-architecting how the whole frontend manages state touches every screen.
+task = "Redesign the frontend state management architecture"
+expected = "deep"

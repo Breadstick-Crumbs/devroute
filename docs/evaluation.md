@@ -9,7 +9,7 @@ v0.1 implements the infrastructure for both. **No effectiveness results are clai
 
 ## 1. Routing evaluation (`susanoo eval`)
 
-The bundled suite (`src/susanoo/data/suites/routing-v1.toml`) contains 31 tasks, each labeled with the profile the maintainers consider sensible and, for risky tasks, the minimum risk level the assessment must reach.
+The bundled suite (`src/susanoo/data/suites/routing-v1.toml`) contains 45 tasks, each labeled with the profile the maintainers consider sensible and, for risky tasks, the minimum risk level the assessment must reach.
 
 ```bash
 susanoo eval                         # agreement, confusion matrix, mismatches
@@ -20,9 +20,20 @@ susanoo eval --suite path/to/suite.toml --min-agreement 0.9 --fail-on-risk-viola
 What the numbers mean:
 
 - **Profile agreement** is the share of tasks routed to the labeled profile. It measures consistency with stated expectations, not correctness. The heuristics and the suite were developed together, so agreement on this suite is optimistic. Hold-out suites written independently are more informative.
-- **Risk-floor violations** count tasks whose assessed risk fell below the labeled minimum. This is the safety-relevant number, and CI requires it to be zero.
+- **Risk-floor violations** count tasks whose assessed risk fell below the labeled minimum, or whose route lacks a safety control the case lists in `controls`. This is the safety-relevant number, and CI requires it to be zero.
 - **Known mismatch:** "Refactor the report builder without changing its output, and add a column to the users table" routes DEEP, although it is labeled STANDARD: "refactor" counts as an architectural change and stacks with "add". The negation itself works there (the database signal after the comma is kept). The v0.1 mismatch for test-only tasks ("Write unit tests for the invoice total calculator") was fixed in v0.5.
 - **Labeling order:** cases are committed before the heuristics they test are changed, so labels are not fitted to output. When a heuristic is adjusted after seeing a result, the change is noted in the CHANGELOG.
+
+A second suite, `src/susanoo/data/suites/ui-v1.toml`, holds 15 UI tasks for [ADR 0008](decisions/0008-ui-ux-workflow.md), each with the reason for its label. It was labeled before any UI heuristic changed and is kept apart from `routing-v1` so the original cases and CI's agreement threshold stay as they are. With v0.7 heuristics it agrees on 8 of 15 with 0 risk-floor violations; the tests require its risk-floor violations to stay at zero.
+
+```toml
+[[cases]]
+id = "ui-checkout-tax"
+task = "Change how the checkout calculates tax"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]   # must be in the route
+```
 
 Use your own suite to calibrate Susanoo for a codebase. Write 20-50 representative tasks from your backlog, label them before looking at Susanoo's output, and tune `.susanoo/config.toml` until agreement is acceptable with no risk-floor violations.
 
