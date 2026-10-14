@@ -25,7 +25,7 @@ src/susanoo/
   verification/        Verification Intelligence        select_steps / build_plan / execute_plan
   evaluation/          Evaluation & Learning Engine     RecordStore, summarize, run_suite
   enforcement/         Opt-in workflow enforcement      gates (pure decisions), hooks (Claude Code bridge)
-  adapters/claude_code Claude Code integration          discovery of skills/agents/MCP, installer
+  adapters/claude_code Claude Code integration          discovery of skills/agents/MCP, installer, usage capture
   pipeline.py          Orchestration                    plan_task(task, root, config) -> TaskPlan
   ui.py                UI domains and checklists       choose_domain(task, config, detected) -> UIContext
   render.py            Execution brief and reports
@@ -104,6 +104,7 @@ Identical commands run once per execution; later steps reuse the result and say 
 - `RecordStore`: append-only JSONL files (`routes`, `outcomes`, `evidence`, `research`) under `.susanoo/records/`, which `susanoo init` git-ignores. Route records hold the assessment summary, profile, override, controls, gaps, and planned verification. Task text can be replaced by its SHA-256 (`records.store_task_text = false`).
 - `summarize`: per-profile completion rate, duration, interventions, tokens, cost, regressions, and executed-check failure rate. Insights appear only after `min_samples` outcomes per profile (default 10) and are phrased as suggestions to review.
 - `run_suite`: deterministic routing evaluation against a labeled suite (see [evaluation.md](../evaluation.md)).
+- `adapters/claude_code/usage.py` (opt-in, `records.capture_usage`): fills an outcome's empty `tokens`, `token_counts` (fresh input, cache writes, cache reads, output), `duration_minutes`, and `tool_calls` from the route's Claude Code session transcripts, reading them from the end and only the usage counts, timestamps, ids, and tool names of assistant messages between the route's creation and its outcome or the session's next route. Any unexpected format captures nothing.
 
 ### Claude Code adapter
 
