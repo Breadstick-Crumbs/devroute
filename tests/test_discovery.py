@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 from susanoo.adapters.claude_code.discovery import parse_frontmatter
 from susanoo.discovery import Status, build_inventory, detect_tool, scan_project
@@ -199,6 +202,81 @@ def test_project_environment_tools_take_precedence(tmp_path: Path):
     assert found is not None and Path(found).parent == bindir
     assert describe_location(found, tmp_path) == "in project environment .venv"
     assert resolve_executable(name, tmp_path / "elsewhere") is None
+
+
+def _fake_executable(folder: Path, name: str, first_line: str = "") -> Path:
+    import os
+    import stat
+
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / (name + (".bat" if os.name == "nt" else ""))
+    path.write_text(first_line or ("@echo off\n" if os.name == "nt" else "#!/bin/sh\n"), encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return path
+
+
+@pytest.fixture
+def path_only(monkeypatch: pytest.MonkeyPatch):
+    """PATH is exactly the given folders, with no cached lookups."""
+    import os
+
+    from susanoo.discovery import executables
+
+    monkeypatch.setattr(executables, "_cache", None)
+
+    def set_path(*folders: Path) -> None:
+        monkeypatch.setenv("PATH", os.pathsep.join(str(f) for f in folders))
+
+    return set_path
+
+
+def test_module_runs_under_the_interpreter_that_owns_the_tool(tmp_path: Path, path_only):
+    from susanoo.discovery.executables import resolve_module_interpreter
+
+    # pipx / uv tool: the tool's own folder has its interpreter; the first `python` on PATH lacks it.
+    other, tool_bin = tmp_path / "system", tmp_path / "pipx-venv" / "bin"
+    _fake_executable(other, "python")
+    owner = _fake_executable(tool_bin, "python")
+    _fake_executable(tool_bin, "faketool")
+    path_only(other, tool_bin)
+    assert Path(resolve_module_interpreter("faketool", tmp_path / "project")) == owner
+
+    # A Windows install: Scripts/faketool.exe, with python.exe one folder up.
+    base = tmp_path / "Python311"
+    _fake_executable(base / "Scripts", "faketool")
+    owner = _fake_executable(base, "python")
+    path_only(other, base / "Scripts")
+    assert Path(resolve_module_interpreter("faketool", tmp_path / "project")) == owner
+
+    # No tool found: `python` as usual.
+    path_only(other)
+    assert Path(resolve_module_interpreter("missingtool", tmp_path / "project")).parent == other
+
+
+def test_module_interpreter_prefers_the_project_environment(tmp_path: Path, path_only):
+    import os
+
+    from susanoo.discovery.executables import resolve_module_interpreter
+
+    tool_bin = tmp_path / "pipx-venv" / "bin"
+    _fake_executable(tool_bin, "faketool")
+    _fake_executable(tool_bin, "python")
+    venv = _fake_executable(
+        tmp_path / "project" / ".venv" / ("Scripts" if os.name == "nt" else "bin"), "python"
+    )
+    path_only(tool_bin)
+    assert Path(resolve_module_interpreter("faketool", tmp_path / "project")) == venv
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="console scripts are .exe launchers on Windows")
+def test_module_interpreter_follows_the_script_shebang(tmp_path: Path, path_only):
+    from susanoo.discovery.executables import resolve_module_interpreter
+
+    # Homebrew-style: the script's folder has no python; its #! line names the interpreter.
+    interpreter = _fake_executable(tmp_path / "libexec" / "bin", "python3.12")
+    _fake_executable(tmp_path / "bin", "faketool", f"#!{interpreter}\n")
+    path_only(tmp_path / "bin")
+    assert Path(resolve_module_interpreter("faketool", tmp_path / "project")) == interpreter
 
 
 def test_subdirectory_of_repository_counts_as_git(tmp_path: Path):

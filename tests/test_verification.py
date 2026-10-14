@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from susanoo.analyzer import CapabilityRequirement, assess
-from susanoo.discovery import Finding, Inventory, Status
+from susanoo.discovery import Finding, Inventory, Status, executables
 from susanoo.pipeline import plan_task
 from susanoo.router import route
 from susanoo.selection import candidates_for, recommend
@@ -300,6 +300,7 @@ def test_unit_tests_import_an_uninstalled_flat_layout_package(
     )
     # The interpreter running this suite has pytest; nothing else may decide the import path.
     monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setattr(executables, "_cache", None)
     for name in ("PYTHONPATH", "PYTEST_ADDOPTS"):
         monkeypatch.delenv(name, raising=False)
 

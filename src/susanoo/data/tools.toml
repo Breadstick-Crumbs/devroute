@@ -123,8 +123,9 @@ python_packages = ["pytest"]
 pyproject_tools = ["pytest"]
 files = ["pytest.ini", "conftest.py", "tests/conftest.py"]
 version_args = ["--version"]
-# `python -m pytest`, not the `pytest` script: only the module form puts the project root on
-# sys.path, so tests still import a package that is not installed (flat layout).
+# `python -m pytest`, not the `pytest` script: the module form always puts the project root on
+# sys.path, so tests still import a package that is not installed (flat layout). `python -m <tool>`
+# runs under the interpreter that owns the `<tool>` script unless the project has its own environment.
 run = { unit_testing = ["python", "-m", "pytest", "-q"], integration_testing = ["python", "-m", "pytest", "-q"] }
 reliability = 3
 context_cost = 1

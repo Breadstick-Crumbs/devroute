@@ -35,7 +35,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Routing suites can list `controls` a case's route must include; a missing control counts as a risk-floor violation, and an unknown control id is a suite error.
 
 ### Fixed
-- `susanoo verify --execute` runs pytest as `python -m pytest -q` (was `pytest -q`), with the project's environment as before. Only the module form puts the project root on `sys.path`, so a flat-layout project whose package is not installed failed its unit and integration checks with `ModuleNotFoundError` on correct work, and the evidence gate blocked it. Poetry and Pipenv projects run `poetry run python -m pytest -q` and `pipenv run python -m pytest -q`.
+- `susanoo verify --execute` runs pytest as `python -m pytest -q` (was `pytest -q`). The module form always puts the project root on `sys.path`; the `pytest` script does so only for some layouts, so a flat-layout project whose package is not installed (conftest.py only in `tests/`) failed its unit and integration checks with `ModuleNotFoundError` on correct work, and the evidence gate blocked it. `python` is the project's environment (`.venv`, `venv`, `env`) when there is one; otherwise it is the interpreter the discovered `pytest` script belongs to (its `#!` line or a `python` beside it), so pipx or `uv tool` installs and systems without a `python` command (macOS, Debian) still run the same pytest as before. Poetry and Pipenv projects run `poetry run python -m pytest -q` and `pipenv run python -m pytest -q`.
 
 ## [0.7.0] - 2026-10-14
 

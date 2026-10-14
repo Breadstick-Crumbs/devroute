@@ -100,6 +100,50 @@ def resolve_executable(name: str, root: Path | None = None) -> str | None:
     return shutil.which(name, path=str(Path(sys.executable).parent))
 
 
+def resolve_module_interpreter(module: str, root: Path | None = None) -> str | None:
+    """The interpreter for ``python -m <module>``: the project's environment, else the one that owns
+    the ``<module>`` script, else ``python`` as usual.
+
+    Discovery finds the tool by its script; a ``python`` looked up on its own can be another
+    interpreter without the tool (pipx or ``uv tool`` installs; no ``python`` on macOS or Debian).
+    """
+    for directory in project_dirs(root):
+        found = shutil.which("python", path=str(directory))
+        if found:
+            return found
+    script = resolve_executable(module, root)
+    owner = _script_interpreter(Path(script)) if script else None
+    return owner or resolve_executable("python", root)
+
+
+def _script_interpreter(script: Path) -> str | None:
+    """The interpreter a console script was installed for: its ``#!`` line, else a ``python`` beside
+    it (a Windows ``Scripts`` folder sits next to ``python.exe``). Reads the first line only."""
+    try:
+        script = script.resolve()
+        with script.open("rb") as handle:
+            first = handle.readline(512)
+    except OSError:
+        return None
+    if first.startswith(b"#!"):
+        parts = first[2:].decode("utf-8", "replace").split()
+        if len(parts) > 1 and Path(parts[0]).name == "env":
+            parts = parts[1:]
+        if parts and "python" in Path(parts[0]).name.lower():
+            found = shutil.which(parts[0])
+            if found:
+                return found
+    folders = [script.parent]
+    if script.parent.name.lower() == "scripts":
+        folders.append(script.parent.parent)
+    for folder in folders:
+        for name in ("python", "python3"):
+            found = shutil.which(name, path=str(folder))
+            if found:
+                return found
+    return None
+
+
 def describe_location(path: str, root: Path | None) -> str:
     """Human-readable location, e.g. 'on PATH' or 'in project environment .venv'."""
     if root is not None:
