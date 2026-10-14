@@ -55,6 +55,54 @@ requires_signals = ["trivial-edit"]
 blocking_signals = ["feature"]
 clause = '[,;:]|(?<![\w-])(?:and|then|plus|also|but|or|while)(?![\w-])'
 
+[assessment.presentational]
+# A task that only changes how something looks (ADR 0008): "Change the checkout button color to
+# green", "Redesign the pricing page layout for mobile". When the whole task has that shape, the
+# signals a rule names are ignored and listed in the assessment. Ignoring can only lower risk, so
+# this is deliberately narrow, and a missed payment control is a safety bug:
+# - the whole task must fit: a verb from the rule, an optional determiner, up to three words, a
+#   `ui_nouns` word, then only `look_words` or short "on/for/to/in ..." phrases; "and", a second
+#   clause, or any other word makes it not presentational;
+# - a rule with `require_look` also needs a `look_words` match somewhere in the task;
+# - any `keep` match anywhere (payment logic, data, state, flows) keeps every signal.
+# All entries are regular expressions matched case-insensitively on word boundaries.
+ui_nouns = [
+    "pages?", "screens?", "views?", "layouts?", "components?", "buttons?", "forms?", "modals?", "dialogs?",
+    "cards?", "footers?", "navbars?", "nav ?bars?", "sidebars?", "menus?", "banners?", "hero(?: sections?)?",
+    "sections?", "icons?", "tabs?", "inputs?", "fields?", "labels?", "tooltips?", "badges?", "links?", "ui",
+]
+look_words = [
+    "colou?rs?", "spacing", "padding", "margins?", "gaps?", "fonts?", "font ?sizes?", "typography", "alignment",
+    "aligned", "borders?", "radius", "shadows?", "backgrounds?", "themes?", "dark mode", "light mode", "styles?",
+    "styling", "re-?styl\\w*", "recolou?r\\w*", "layouts?", "responsive\\w*", "sizes?", "widths?", "heights?",
+    "contrast", "icons?", "hover states?", "focus states?", "look(?: and feel)?", "visual\\w*", "appearance",
+    "copy", "wording", "text", "mobile", "desktop", "tablets?", "phones?", "small screens?", "larger", "smaller",
+    "bigger", "wider", "narrower", "compact", "consistent", "blue", "green", "red", "black", "white", "gr[ae]y",
+    "orange", "purple", "pink", "yellow", "brand colou?rs?", "#[0-9a-f]{3,8}",
+]
+keep = [
+    "calculat\\w*", "charg\\w*", "refund\\w*", "tax\\w*", "vat", "totals?", "subtotals?", "prices?",
+    "pricing (?:logic|rules?|tiers?|plans?)", "discount\\w*", "coupons?", "promo\\w*", "stripe", "paypal",
+    "braintree", "adyen", "webhooks?", "subscriptions?", "invoic\\w*", "prorat\\w*", "currenc\\w*", "amounts?",
+    "payouts?", "validat\\w*", "submi\\w*", "card numbers?", "credit cards?", "logic", "flows?", "steps?",
+    "multi-?step", "api", "endpoints?", "database", "db", "schemas?", "data", "state", "backend", "server",
+    "architecture", "migrat\\w*", "auth\\w*", "login", "security",
+]
+
+[[assessment.presentational.rules]]
+# A visual redesign is not an architectural change (the visual-redesign signal still counts).
+signals = ["architecture-change"]
+verbs = ["re-?design\\w*", "revamp\\w*", "refresh\\w*", "re-?styl\\w*", "polish\\w*"]
+
+[[assessment.presentational.rules]]
+# Styling a payment page is not payment logic; it needs a look word ("color", "layout", "spacing").
+signals = ["payments"]
+verbs = [
+    "change", "make", "adjust\\w*", "tighten\\w*", "loosen\\w*", "align\\w*", "cent(?:er|re)\\w*", "move",
+    "increase", "reduce", "update", "tweak\\w*", "fix", "re-?styl\\w*", "recolou?r\\w*", "polish\\w*", "style",
+]
+require_look = true
+
 [complexity]
 weights = { implementation_complexity = 0.35, architectural_complexity = 0.25, affected_components = 0.25, testing_difficulty = 0.15 }
 thresholds = { moderate = 0.30, high = 0.62 }
@@ -252,7 +300,7 @@ recommends = ["integration_testing", "code_review", "code_navigation"]
 [[signals]]
 id = "feature"
 label = "new functionality"
-patterns = ["add", "implement\\w*", "create", "introduce", "support (?:for )?", "new feature", "enable", "allow users? to"]
+patterns = ["add", "implement\\w*", "create", "build (?:a|an|the|our|my|new)", "introduce", "support (?:for )?", "new feature", "enable", "allow users? to"]
 effects = { implementation_complexity = 2 }
 
 [[signals]]
@@ -327,6 +375,8 @@ patterns = [
     "typos?", "spelling", "rename (?:a |the )?(?:[\\w.]+ )?(?:variable|function|method|file|class|helper|constant)", "comments?",
     "docstrings?", "readme", "wording", "copy change", "change (?:the )?(?:color|colour|text|label|title|wording)",
     "bump (?:the )?version", "log message", "formatting", "whitespace", "lint warnings?", "one[- ]line",
+    "(?:tighten|loosen|adjust|increase|reduce) (?:the )?(?:spacing|padding|margins?|gaps?)",
+    "(?:size|colou?r|style) variants?",
 ]
 caps = { implementation_complexity = 0, architectural_complexity = 0, affected_components = 1, testing_difficulty = 1 }
 
@@ -431,9 +481,25 @@ area = "user interface"
 patterns = [
     "dashboard", "admin (?:panel|ui|console|dashboard)?", "ui", "ux", "frontend", "front-end", "pages?", "screens?",
     "components?", "forms?", "css", "layout", "react", "vue", "svelte", "angular", "buttons?", "modal", "responsive",
+    "navbars?", "nav ?bars?", "sidebars?", "footers?", "spacing",
 ]
 effects = { affected_components = 1, testing_difficulty = 1 }
 recommends = ["browser_testing"]
+
+[[signals]]
+id = "visual-redesign"
+label = "visual redesign"
+# Fires with architecture-change on "redesign"; when the task is only visual, the presentational
+# rule drops the architectural signal and this one keeps the work at STANDARD. "Restyle" was added
+# after the slice 4 suite run showed "Restyle the checkout page" routing FAST.
+patterns = ["re-?design\\w*", "revamp\\w*", "re-?styl\\w*"]
+effects = { implementation_complexity = 2, testing_difficulty = 1 }
+
+[[signals]]
+id = "responsive-layout"
+label = "responsive layout"
+patterns = ["responsive\\w*", "breakpoints?", "(?:for|on) (?:mobile|phones?|tablets?|small screens?)"]
+effects = { implementation_complexity = 2, testing_difficulty = 2 }
 
 [[signals]]
 id = "api"

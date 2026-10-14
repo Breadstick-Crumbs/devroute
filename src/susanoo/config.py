@@ -251,6 +251,22 @@ def validate(config: Config) -> None:
         )
         for sid in ids:
             _require(sid in seen, f"{where}: unknown signal '{sid}'")
+    presentational = config.get("assessment", {}).get("presentational", {})
+    for key in ("ui_nouns", "look_words", "keep"):
+        _check_patterns(f"[assessment.presentational] {key}", presentational.get(key, []))
+    for i, rule in enumerate(presentational.get("rules", [])):
+        where = f"[assessment.presentational] rules[{i}]"
+        _check_patterns(f"{where} verbs", rule.get("verbs", []))
+        _require(
+            isinstance(rule.get("require_look", False), bool), f"{where} require_look must be true or false"
+        )
+        ids = rule.get("signals", [])
+        _require(
+            isinstance(ids, list) and all(isinstance(i, str) for i in ids),
+            f"{where} signals must be a list of ids",
+        )
+        for sid in ids:
+            _require(sid in seen, f"{where} signals: unknown signal '{sid}'")
     # Patterns are complete only once {target} and {location} are expanded.
     from susanoo.analyzer.engine import negation_patterns  # imported here: the engine imports config
 

@@ -154,6 +154,11 @@ def compact_brief(
     ]
     if a.negated:
         lines.append("Ignored as out of scope: " + ", ".join(repr(n) for n in a.negated) + ".")
+    if a.presentational:
+        lines.append(
+            "Ignored as a purely visual change: " + ", ".join(a.presentational) + ". If the task touches "
+            "payment logic, data, or the architecture after all, raise the route."
+        )
     for control in d.controls:
         lines.append(f"Safety control {control.id}: {control.description}")
     tools = []

@@ -122,6 +122,14 @@ An instruction to leave a part of the code base alone is ignored when signals ar
 
 Keep this narrow. Ignoring text can only lower risk.
 
+### `[assessment.presentational]`
+A task that only changes how something looks ("Change the checkout button color to green", "Redesign the pricing page layout for mobile") does not count as payment logic or as an architectural change ([ADR 0008](decisions/0008-ui-ux-workflow.md)). The brief lists what was ignored as "Ignored as a purely visual change".
+- `ui_nouns`, `look_words`: regexes for UI objects (page, button, form, ...) and visual words (color, layout, spacing, responsive, ...). The whole task must be a rule's verb, an optional determiner, optional look words or a short "on the" phrase, at most three other words, a UI noun, and then only look words or short "on/for/to/in ..." phrases.
+- `keep`: regexes that keep every signal when they match anywhere (payment logic, data, state, flows, APIs, authentication, ...).
+- `rules`: each has `signals` (ids to ignore), `verbs`, and optionally `require_look = true` (a look word must appear). `rules = []` turns it off.
+
+Keep this narrow. Ignoring a signal can only lower risk, and a missed payment control is a safety bug.
+
 ### `[complexity]`, `[risk]`, `[uncertainty]`
 - `weights` (complexity): relative weights of the complexity dimensions.
 - `dimensions`, `max_weight`, `critical_severe_dimensions` (risk): see [architecture](architecture/overview.md).

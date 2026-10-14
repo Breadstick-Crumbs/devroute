@@ -123,6 +123,59 @@ def _mask(text: str, spans: Iterable[tuple[int, int]]) -> str:
     return "".join(chars)
 
 
+_DETERMINER = "(?:the|a|an|our|its|their|this|that)"
+
+
+def _alternation(patterns: Iterable[str]) -> str:
+    return "|".join(f"(?:{p})" for p in patterns)
+
+
+@lru_cache(maxsize=16)
+def _presentational_shape(
+    verbs: tuple[str, ...], ui_nouns: tuple[str, ...], look: tuple[str, ...]
+) -> re.Pattern[str]:
+    """The whole-task shape of a purely visual edit (see `[assessment.presentational]`)."""
+    tail = rf"(?: (?:{_alternation(look)}|(?:in|on|for|to|at|across|with)(?: {_DETERMINER})?(?: [\w#-]+){{1,3}}))*"
+    shape = (
+        rf"(?:please )?(?:{_alternation(verbs)})(?: {_DETERMINER})?"
+        # "tighten the padding on the payment form": look words and a preposition may come first.
+        rf"(?: (?:{_alternation(look)}))*(?: (?:on|in|of|for|across)(?: {_DETERMINER})?)?"
+        rf"(?: [\w-]+){{0,3}}? "
+        rf"(?:{_alternation(ui_nouns)}){tail}"
+    )
+    return re.compile(shape, re.IGNORECASE)
+
+
+def presentational_matches(
+    text: str, matches: list[SignalMatch], config: dict[str, Any]
+) -> list[SignalMatch]:
+    """Signal matches to ignore because the whole task only changes how something looks.
+
+    Ignoring can only lower risk, so the whole task must fit a rule's shape, a rule may require a
+    look word, and any `keep` match anywhere keeps every signal.
+    """
+    if not config or not matches:
+        return []
+    task = text.strip().rstrip(".!")
+    if any(_compile(k).search(task) for k in config.get("keep", [])):
+        return []
+    ui_nouns = tuple(config.get("ui_nouns", []))
+    look = tuple(config.get("look_words", []))
+    if not ui_nouns:
+        return []
+    ignored: list[SignalMatch] = []
+    for rule in config.get("rules", []):
+        targets = [m for m in matches if m.id in rule.get("signals", []) and m not in ignored]
+        if not targets:
+            continue
+        if not _presentational_shape(tuple(rule.get("verbs", [])), ui_nouns, look).fullmatch(task):
+            continue
+        if rule.get("require_look") and not any(_compile(w).search(task) for w in look):
+            continue
+        ignored += targets
+    return ignored
+
+
 def _caps_allowed(text: str, signal: dict[str, Any]) -> bool:
     """Whether the whole task fits one of the signal's ``caps_only_if`` shapes (if it has any)."""
     shapes = signal.get("caps_only_if")
@@ -203,6 +256,11 @@ def assess(
         spans, scanned = [], lines
         matches = match_signals(scanned, signal_defs.values())
     negated = [lines[start:end].strip() for start, end in spans]
+    # A purely visual edit ("Change the checkout button color") does not count as payment logic
+    # or as an architectural change.
+    ignored = presentational_matches(lines, matches, config["assessment"].get("presentational", {}))
+    matches = [m for m in matches if m not in ignored]
+    presentational = [f"{m.label} ({_quote(m.matches)})" for m in ignored]
 
     levels: dict[str, int] = dict.fromkeys(DIMENSIONS, 0)
     reasons: dict[str, list[str]] = {d: [] for d in DIMENSIONS}
@@ -276,6 +334,7 @@ def assess(
         requirements=_requirements(matches, signal_defs),
         context_notes=context_notes,
         negated=negated,
+        presentational=presentational,
         base_levels=base_levels,
     )
 
