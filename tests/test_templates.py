@@ -20,7 +20,7 @@ def test_templates_have_valid_frontmatter():
 
 
 def test_skill_uses_arguments_and_records_evidence():
-    [skill] = [t for t in targets() if t.path.endswith("SKILL.md")]
+    [skill] = [t for t in targets() if t.path == ".claude/skills/susanoo/SKILL.md"]
     meta = parse_frontmatter(skill.content)
     assert meta["name"] == "susanoo"
     assert meta["disable-model-invocation"] == "true"
