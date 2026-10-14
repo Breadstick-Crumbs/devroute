@@ -75,9 +75,11 @@ Available tools:
 
 Missing capabilities:
 
+- Accessibility scanning [required, blocking until resolved or explicitly accepted]: consider axe CLI (cli), install: npm install -g @axe-core/cli
 - Migration checks [required, blocking until resolved or explicitly accepted]: consider Alembic (cli), install: pip install alembic
 - Payment sandbox [required, blocking until resolved or explicitly accepted]: consider Stripe CLI (cli), install: https://docs.stripe.com/stripe-cli
 - Secret scanning [required, blocking until resolved or explicitly accepted]: consider Gitleaks (cli), install: https://github.com/gitleaks/gitleaks#installing
+- Visual check [required, blocking until resolved or explicitly accepted]: consider Playwright (cli), install: npm init playwright@latest   (or: pip install pytest-playwright && playwright install)
 - Browser / end-to-end testing [recommended, non-blocking]: consider Playwright (cli), install: npm init playwright@latest   (or: pip install pytest-playwright && playwright install)
 - Dependency audit [recommended, non-blocking]: consider pip-audit (cli), install: pip install pip-audit
 
@@ -100,6 +102,10 @@ Susanoo never installs tools itself; adopting any of these needs your approval.
 - [required] Linting / static analysis: `ruff check .`
 - [required] Type checking: `mypy .`
 - [required] Integration tests: `pytest -q`
+- [required] Visual check: no usable tool - gap
+  Render the change and look at it at 375, 768, and 1280 CSS px (common widths, not a standard), compared with the request or a reference. Record it: `susanoo evidence latest --step visual_check --status passed --note "<widths checked, screenshot paths>"`, or `--status skipped --note "<why>"` when nothing visible changed.
+- [required] Accessibility scan: no usable tool - gap
+  A scan finds only part of the problems; also check keyboard operation and a visible focus indicator.
 - [required] Security analysis: `bandit -r . -q -x ./.venv,./venv,./node_modules,./tests,./build,./dist`
 - [required] Secret scanning: no usable tool - gap
 - [required] Database migration check: no usable tool - gap

@@ -10,6 +10,7 @@
 #   npm_scripts      script names defined in package.json
 #   make_targets     targets defined in a top-level Makefile
 #   files            project files or globs whose presence indicates configuration
+#   requires_files   the tool is only detected when one of these files or globs exists (AND, not OR)
 #   pyproject_tools  [tool.<name>] sections in pyproject.toml
 #   mcp_patterns     substrings matched against configured MCP server names
 #   env              environment variables that indicate availability
@@ -502,7 +503,9 @@ install = "https://github.com/gitleaks/gitleaks#installing"
 id = "playwright"
 name = "Playwright"
 kind = "cli"
-capabilities = ["browser_testing", "integration_testing"]
+# visual_check has no run command: Claude renders and screenshots the change itself
+# (`npx playwright screenshot --viewport-size=375,812 <url> shot.png`), so the step stays manual.
+capabilities = ["browser_testing", "integration_testing", "visual_check"]
 task_keywords = ["playwright"]
 npm_packages = ["@playwright/test", "playwright"]
 python_packages = ["playwright", "pytest-playwright"]
@@ -534,13 +537,110 @@ install = "{js_add_dev} cypress"
 id = "browser-mcp"
 name = "Browser automation MCP server"
 kind = "mcp"
-capabilities = ["browser_testing"]
+capabilities = ["browser_testing", "visual_check"]
 mcp_patterns = ["playwright", "puppeteer", "browser", "chrome", "selenium"]
 reliability = 2
 context_cost = 3
 setup_cost = 2
 security_exposure = 2
 notes = "Interactive browser control from Claude Code. Adds tool definitions to context; prefer a test runner for repeatable checks."
+
+[[tools]]
+id = "claude-desktop-browser"
+name = "Claude desktop app browser"
+kind = "native"
+capabilities = ["visual_check"]
+# Set by the Claude desktop app, whose Code tab has a built-in browser pane. Claude Code in a
+# terminal has no built-in browser; Claude in Chrome is not detectable from here.
+env = ["CLAUDE_CODE_DESKTOP_APP_VERSION"]
+reliability = 2
+context_cost = 2
+setup_cost = 1
+security_exposure = 1
+notes = "The browser pane in the Claude desktop app: open the page, resize it, and take screenshots."
+
+[[tools]]
+id = "axe-playwright"
+name = "axe-core with Playwright"
+kind = "cli"
+capabilities = ["accessibility_testing"]
+task_keywords = ["axe", "accessibility", "a11y"]
+languages = ["javascript", "typescript"]
+npm_packages = ["@axe-core/playwright"]
+# The axe checks live in the Playwright suite, so the suite is the command.
+run = { accessibility_testing = ["npx", "--no-install", "playwright", "test"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "{js_add_dev} @axe-core/playwright"
+notes = "Runs the Playwright suite, which includes the axe checks."
+
+[[tools]]
+id = "pa11y-ci"
+name = "pa11y-ci"
+kind = "cli"
+capabilities = ["accessibility_testing"]
+task_keywords = ["pa11y", "accessibility", "a11y"]
+languages = ["javascript", "typescript"]
+npm_packages = ["pa11y-ci"]
+files = [".pa11yci", ".pa11yci.json", ".pa11yci.js"]
+run = { accessibility_testing = ["npx", "--no-install", "pa11y-ci"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "{js_add_dev} pa11y-ci"
+notes = "Scans the URLs in .pa11yci; the pages must be served while it runs."
+
+[[tools]]
+id = "axe-cli"
+name = "axe CLI"
+kind = "cli"
+capabilities = ["accessibility_testing"]
+task_keywords = ["axe", "accessibility", "a11y"]
+binaries = ["axe"]
+npm_packages = ["@axe-core/cli"]
+reliability = 2
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "npm install -g @axe-core/cli"
+notes = "Needs a URL (`axe http://localhost:3000`), so the agent runs it against the served page."
+
+[[tools]]
+id = "playwright-screenshots"
+name = "Playwright screenshot baselines"
+kind = "cli"
+capabilities = ["visual_regression"]
+languages = ["javascript", "typescript"]
+npm_packages = ["@playwright/test"]
+# Only when baselines exist: Susanoo never creates them. Default snapshot folders, one level deep.
+requires_files = ["*-snapshots", "tests/*-snapshots", "test/*-snapshots", "e2e/*-snapshots", "tests/e2e/*-snapshots"]
+run = { visual_regression = ["npx", "--no-install", "playwright", "test"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+notes = "toHaveScreenshot baselines. Update them only for intended changes, and say so."
+
+[[tools]]
+id = "lighthouse-ci"
+name = "Lighthouse CI"
+kind = "cli"
+capabilities = ["performance_budget"]
+task_keywords = ["lighthouse", "web vitals", "core web vitals"]
+languages = ["javascript", "typescript"]
+binaries = ["lhci"]
+npm_packages = ["@lhci/cli"]
+files = ["lighthouserc.*", ".lighthouserc.*"]
+run = { performance_budget = ["npx", "--no-install", "lhci", "autorun"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "{js_add_dev} @lhci/cli"
+notes = "Lab measurements; Core Web Vitals thresholds are defined on real-user data at the 75th percentile."
 
 [[tools]]
 id = "database-mcp"

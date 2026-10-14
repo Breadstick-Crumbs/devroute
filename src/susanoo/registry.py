@@ -33,6 +33,9 @@ class ToolSpec:
     npm_scripts: tuple[str, ...] = ()
     make_targets: tuple[str, ...] = ()
     files: tuple[str, ...] = ()
+    # The tool is only detected when one of these project files or globs exists (screenshot
+    # baselines for visual regression); the other detection keys still decide its status.
+    requires_files: tuple[str, ...] = ()
     pyproject_tools: tuple[str, ...] = ()
     mcp_patterns: tuple[str, ...] = ()
     env: tuple[str, ...] = ()
@@ -102,6 +105,7 @@ _TUPLE_FIELDS = (
     "npm_scripts",
     "make_targets",
     "files",
+    "requires_files",
     "pyproject_tools",
     "mcp_patterns",
     "env",

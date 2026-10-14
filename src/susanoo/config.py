@@ -265,6 +265,14 @@ def validate(config: Config) -> None:
     for rule in config.get("verification", []):
         rid = rule.get("id", "?")
         _require(isinstance(rule.get("capability"), str), f"verification '{rid}': missing 'capability'")
+        _require(
+            isinstance(rule.get("instructions", ""), str),
+            f"verification '{rid}': 'instructions' must be a string",
+        )
+        _require(
+            isinstance(rule.get("only_with_tool", False), bool),
+            f"verification '{rid}': 'only_with_tool' must be true or false",
+        )
         for profile, level in rule.get("levels", {}).items():
             _require(profile in PROFILE_ORDER, f"verification '{rid}': unknown profile '{profile}'")
             _require(level in REQUIREMENT_LEVELS, f"verification '{rid}': unknown level '{level}'")

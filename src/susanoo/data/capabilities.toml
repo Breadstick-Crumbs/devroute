@@ -32,6 +32,30 @@ description = "Drive a real browser to verify user-facing flows."
 keywords = ["browser", "playwright", "cypress", "puppeteer", "selenium", "e2e", "end-to-end", "chrome"]
 
 [[capabilities]]
+id = "visual_check"
+title = "Visual check"
+description = "Render a user interface change and look at it at several widths, compared with the request or a reference. Performed by the agent or a person."
+keywords = ["browser", "playwright", "puppeteer", "chrome", "visual check"]
+
+[[capabilities]]
+id = "accessibility_testing"
+title = "Accessibility scanning"
+description = "Automated accessibility checks (axe-core, pa11y). They find only part of the problems; keyboard and focus still need a person or the agent."
+keywords = ["accessibility", "a11y", "axe", "pa11y", "wcag"]
+
+[[capabilities]]
+id = "visual_regression"
+title = "Visual regression"
+description = "Compare screenshots against committed baselines."
+keywords = ["visual regression", "screenshot comparison", "percy", "chromatic"]
+
+[[capabilities]]
+id = "performance_budget"
+title = "Performance budget"
+description = "Lab measurements of page performance against a budget (Lighthouse CI)."
+keywords = ["lighthouse", "web vitals", "core web vitals", "performance budget"]
+
+[[capabilities]]
 id = "static_analysis"
 title = "Linting / static analysis"
 description = "Detect defects and style issues without running the code."
