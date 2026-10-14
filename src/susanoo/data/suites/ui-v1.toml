@@ -205,3 +205,75 @@ id = "ui4-redesign-settings-dark-mode"
 # A visual redesign of one page.
 task = "Redesign the settings page for dark mode"
 expected = "standard"
+
+# --- Added after the slice 4 review, labeled before the stricter rule was written: phrasings that
+# escaped the first version. Every payment one must keep every payment control; every
+# architecture one must stay DEEP.
+
+[[cases]]
+id = "ui4r-fix-checkout-mobile"
+# "Pay doesn't work on my phone" is a behavior bug, not styling.
+task = "Fix the checkout button on mobile"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-checkout-new-provider"
+# A new payment provider is payment integration.
+task = "Update the checkout page layout for the new payment provider"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-apple-pay"
+task = "Update the checkout form layout for Apple Pay"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-single-page-checkout"
+# Changing the number of checkout steps changes the flow.
+task = "Change the checkout layout to a single page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-plain-card-inputs"
+# Taking card entry out of the provider's fields is a PCI concern.
+task = "Change the payment form card fields to plain text inputs"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-stripe-hosted"
+task = "Change the checkout button color in the Stripe-hosted page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-color-and-hide"
+task = "Change the checkout button color to green and hide on mobile"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-redesign-microservices"
+task = "Redesign the orders page with microservices"
+expected = "deep"
+
+[[cases]]
+id = "ui4r-redesign-ssr"
+task = "Redesign the product page with server-side rendering"
+expected = "deep"
+
+[[cases]]
+id = "ui4r-redesign-redux"
+task = "Redesign the settings page to use Redux"
+expected = "deep"

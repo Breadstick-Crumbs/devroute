@@ -57,51 +57,80 @@ clause = '[,;:]|(?<![\w-])(?:and|then|plus|also|but|or|while)(?![\w-])'
 
 [assessment.presentational]
 # A task that only changes how something looks (ADR 0008): "Change the checkout button color to
-# green", "Redesign the pricing page layout for mobile". When the whole task has that shape, the
-# signals a rule names are ignored and listed in the assessment. Ignoring can only lower risk, so
-# this is deliberately narrow, and a missed payment control is a safety bug:
-# - the whole task must fit: a verb from the rule, an optional determiner, up to three words, a
-#   `ui_nouns` word, then only `look_words` or short "on/for/to/in ..." phrases; "and", a second
-#   clause, or any other word makes it not presentational;
-# - a rule with `require_look` also needs a `look_words` match somewhere in the task;
-# - any `keep` match anywhere (payment logic, data, state, flows) keeps every signal.
-# All entries are regular expressions matched case-insensitively on word boundaries.
+# green", "Redesign the pricing page layout for mobile". Then the signals a rule names are
+# ignored and listed in the assessment. Ignoring can only lower risk, and a missed payment control
+# is a safety bug, so the check is a closed vocabulary read word by word (no backtracking):
+# - at most `max_words` words, one clause: no `reject_words`, and no comma, semicolon, colon,
+#   question mark, or line break inside;
+# - the first word is one of the rule's `verbs` (after an optional "please");
+# - every other word is a determiner, a preposition, a UI noun, an appearance word, a platform
+#   word, a `subjects` word directly before a UI noun, or at most one other word directly before
+#   a UI noun (a page name: "the settings page"); `phrases` count as one word;
+# - there is at least one UI noun, and a rule with `require_appearance` needs an appearance word
+#   (platform words such as "mobile" do not count);
+# - every phrase the ignored signal matched is one of the rule's `verbs` or `subjects`, so
+#   "microservices" or "payment provider" elsewhere keeps the signal;
+# - no `keep` regex matches anywhere, also with hyphens read as spaces ("Stripe-hosted").
+# Words are matched lowercase and exactly; `keep` entries are regular expressions.
+max_words = 20
+reject_words = ["and", "or", "then", "but", "so", "also", "plus", "while", "if", "when", "unless", "because", "&"]
+determiners = ["the", "a", "an", "our", "its", "their", "this", "that", "all"]
+prepositions = ["on", "in", "of", "for", "to", "at", "across", "with", "into"]
 ui_nouns = [
-    "pages?", "screens?", "views?", "layouts?", "components?", "buttons?", "forms?", "modals?", "dialogs?",
-    "cards?", "footers?", "navbars?", "nav ?bars?", "sidebars?", "menus?", "banners?", "hero(?: sections?)?",
-    "sections?", "icons?", "tabs?", "inputs?", "fields?", "labels?", "tooltips?", "badges?", "links?", "ui",
+    "page", "pages", "screen", "screens", "view", "views", "layout", "layouts", "component", "components",
+    "button", "buttons", "form", "forms", "modal", "modals", "dialog", "dialogs", "card", "cards", "footer",
+    "footers", "navbar", "navbars", "nav_bar", "sidebar", "sidebars", "menu", "menus", "banner", "banners",
+    "hero", "section", "sections", "icon", "icons", "tab", "tabs", "field", "fields", "label", "labels",
+    "tooltip", "tooltips", "badge", "badges", "link", "links", "ui",
 ]
-look_words = [
-    "colou?rs?", "spacing", "padding", "margins?", "gaps?", "fonts?", "font ?sizes?", "typography", "alignment",
-    "aligned", "borders?", "radius", "shadows?", "backgrounds?", "themes?", "dark mode", "light mode", "styles?",
-    "styling", "re-?styl\\w*", "recolou?r\\w*", "layouts?", "responsive\\w*", "sizes?", "widths?", "heights?",
-    "contrast", "icons?", "hover states?", "focus states?", "look(?: and feel)?", "visual\\w*", "appearance",
-    "copy", "wording", "text", "mobile", "desktop", "tablets?", "phones?", "small screens?", "larger", "smaller",
-    "bigger", "wider", "narrower", "compact", "consistent", "blue", "green", "red", "black", "white", "gr[ae]y",
-    "orange", "purple", "pink", "yellow", "brand colou?rs?", "#[0-9a-f]{3,8}",
+appearance = [
+    "color", "colors", "colour", "colours", "spacing", "padding", "margin", "margins", "gap", "gaps", "font",
+    "fonts", "font_size", "font_sizes", "typography", "alignment", "aligned", "centered", "centred", "border",
+    "borders", "radius", "shadow", "shadows", "background", "backgrounds", "theme", "themes", "dark_mode",
+    "light_mode", "style", "styles", "styling", "layout", "layouts", "responsive", "size", "sizes", "width",
+    "widths", "height", "heights", "contrast", "icon", "icons", "hover_state", "hover_states", "focus_state",
+    "focus_states", "look", "look_and_feel", "visual", "visuals", "appearance", "copy", "wording", "text",
+    "larger", "smaller", "bigger", "wider", "narrower", "compact", "consistent", "blue", "green", "red",
+    "black", "white", "gray", "grey", "orange", "purple", "pink", "yellow", "brand_color", "brand_colors",
+    "to_match_the_brand", "to_match_the_design", "to_match_the_mockup", "to_match_the_mockups",
+    "restyle", "re-style", "recolor", "recolour",
+]
+platform = [
+    "mobile", "desktop", "tablet", "tablets", "phone", "phones", "small_screens", "large_screens", "web",
+    "app", "ios", "android", "react_native",
+]
+# Payment-page words: allowed only directly before a UI noun ("the checkout button").
+subjects = ["checkout", "pricing", "billing", "payment", "payments", "cart"]
+# Multi-word phrases read as one word (their spaces become underscores).
+phrases = [
+    "dark mode", "light mode", "look and feel", "font size", "font sizes", "small screens", "large screens",
+    "react native", "nav bar", "hover state", "hover states", "focus state", "focus states", "brand color",
+    "brand colors", "to match the brand", "to match the design", "to match the mockup", "to match the mockups",
 ]
 keep = [
     "calculat\\w*", "charg\\w*", "refund\\w*", "tax\\w*", "vat", "totals?", "subtotals?", "prices?",
-    "pricing (?:logic|rules?|tiers?|plans?)", "discount\\w*", "coupons?", "promo\\w*", "stripe", "paypal",
-    "braintree", "adyen", "webhooks?", "subscriptions?", "invoic\\w*", "prorat\\w*", "currenc\\w*", "amounts?",
-    "payouts?", "validat\\w*", "submi\\w*", "card numbers?", "credit cards?", "logic", "flows?", "steps?",
-    "multi-?step", "api", "endpoints?", "database", "db", "schemas?", "data", "state", "backend", "server",
-    "architecture", "migrat\\w*", "auth\\w*", "login", "security",
+    "discount\\w*", "coupons?", "promo\\w*", "stripe", "paypal", "braintree", "adyen", "klarna", "apple pay",
+    "google pay", "sepa", "webhooks?", "subscriptions?", "invoic\\w*", "prorat\\w*", "currenc\\w*",
+    "amounts?", "payouts?", "providers?", "wallets?", "validat\\w*", "submi\\w*", "purchas\\w*",
+    "one-click", "authori[sz]\\w*", "card numbers?", "credit cards?", "logic", "flows?", "steps?",
+    "multi step", "api", "endpoints?", "database", "db", "schemas?", "data", "state", "backend", "server",
+    "architecture", "migrat\\w*", "auth\\w*", "login", "security", "disabl\\w*", "enabl\\w*", "hid(?:e|ing)",
 ]
 
 [[assessment.presentational.rules]]
 # A visual redesign is not an architectural change (the visual-redesign signal still counts).
 signals = ["architecture-change"]
-verbs = ["re-?design\\w*", "revamp\\w*", "refresh\\w*", "re-?styl\\w*", "polish\\w*"]
+verbs = ["redesign", "re-design", "revamp", "refresh", "restyle", "re-style", "polish"]
 
 [[assessment.presentational.rules]]
-# Styling a payment page is not payment logic; it needs a look word ("color", "layout", "spacing").
+# Styling a payment page is not payment logic. "Fix", "update", and "move" are not here: a fix is
+# a behavior change, and an update or move can change the flow.
 signals = ["payments"]
 verbs = [
-    "change", "make", "adjust\\w*", "tighten\\w*", "loosen\\w*", "align\\w*", "cent(?:er|re)\\w*", "move",
-    "increase", "reduce", "update", "tweak\\w*", "fix", "re-?styl\\w*", "recolou?r\\w*", "polish\\w*", "style",
+    "change", "make", "adjust", "tighten", "loosen", "align", "center", "centre", "increase", "reduce",
+    "tweak", "restyle", "re-style", "recolor", "recolour", "polish", "style",
 ]
-require_look = true
+require_appearance = true
 
 [complexity]
 weights = { implementation_complexity = 0.35, architectural_complexity = 0.25, affected_components = 0.25, testing_difficulty = 0.15 }
@@ -300,7 +329,7 @@ recommends = ["integration_testing", "code_review", "code_navigation"]
 [[signals]]
 id = "feature"
 label = "new functionality"
-patterns = ["add", "implement\\w*", "create", "build (?:a|an|the|our|my|new)", "introduce", "support (?:for )?", "new feature", "enable", "allow users? to"]
+patterns = ["add", "implement\\w*", "create", "build (?:a|an|the|our|my|new)(?! (?:[\\w-]+ )?(?:project|docs?|documentation|images?|releases?|packages?|binar(?:y|ies)|artifacts?|containers?|wheels?|site|bundles?)\\b)", "introduce", "support (?:for )?", "new feature", "enable", "allow users? to"]
 effects = { implementation_complexity = 2 }
 
 [[signals]]
@@ -375,8 +404,6 @@ patterns = [
     "typos?", "spelling", "rename (?:a |the )?(?:[\\w.]+ )?(?:variable|function|method|file|class|helper|constant)", "comments?",
     "docstrings?", "readme", "wording", "copy change", "change (?:the )?(?:color|colour|text|label|title|wording)",
     "bump (?:the )?version", "log message", "formatting", "whitespace", "lint warnings?", "one[- ]line",
-    "(?:tighten|loosen|adjust|increase|reduce) (?:the )?(?:spacing|padding|margins?|gaps?)",
-    "(?:size|colou?r|style) variants?",
 ]
 caps = { implementation_complexity = 0, architectural_complexity = 0, affected_components = 1, testing_difficulty = 1 }
 
@@ -487,6 +514,19 @@ effects = { affected_components = 1, testing_difficulty = 1 }
 recommends = ["browser_testing"]
 
 [[signals]]
+id = "visual-tweak"
+label = "small visual tweak"
+# Spacing tweaks and size or color variants of a UI element are small, but only in UI context
+# ("Reduce the padding in the protobuf message" is not) and never alongside data changes.
+patterns = [
+    "(?:tighten|loosen|adjust|increase|reduce) (?:the )?(?:spacing|padding|margins?|gaps?) (?:in|on|of|around|between) (?:the )?(?:[\\w-]+ )?(?:navbar|nav bar|sidebar|footer|header|page|button|card|form|modal|menu|section|hero|layout|list|grid|tab|toolbar)s?",
+    "(?:size|colou?r|style) variants?",
+]
+caps = { implementation_complexity = 0, architectural_complexity = 0, affected_components = 1, testing_difficulty = 1 }
+caps_if_signals = ["ui"]
+caps_unless_signals = ["database", "destructive-data", "production", "api", "payments", "dependency-change"]
+
+[[signals]]
 id = "visual-redesign"
 label = "visual redesign"
 # Fires with architecture-change on "redesign"; when the task is only visual, the presentational
@@ -498,7 +538,7 @@ effects = { implementation_complexity = 2, testing_difficulty = 1 }
 [[signals]]
 id = "responsive-layout"
 label = "responsive layout"
-patterns = ["responsive\\w*", "breakpoints?", "(?:for|on) (?:mobile|phones?|tablets?|small screens?)"]
+patterns = ["responsive\\w*", "(?:css|layout|responsive|media[- ]query) breakpoints?", "(?:for|on) (?:mobile|phones?|tablets?|small screens?)"]
 effects = { implementation_complexity = 2, testing_difficulty = 2 }
 
 [[signals]]

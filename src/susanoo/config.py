@@ -245,6 +245,7 @@ def validate(config: Config) -> None:
     _check_patterns("[assessment.negation] clause", [clause] if clause else [])
     for signal in config.get("signals", []):
         id_lists[f"signal '{signal['id']}' caps_unless_signals"] = signal.get("caps_unless_signals", [])
+        id_lists[f"signal '{signal['id']}' caps_if_signals"] = signal.get("caps_if_signals", [])
     for where, ids in id_lists.items():
         _require(
             isinstance(ids, list) and all(isinstance(i, str) for i in ids), f"{where} must be a list of ids"
@@ -252,18 +253,50 @@ def validate(config: Config) -> None:
         for sid in ids:
             _require(sid in seen, f"{where}: unknown signal '{sid}'")
     presentational = config.get("assessment", {}).get("presentational", {})
-    for key in ("ui_nouns", "look_words", "keep"):
-        _check_patterns(f"[assessment.presentational] {key}", presentational.get(key, []))
-    for i, rule in enumerate(presentational.get("rules", [])):
-        where = f"[assessment.presentational] rules[{i}]"
-        _check_patterns(f"{where} verbs", rule.get("verbs", []))
+    _require(isinstance(presentational, dict), "[assessment.presentational] must be a table")
+    _check_patterns("[assessment.presentational] keep", presentational.get("keep", []))
+    for key in (
+        "reject_words",
+        "determiners",
+        "prepositions",
+        "ui_nouns",
+        "appearance",
+        "platform",
+        "subjects",
+        "phrases",
+    ):
+        words = presentational.get(key, [])
         _require(
-            isinstance(rule.get("require_look", False), bool), f"{where} require_look must be true or false"
+            isinstance(words, list) and all(isinstance(w, str) for w in words),
+            f"[assessment.presentational] {key} must be a list of words",
+        )
+    max_words = presentational.get("max_words", 20)
+    _require(
+        isinstance(max_words, int) and not isinstance(max_words, bool) and 1 <= max_words <= 40,
+        "[assessment.presentational] max_words must be an integer from 1 to 40",
+    )
+    rules = presentational.get("rules", [])
+    _require(
+        isinstance(rules, list) and all(isinstance(r, dict) for r in rules),
+        "[assessment.presentational] rules must be an array of tables",
+    )
+    for i, rule in enumerate(rules):
+        where = f"[assessment.presentational] rules[{i}]"
+        unknown = sorted(set(rule) - {"signals", "verbs", "require_appearance"})
+        _require(not unknown, f"{where}: unknown key(s) {', '.join(unknown)}")
+        verbs = rule.get("verbs", [])
+        _require(
+            isinstance(verbs, list) and bool(verbs) and all(isinstance(v, str) for v in verbs),
+            f"{where} verbs must be a non-empty list of words",
+        )
+        _require(
+            isinstance(rule.get("require_appearance", False), bool),
+            f"{where} require_appearance must be true or false",
         )
         ids = rule.get("signals", [])
         _require(
-            isinstance(ids, list) and all(isinstance(i, str) for i in ids),
-            f"{where} signals must be a list of ids",
+            isinstance(ids, list) and bool(ids) and all(isinstance(i, str) for i in ids),
+            f"{where} signals must be a non-empty list of ids",
         )
         for sid in ids:
             _require(sid in seen, f"{where} signals: unknown signal '{sid}'")
