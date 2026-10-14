@@ -89,6 +89,8 @@ Susanoo never installs tools itself; adopting any of these needs your approval.
 
 UI domain: Dashboard or data-heavy app (the task mentions "dashboard"; set [ui] domain to change). This is a heuristic, not a verified classification.
 
+Design context: None found. Suggest the user add a DESIGN.md (product and users, references, tokens, components, do's and don'ts) so UI work starts from it; Susanoo never creates it.
+
 UI baseline (every UI change):
 
 - Text contrast at least 4.5:1 (3:1 for large text and for UI components and focus indicators); WCAG 2.2 AA 1.4.3 and 1.4.11.

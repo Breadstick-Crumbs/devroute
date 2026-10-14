@@ -12,7 +12,7 @@ from susanoo.evaluation.suite import SuiteResult
 from susanoo.pipeline import TaskPlan
 from susanoo.research import ResearchReport
 from susanoo.selection import installed_extensions
-from susanoo.ui import UIContext
+from susanoo.ui import UIContext, design_notes
 from susanoo.verification import Evidence
 
 # Phases where the selected code-navigation tool is named in the brief.
@@ -196,6 +196,13 @@ def render_ui(ui: UIContext) -> list[str]:
     domain = f"{ui.title} ({ui.reason})" if ui.title else ui.reason
     guess = " This is a heuristic, not a verified classification." if ui.heuristic else ""
     lines = ["## UI", "", f"UI domain: {domain}.{guess}", ""]
+    found, missing = design_notes()
+    if ui.design:
+        lines += [f"Design context: {'; '.join(ui.design)}. {found}", ""]
+    else:
+        lines += [f"Design context: {missing}", ""]
+    if ui.taste_note:
+        lines += [ui.taste_note, ""]
     for checklist in (ui.baseline, ui.checklist):
         if checklist is None:
             continue
@@ -213,6 +220,9 @@ def render_inventory(inv: Inventory) -> str:
     if inv.ui_domains:
         found = ", ".join(f"{d['id']} (from {d['evidence']})" for d in inv.ui_domains)
         lines += [f"UI domains suggested by dependencies: {found}", ""]
+    if inv.design_files:
+        design = ", ".join(f"{d['path']} ({d['kind']})" for d in inv.design_files)
+        lines += [f"Design context: {design}", ""]
     groups = [
         ("Build systems", "build_system"),
         ("Python environment manager", "environment"),

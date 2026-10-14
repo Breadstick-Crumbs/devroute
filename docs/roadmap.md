@@ -45,7 +45,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | UI work ([ADR 0008](decisions/0008-ui-ux-workflow.md)): UI reference suite with labeled cases and `controls` checks | ✅ (unreleased) |
 | UI work: required visual check and accessibility scans, with project tools (axe, pa11y, Playwright screenshots; Lighthouse CI detected) | ✅ (unreleased) |
 | UI work: UI domain (website, ecommerce, dashboard, mobile, component library) with short checklists in the brief, and the website performance budget | ✅ (unreleased) |
-| UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | 🔜 |
+| UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | ✅ (unreleased) |
 | UI work: visual redesigns and presentational payment-page changes routed without architectural or payment weight, eval-gated | 🔜 |
 | UI work: measure, then reduce, gate friction during bursts of small UI tweaks | 🔬 |
 

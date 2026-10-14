@@ -73,6 +73,8 @@ class Inventory:
     package_manager: str | None = None  # JavaScript package manager (npm, pnpm, yarn, bun)
     # UI domains the project's dependencies and files point to ({"id", "evidence"}), in catalog order.
     ui_domains: list[dict[str, str]] = field(default_factory=list)
+    # Design documents, token files, and Storybook ({"kind", "path"}), root-relative paths only.
+    design_files: list[dict[str, str]] = field(default_factory=list)
 
     def by_kind(self, kind: str) -> list[Finding]:
         return [f for f in self.findings if f.kind == kind]
@@ -99,6 +101,8 @@ class Inventory:
             "languages": self.languages,
             "source_files": self.source_files,
             "package_manager": self.package_manager,
+            "ui_domains": self.ui_domains,
+            "design_files": self.design_files,
             "findings": [f.to_dict() for f in self.findings],
             "warnings": self.warnings,
         }

@@ -25,7 +25,7 @@ from susanoo.discovery.project import (
     scan_project,
 )
 from susanoo.registry import Registry, ToolSpec
-from susanoo.ui import detect_domains
+from susanoo.ui import detect_design_files, detect_domains
 
 VERSION_TIMEOUT_SECONDS = 5
 
@@ -300,6 +300,7 @@ def build_inventory(
         source_files=facts.source_files,
         package_manager=facts.package_manager,
         ui_domains=detect_domains(facts.npm_packages, facts.has_file),
+        design_files=detect_design_files(root, facts.npm_packages),
     )
 
 

@@ -7,16 +7,23 @@ source chose it.
 
 from __future__ import annotations
 
+import fnmatch
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import cache, lru_cache
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from susanoo.config import Config, ConfigError, load_toml_data, read_data_text
 
+if TYPE_CHECKING:
+    from susanoo.discovery.models import Inventory
+
 NO_DOMAIN = "none"  # `[ui] domain = "none"`: generic baseline only, no detection
 CATALOG = "ui_domains.toml"
+CSS_READ_LIMIT = 64 * 1024  # bytes
 
 
 @dataclass(frozen=True)
@@ -39,9 +46,28 @@ class UIDomain(Checklist):
 
 
 @dataclass(frozen=True)
+class DesignSpec:
+    """Where design context lives and what the brief says about it (`[design_context]`)."""
+
+    docs: tuple[str, ...] = ()
+    tokens: tuple[str, ...] = ()
+    css_files: tuple[str, ...] = ()
+    min_custom_properties: int = 5
+    storybook: tuple[str, ...] = ()
+    figma: tuple[str, ...] = ()
+    taste_skill: str = ""
+    taste_note: str = ""
+    found_note: str = ""
+    missing_note: str = ""
+    compact_found_note: str = ""
+    compact_missing_note: str = ""
+
+
+@dataclass(frozen=True)
 class UICatalog:
     baseline: Checklist
     domains: tuple[UIDomain, ...]
+    design: DesignSpec = field(default_factory=DesignSpec)
 
     def get(self, domain_id: str) -> UIDomain | None:
         return next((d for d in self.domains if d.id == domain_id), None)
@@ -59,6 +85,10 @@ class UIContext:
     # config | task | project | none: only task words and project detection are guesses.
     source: str = "none"
     detected: list[dict[str, str]] = field(default_factory=list)
+    # Design context found in the project ("DESIGN.md", "tokens: tailwind.config.ts", ...).
+    design: list[str] = field(default_factory=list)
+    # The taste skill's note, when that skill is installed.
+    taste_note: str = ""
 
     @property
     def heuristic(self) -> bool:
@@ -73,6 +103,8 @@ class UIContext:
             "baseline": list(self.baseline.checklist),
             "checklist": list(self.checklist.checklist) if self.checklist else [],
             "sources": [self.baseline.sources] + ([self.checklist.sources] if self.checklist else []),
+            "design_context": self.design,
+            "taste": bool(self.taste_note),
         }
 
 
@@ -117,7 +149,26 @@ def load_ui_catalog() -> UICatalog:
                 fallback=entry.get("fallback", False) is True,
             )
         )
-    return UICatalog(baseline=baseline, domains=tuple(domains))
+    spec = data.get("design_context", {})
+    min_props = spec.get("min_custom_properties", 5)
+    if not isinstance(min_props, int) or min_props < 1:
+        raise ConfigError(f"{CATALOG} [design_context]: 'min_custom_properties' must be a positive integer")
+    where = "[design_context]"
+    design = DesignSpec(
+        docs=_strings(spec, "docs", where),
+        tokens=_strings(spec, "tokens", where),
+        css_files=_strings(spec, "css_files", where),
+        min_custom_properties=min_props,
+        storybook=_strings(spec, "storybook", where),
+        figma=_strings(spec, "figma", where),
+        taste_skill=str(spec.get("taste_skill", "")),
+        taste_note=str(spec.get("taste_note", "")),
+        found_note=str(spec.get("found_note", "")),
+        missing_note=str(spec.get("missing_note", "")),
+        compact_found_note=str(spec.get("compact_found_note", "")),
+        compact_missing_note=str(spec.get("compact_missing_note", "")),
+    )
+    return UICatalog(baseline=baseline, domains=tuple(domains), design=design)
 
 
 @lru_cache(maxsize=1)
@@ -197,3 +248,116 @@ def choose_domain(task: str, config: Config, detected: list[dict[str, str]]) -> 
             reason = f"detected from {detected[0]['evidence']}; set [ui] domain to change"
             return context(found, reason, "project")
     return context(None, "none detected; set [ui] domain to pick one", "none")
+
+
+# Test, story, and type-declaration siblings of a token file ("theme.test.ts") are not tokens.
+_SECONDARY = re.compile(r"\.(?:test|spec|stories|story|d|min|map|bak|old)\.", re.IGNORECASE)
+_CUSTOM_PROPERTY = re.compile(r"(?:^|[;{])\s*--[\w-]+\s*:", re.MULTILINE)
+_THEME_BLOCK = re.compile(r"(?:^|[;}])\s*@theme\b", re.MULTILINE)
+# Comments are left out before counting, so "/* no @theme here */" does not count.
+_CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+MAX_PER_PATTERN = 3
+
+
+def _matches(root: Path, pattern: str) -> list[str]:
+    """Root-relative paths matching a pattern, case-insensitively on every OS.
+
+    Only the last path segment may contain a wildcard (not recursive). A trailing / matches
+    folders only; other patterns match files only. The real file name is reported.
+    """
+    folders_only = pattern.endswith("/")
+    parent_rel, _, name = pattern.rstrip("/").rpartition("/")
+    parent = root / parent_rel if parent_rel else root
+    try:
+        entries = sorted(os.listdir(parent))
+    except OSError:
+        return []
+    wanted = name.lower()
+    hits = []
+    for entry in entries:
+        if not fnmatch.fnmatchcase(entry.lower(), wanted):
+            continue
+        path = parent / entry
+        if folders_only != path.is_dir() or (not folders_only and not path.is_file()):
+            continue
+        if not folders_only and _SECONDARY.search(entry):
+            continue
+        hits.append(f"{parent_rel}/{entry}" if parent_rel else entry)
+    # The plainest names first ("theme.ts" before "theme.config.ts"), then alphabetical.
+    hits.sort(key=lambda h: (h.count("."), len(h), h))
+    return [h + "/" if folders_only else h for h in hits[:MAX_PER_PATTERN]]
+
+
+def _defines_theme(path: Path, minimum: int) -> bool:
+    try:
+        with path.open("rb") as fh:
+            text = fh.read(CSS_READ_LIMIT).decode("utf-8", errors="replace")
+    except OSError:
+        return False
+    text = _CSS_COMMENT.sub(" ", text)
+    return bool(_THEME_BLOCK.search(text)) or len(_CUSTOM_PROPERTY.findall(text)) >= minimum
+
+
+def detect_design_files(root: Path, npm_packages: set[str]) -> list[dict[str, str]]:
+    """Design documents, token files, and Storybook in the project. Read-only; paths, not contents."""
+    spec = load_ui_catalog().design
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(kind: str, path: str) -> None:
+        # The same file can match two patterns ("DESIGN.md" and "design.md" on Windows).
+        key = os.path.normcase(os.path.realpath(root / path.rstrip("/")))
+        if key not in seen:
+            seen.add(key)
+            found.append({"kind": kind, "path": path})
+
+    for kind, patterns in (("docs", spec.docs), ("tokens", spec.tokens), ("storybook", spec.storybook)):
+        for pattern in patterns:
+            for path in _matches(root, pattern):
+                add(kind, path)
+    for pattern in spec.css_files:
+        for path in _matches(root, pattern):
+            if _defines_theme(root / path, spec.min_custom_properties):
+                add("tokens", path)
+    if not any(f["kind"] == "storybook" for f in found):
+        hit = next((p for p in sorted(npm_packages) if p == "storybook" or p.startswith("@storybook/")), None)
+        if hit:
+            add("storybook", f"package.json ({hit})")
+    return found
+
+
+def describe_design(inventory: Inventory) -> tuple[list[str], str]:
+    """Design context for the brief, and the taste skill's note when that skill is installed.
+
+    Only usable Figma servers and plugins count, once per name.
+    """
+    spec = load_ui_catalog().design
+    labels = {"docs": "", "tokens": "tokens: ", "storybook": "Storybook: "}
+    items = [labels.get(f["kind"], "") + f["path"] for f in inventory.design_files]
+    figma: dict[str, str] = {}
+    for finding in inventory.findings:
+        candidate = finding.kind in ("mcp_server", "plugin") and finding.status.usable
+        if candidate and finding.name not in figma and any(n in finding.name.lower() for n in spec.figma):
+            figma[finding.name] = "MCP server" if finding.kind == "mcp_server" else "plugin"
+    items += [f"Figma: {name} ({kind})" for name, kind in figma.items()]
+    taste = any(
+        f.kind == "skill" and f.name == spec.taste_skill and f.status.usable for f in inventory.findings
+    )
+    return items, (spec.taste_note if taste and spec.taste_skill else "")
+
+
+def design_notes(compact: bool = False) -> tuple[str, str]:
+    """What the brief says when design context was found, and when none was."""
+    spec = load_ui_catalog().design
+    if compact:
+        return spec.compact_found_note, spec.compact_missing_note
+    return spec.found_note, spec.missing_note
+
+
+def compact_design_line(items: list[str]) -> str:
+    """The short brief's design-context line: at most five items, then a count."""
+    found, missing = design_notes(compact=True)
+    if not items:
+        return f"Design context: {missing}"
+    shown = "; ".join(items[:5]) + (f"; and {len(items) - 5} more" if len(items) > 5 else "")
+    return f"Design context: {shown}. {found}"

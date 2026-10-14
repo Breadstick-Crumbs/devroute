@@ -17,7 +17,7 @@ from susanoo.registry import Registry, load_registry
 from susanoo.research import Gap, analyze_gaps
 from susanoo.router import Profile, RouteDecision, load_profiles, recommended_profile, route
 from susanoo.selection import SelectionContext, ToolRecommendation, recommend
-from susanoo.ui import UIContext, choose_domain
+from susanoo.ui import UIContext, choose_domain, describe_design
 from susanoo.verification import (
     VerificationPlan,
     build_plan,
@@ -121,6 +121,8 @@ def plan_task(
     profile = profiles[decision.profile]
 
     ui = choose_domain(task, config, inventory.ui_domains) if "ui" in assessment.signal_ids() else None
+    if ui is not None:
+        ui.design, ui.taste_note = describe_design(inventory)
     selected_steps = select_steps(
         assessment, decision.profile, decision.controls, config, ui_domain=ui.domain if ui else None
     )

@@ -31,6 +31,7 @@ from susanoo.paths import (
 )
 from susanoo.pipeline import TaskPlan, message_floor, plan_task, route_record
 from susanoo.selection import EXTENSION_KINDS, installed_extensions
+from susanoo.ui import compact_design_line
 from susanoo.verification.executor import redact
 
 _CLAUSE_START = re.compile(r"(?:^|[,;:.!?–—]\s*|\s-\s|\s(?:and|then|but|so)\s)", re.IGNORECASE)
@@ -186,6 +187,9 @@ def compact_brief(
         domain = f"{ui.domain} ({ui.reason})" if ui.domain else ui.reason
         focus = ui.baseline.focus + (f"; {ui.checklist.focus}" if ui.checklist else "")
         lines.append(f"UI domain: {domain}. Check: {focus}.")
+        lines.append(compact_design_line(ui.design))
+        if ui.taste_note:
+            lines.append(ui.taste_note)
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
         "If this route understates the task (data loss, security, payments, production, or a wider change "
