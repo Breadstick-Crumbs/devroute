@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from susanoo.analyzer import Assessment
+from susanoo.architecture import architecture_label, architecture_line
 from susanoo.discovery.models import Inventory, Status
 from susanoo.evaluation.report import Report
 from susanoo.evaluation.suite import SuiteResult
@@ -127,6 +128,8 @@ def render_brief(plan: TaskPlan) -> str:
 
     if plan.ui is not None:
         lines += render_ui(plan.ui)
+    if plan.architecture is not None:
+        lines += ["## Architecture", "", architecture_line(plan.architecture), ""]
 
     lines += ["## Proposed steps", ""]
     nav = next(
@@ -223,6 +226,11 @@ def render_inventory(inv: Inventory) -> str:
     if inv.design_files:
         design = ", ".join(f"{d['path']} ({d['kind']})" for d in inv.design_files)
         lines += [f"Design context: {design}", ""]
+    if inv.architecture_files:
+        lines += [
+            f"Architecture context: {', '.join(architecture_label(d) for d in inv.architecture_files)}",
+            "",
+        ]
     groups = [
         ("Build systems", "build_system"),
         ("Python environment manager", "environment"),

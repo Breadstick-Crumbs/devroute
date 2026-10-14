@@ -586,6 +586,15 @@ title = "Type checking"
 capability = "type_checking"
 levels = { standard = "recommended", deep = "required" }
 
+# The project's own boundary rules (ADR 0011). Left out when no boundary tool is configured.
+[[verification]]
+id = "architecture_check"
+title = "Architecture boundary check"
+capability = "architecture_boundaries"
+levels = { standard = "recommended", deep = "recommended" }
+only_with_tool = true
+instructions = "A violation means the change crosses a layer or module boundary the project defined: change the code, or flag the conflict to the user. Never loosen the rules to make the check pass without their agreement."
+
 [[verification]]
 id = "integration_tests"
 title = "Integration tests"

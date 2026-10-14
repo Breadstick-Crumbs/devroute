@@ -13,3 +13,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0007](0007-hands-off-by-default.md) | Hands-off by default: Susanoo asks nothing; Claude Code's permissions decide; the evidence gate stays |
 | [0008](0008-ui-ux-workflow.md) | UI work: require and record visual and accessibility checks, give domain checklists, never judge aesthetics (partly implemented) |
 | [0009](0009-clarifying-questions-under-hands-off.md) | Hands-off covers permission prompts, not clarifying questions: Claude asks about the task when confidence is low |
+| [0011](0011-architecture-context.md) | STANDARD and DEEP briefs name the project's architecture documents, decision records, and boundary rules; its boundary tools become a recommended check |

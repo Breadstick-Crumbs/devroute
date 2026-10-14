@@ -28,9 +28,10 @@ src/susanoo/
   adapters/claude_code Claude Code integration          discovery of skills/agents/MCP, installer
   pipeline.py          Orchestration                    plan_task(task, root, config) -> TaskPlan
   ui.py                UI domains and checklists       choose_domain(task, config, detected) -> UIContext
+  architecture.py      Architecture context             detect_architecture_files(root), describe_architecture(inventory)
   render.py            Execution brief and reports
   cli.py               Command-line interface
-  data/                defaults.toml, profiles/, tools.toml, capabilities.toml, ui_domains.toml, suites/, templates/
+  data/                defaults.toml, profiles/, tools.toml, capabilities.toml, ui_domains.toml, architecture.toml, suites/, templates/
 ```
 
 ### Task Intelligence Engine (`analyzer/`)
