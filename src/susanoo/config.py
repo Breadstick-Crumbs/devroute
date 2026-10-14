@@ -171,9 +171,10 @@ def validate(config: Config) -> None:
         isinstance(config.get("enforcement", {}).get("hands_off", True), bool),
         "[enforcement] hands_off must be true or false",
     )
+    managers = sorted(str(pm.get("id")) for pm in load_toml_data("tools.toml").get("package_managers", []))
     _require(
-        isinstance(config.get("selection", {}).get("default_package_manager", "npm"), str),
-        "[selection] default_package_manager must be a string (npm, pnpm, yarn, or bun)",
+        config.get("selection", {}).get("default_package_manager", "npm") in managers,
+        f"[selection] default_package_manager must be one of: {', '.join(managers)}",
     )
 
     weights = config.get("complexity", {}).get("weights", {})

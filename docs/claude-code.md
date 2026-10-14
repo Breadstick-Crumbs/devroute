@@ -61,7 +61,7 @@ What happens:
 
 ## Enforcement (optional)
 
-`susanoo init --enforce` adds hooks to the skill so that verification evidence (and, with `hands_off = false`, plan approval and irreversible actions) is checked deterministically rather than left to instructions. By default the hooks apply in the Claude Code process where you ran `/susanoo`, so a session resumed later in a new process is not enforced; `--enforce-scope settings` puts them in your local settings instead, which covers resumed sessions. See [enforcement.md](enforcement.md) for this and the other limits. With `hands_off = false`, when you approve a plan Claude records it with `susanoo approve`, which always asks for your confirmation.
+`susanoo init --enforce` adds hooks to the skill so that verification evidence (and, with `hands_off = false`, plan approval and irreversible actions) is checked deterministically rather than left to instructions. By default the hooks apply in the Claude Code process where you ran `/susanoo`, so a session resumed later in a new process is not enforced; `--enforce-scope settings` puts them in your local settings instead, which covers resumed sessions. See [enforcement.md](enforcement.md) for this and the other limits. When you approve a plan (with `hands_off = false`), Claude records it with `susanoo approve`, which always asks for your confirmation.
 
 ## Permissions
 

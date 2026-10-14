@@ -250,3 +250,9 @@ id = "dep-security-bump"
 task = "Bump axios to fix the security advisory"
 expected = "standard"
 min_risk = "moderate"
+
+[[cases]]
+id = "dep-major-jump"
+# Added in review of #41, labeled before tuning: a jump across major versions of a framework.
+task = "Upgrade django from 3 to 5"
+expected = "standard"

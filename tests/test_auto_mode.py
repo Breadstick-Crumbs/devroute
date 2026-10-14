@@ -85,17 +85,23 @@ def _state(autonomous: bool = False) -> RouteState:
 
 EDIT = {"tool_name": "Edit", "tool_input": {"file_path": "app.py"}}
 PUSH = {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}}
+APPROVE = {"tool_name": "Bash", "tool_input": {"command": "susanoo approve"}}
 
 
 def test_hands_off_by_default_in_every_mode(tmp_path: Path):
     # Claude Code's own permission settings decide; only the evidence gate stays.
     config = load_config()
     for mode in ("default", "plan", ""):
-        for event in (EDIT, PUSH, {"tool_name": "Bash", "tool_input": {"command": "susanoo approve"}}):
+        for event in (EDIT, PUSH):
             assert (
                 gates.pre_tool_use({**event, "permission_mode": mode}, _state(), tmp_path, config).permission
                 is None
             )
+        # Approval integrity stays: an approval Claude recorded itself would count later.
+        assert (
+            gates.pre_tool_use({**APPROVE, "permission_mode": mode}, _state(), tmp_path, config).permission
+            == "ask"
+        )
     assert gates.stop({"permission_mode": "default"}, _state(), config, 0, work_started=True).block_stop
 
 
@@ -110,11 +116,15 @@ def test_default_mode_gates_once(tmp_path: Path):
 @pytest.mark.parametrize("mode", ["acceptEdits", "auto", "dontAsk", "bypassPermissions"])
 def test_autonomous_modes_ask_nothing(tmp_path: Path, mode: str):
     config = load_config()
-    for event in (EDIT, PUSH, {"tool_name": "Bash", "tool_input": {"command": "susanoo approve"}}):
+    for event in (EDIT, PUSH):
         assert (
             gates.pre_tool_use({**event, "permission_mode": mode}, _state(), tmp_path, config).permission
             is None
         )
+    assert (
+        gates.pre_tool_use({**APPROVE, "permission_mode": mode}, _state(), tmp_path, config).permission
+        == "ask"
+    )
 
 
 def test_approved_route_keeps_the_irreversible_gate(tmp_path: Path):

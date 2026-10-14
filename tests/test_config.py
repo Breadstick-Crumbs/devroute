@@ -79,6 +79,7 @@ def test_merge_does_not_mutate_inputs():
             "either 'signal' or 'dimension'",
         ),
         ('[enforcement]\nhands_off = "false"\n', "hands_off must be true or false"),
+        ('[selection]\ndefault_package_manager = "pnmp"\n', "default_package_manager must be one of"),
     ],
 )
 def test_invalid_overrides_are_rejected(tmp_path: Path, snippet: str, message: str):

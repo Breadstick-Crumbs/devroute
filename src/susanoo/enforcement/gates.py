@@ -5,7 +5,7 @@ non-negotiable parts of a Susanoo workflow into deterministic checks that Claude
 Code applies through hooks:
 
 - plan-approval gate: no file edits in STANDARD/DEEP until the user approves the plan;
-- approval integrity: ``susanoo approve`` requires an explicit user prompt (not hands-off);
+- approval integrity: ``susanoo approve`` always requires an explicit user prompt;
 - irreversible-action gate: risky shell commands ask for confirmation while the
   ``irreversible-action-gate`` control is active;
 - hands-off (the default): only the evidence gate applies; Claude Code's own permission
@@ -165,6 +165,14 @@ def pre_tool_use(event: dict[str, Any], state: RouteState | None, root: Path, co
         # "completed" without evidence would defeat the evidence gate, so that is refused outright
         # instead of asked about.
         command = str(tool_input.get("command", "")) if tool in ("Bash", "PowerShell") else ""
+        if _APPROVE.search(command):
+            # Nothing needs approval here, so this costs no prompt in practice; but an approval
+            # Claude recorded itself would still count if the user later sets hands_off = false.
+            return Decision(
+                permission="ask",
+                reason="Susanoo plan approval must come from you. Allow this only if you have reviewed "
+                "and accept the plan.",
+            )
         if _ACCEPT_MISSING.search(command):
             return Decision(
                 permission="deny",
