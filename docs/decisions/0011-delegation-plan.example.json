@@ -1,0 +1,337 @@
+{
+  "format": "susanoo.delegation-plan/1",
+  "plan_id": "billing-webhooks",
+  "revision": 1,
+  "created_at": "2026-10-15T09:30:00+00:00",
+  "parent_route_id": "su-20261015-092812-a3f1",
+  "task_sha256": "5f0c2b4e9a1d7c3e8b6f2a0d4c9e1b7a3f5d8c2e6a0b4d9f1c7e3a5b8d2f6c0e",
+  "base": {
+    "branch": "main",
+    "commit": "ca55985566e8ff8e3d9cc70ecfa36dd8dbe4f2b6"
+  },
+  "coordinator_owns": [
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "uv.lock",
+    "web/package.json",
+    "web/package-lock.json"
+  ],
+  "serial_paths": [
+    "migrations/"
+  ],
+  "dependencies": [
+    {
+      "for_units": [
+        "webhooks"
+      ],
+      "manifest": "pyproject.toml",
+      "requirement": "stripe>=10",
+      "added_on_base": true
+    }
+  ],
+  "interfaces": [
+    {
+      "id": "subscription-store",
+      "kind": "python_api",
+      "provider": "migration",
+      "consumers": [
+        "webhooks",
+        "billing-api"
+      ],
+      "location": "src/app/billing/models.py",
+      "contract": "Subscription.status is one of active, past_due, canceled; set_status(subscription_id, status, event_id) is idempotent per event_id.",
+      "frozen": false
+    },
+    {
+      "id": "billing-status-api",
+      "kind": "http_api",
+      "provider": "billing-api",
+      "consumers": [
+        "settings-page"
+      ],
+      "location": "docs/api/billing.openapi.yaml",
+      "contract": "GET /api/billing/status returns {status, renews_at, portal_url}; 401 when signed out.",
+      "frozen": true
+    }
+  ],
+  "units": [
+    {
+      "id": "migration",
+      "title": "Subscription status column and model",
+      "brief": "Add a status column to subscriptions with a reversible migration, and the set_status() method described by the subscription-store interface. Test the migration up and down against the test database.",
+      "feature_area": "data layer",
+      "owns": [
+        "migrations/0042_subscription_status.py",
+        "src/app/billing/models.py",
+        "tests/billing/test_models.py"
+      ],
+      "reads": [
+        "src/app/db/"
+      ],
+      "provides": [
+        "subscription-store"
+      ],
+      "consumes": [],
+      "after": [],
+      "verification": {
+        "required": [
+          {
+            "step": "unit_tests",
+            "reason": "model behavior"
+          },
+          {
+            "step": "migration_check",
+            "reason": "data-safety control: up and down on a disposable database"
+          },
+          {
+            "step": "integration_tests",
+            "reason": "data-safety and external-sandbox controls (parent route)"
+          },
+          {
+            "step": "security_scan",
+            "reason": "security-review control (parent route)"
+          },
+          {
+            "step": "independent_review",
+            "reason": "security-review control (parent route)"
+          }
+        ]
+      },
+      "floor": {
+        "profile": "deep",
+        "controls": [
+          "security-review",
+          "data-safety",
+          "external-sandbox"
+        ]
+      },
+      "size": "small"
+    },
+    {
+      "id": "settings-page",
+      "title": "Billing section on the settings page",
+      "brief": "Add a Billing section to the settings page that shows the subscription status and a link to the customer portal, using GET /api/billing/status as specified in docs/api/billing.openapi.yaml. Mock the endpoint in tests. Cover loading, error, and signed-out states.",
+      "feature_area": "ui",
+      "owns": [
+        "web/src/pages/settings/billing/",
+        "web/tests/e2e/billing-settings.spec.ts"
+      ],
+      "reads": [
+        "docs/api/billing.openapi.yaml",
+        "web/src/components/"
+      ],
+      "provides": [],
+      "consumes": [
+        "billing-status-api"
+      ],
+      "after": [],
+      "verification": {
+        "required": [
+          {
+            "step": "unit_tests",
+            "reason": "component behavior"
+          },
+          {
+            "step": "visual_check",
+            "reason": "UI change (ADR 0008)"
+          },
+          {
+            "step": "accessibility_scan",
+            "reason": "UI change in a DEEP route (ADR 0008)"
+          },
+          {
+            "step": "migration_check",
+            "reason": "data-safety control (parent route); record as skipped if manual: no schema change here"
+          },
+          {
+            "step": "integration_tests",
+            "reason": "data-safety and external-sandbox controls (parent route)"
+          },
+          {
+            "step": "security_scan",
+            "reason": "security-review control (parent route)"
+          },
+          {
+            "step": "independent_review",
+            "reason": "security-review control (parent route)"
+          }
+        ]
+      },
+      "floor": {
+        "profile": "deep",
+        "controls": [
+          "security-review",
+          "data-safety",
+          "external-sandbox"
+        ]
+      },
+      "size": "medium"
+    },
+    {
+      "id": "webhooks",
+      "title": "Stripe webhook handler",
+      "brief": "Handle customer.subscription.updated and customer.subscription.deleted webhooks: verify the signature, call set_status() once per event id, and return 2xx for duplicates. Use Stripe test-mode fixtures only.",
+      "feature_area": "payments",
+      "owns": [
+        "src/app/billing/webhooks/",
+        "tests/billing/test_webhooks.py"
+      ],
+      "reads": [
+        "src/app/billing/models.py",
+        "src/app/settings.py"
+      ],
+      "provides": [],
+      "consumes": [
+        "subscription-store"
+      ],
+      "after": [
+        "migration"
+      ],
+      "verification": {
+        "required": [
+          {
+            "step": "unit_tests",
+            "reason": "event handling and idempotency"
+          },
+          {
+            "step": "integration_tests",
+            "reason": "external-sandbox control: Stripe test mode"
+          },
+          {
+            "step": "migration_check",
+            "reason": "data-safety control (parent route); record as skipped if manual: no schema change here"
+          },
+          {
+            "step": "security_scan",
+            "reason": "security-review control: signature verification"
+          },
+          {
+            "step": "independent_review",
+            "reason": "security-review control (parent route)"
+          }
+        ]
+      },
+      "floor": {
+        "profile": "deep",
+        "controls": [
+          "security-review",
+          "data-safety",
+          "external-sandbox"
+        ]
+      },
+      "size": "medium"
+    },
+    {
+      "id": "billing-api",
+      "title": "Billing status endpoint",
+      "brief": "Implement GET /api/billing/status exactly as docs/api/billing.openapi.yaml specifies, reading through the subscription-store interface. Do not change the spec; report if it is wrong.",
+      "feature_area": "api",
+      "owns": [
+        "src/app/billing/api.py",
+        "tests/billing/test_api.py"
+      ],
+      "reads": [
+        "src/app/billing/models.py",
+        "docs/api/billing.openapi.yaml"
+      ],
+      "provides": [
+        "billing-status-api"
+      ],
+      "consumes": [
+        "subscription-store"
+      ],
+      "after": [
+        "migration"
+      ],
+      "verification": {
+        "required": [
+          {
+            "step": "unit_tests",
+            "reason": "endpoint behavior and auth"
+          },
+          {
+            "step": "integration_tests",
+            "reason": "data-safety and external-sandbox controls (parent route)"
+          },
+          {
+            "step": "migration_check",
+            "reason": "data-safety control (parent route); record as skipped if manual: no schema change here"
+          },
+          {
+            "step": "security_scan",
+            "reason": "security-review control: authorization"
+          },
+          {
+            "step": "independent_review",
+            "reason": "security-review control (parent route)"
+          }
+        ]
+      },
+      "floor": {
+        "profile": "deep",
+        "controls": [
+          "security-review",
+          "data-safety",
+          "external-sandbox"
+        ]
+      },
+      "size": "small"
+    }
+  ],
+  "integration": {
+    "merge_order": [
+      "migration",
+      "settings-page",
+      "webhooks",
+      "billing-api"
+    ],
+    "verification": {
+      "required": [
+        {
+          "step": "unit_tests",
+          "reason": "merged result"
+        },
+        {
+          "step": "integration_tests",
+          "reason": "webhook to status endpoint to settings page, end to end"
+        },
+        {
+          "step": "migration_check",
+          "reason": "data-safety control on the merged schema"
+        },
+        {
+          "step": "security_scan",
+          "reason": "security-review control on the merged diff"
+        },
+        {
+          "step": "independent_review",
+          "reason": "security-review control: review the full merged diff, not only the units"
+        },
+        {
+          "step": "visual_check",
+          "reason": "settings page against the real endpoint"
+        }
+      ]
+    }
+  },
+  "recommendation": {
+    "mode": "parallel",
+    "reasons": [
+      "Two waves; each has two units with disjoint owned paths.",
+      "settings-page builds against a frozen spec, so it runs alongside migration.",
+      "Cost: four unit briefs, four merges, and one integration run. Lockfiles and CHANGELOG.md are left to the coordinator."
+    ]
+  },
+  "schedule": {
+    "waves": [
+      [
+        "migration",
+        "settings-page"
+      ],
+      [
+        "webhooks",
+        "billing-api"
+      ]
+    ]
+  }
+}

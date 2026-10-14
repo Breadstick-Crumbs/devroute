@@ -35,8 +35,8 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 
 | Item | Status |
 |---|---|
-| Task decomposition: split DEEP tasks into independently verifiable work units with explicit interfaces | 🔜 |
-| Delegation plans: which units suit parallel subagents or worktrees, and which share files and must stay serial | 🔜 |
+| Task decomposition: split DEEP tasks into independently verifiable work units with explicit interfaces | 🔜 (design proposed: [ADR 0011](decisions/0011-delegation-plans.md)) |
+| Delegation plans: which units suit parallel subagents or worktrees, and which share files and must stay serial | 🔜 (design proposed: [ADR 0011](decisions/0011-delegation-plans.md)) |
 | Strategy selection within profiles (test-first, spike-then-build, migration-first) based on signals | 🔜 |
 | Stronger verification: coverage-delta checks, changed-files-to-tests mapping, migration dry runs | 🔜 |
 | Optional hooks that block completion claims when required evidence is missing | ✅ (v0.2, `--enforce`) |
