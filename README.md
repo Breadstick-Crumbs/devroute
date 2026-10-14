@@ -87,6 +87,7 @@ The CLI works without Claude Code and without a model:
 susanoo assess "Change password hashing from SHA1 to bcrypt"      # complexity / risk / uncertainty
 susanoo route  "Add pagination to the /users API endpoint"         # full execution brief
 susanoo route  --json "..."                                         # machine-readable
+susanoo raise  deep --reason "also changes the public API"          # make the open route stricter
 susanoo inventory --verify                                          # what this environment can do
 susanoo verify --execute                                            # run the ready checks for the latest route
 susanoo research browser_testing                                    # options for a capability gap
@@ -110,7 +111,7 @@ flowchart LR
     G --> E["Verified evidence<br/>susanoo verify --execute"]
 ```
 
-The flow is deterministic: the same task, configuration, and environment always produce the same brief. The model is not part of the routing. Claude Code does the engineering; Susanoo decides how much process the task deserves and checks the evidence. See [docs/architecture/overview.md](docs/architecture/overview.md).
+The assessment is deterministic: the same task, configuration, and environment always produce the same brief. With automatic routing, Claude also judges what the keywords miss: it routes problem reports and can raise a route, but never below the keyword result for your own message ([ADR 0006](docs/decisions/0006-model-judgment-above-a-keyword-floor.md)). Claude Code does the engineering; Susanoo decides how much process the task deserves and checks the evidence. See [docs/architecture/overview.md](docs/architecture/overview.md).
 
 | Component | What it does |
 |---|---|
@@ -167,13 +168,13 @@ Run `susanoo init --enforce` and start the task with `/susanoo <task>`. For STAN
 With enforcement on, a `Stop` hook blocks the end of the turn while required verification lacks passing evidence. Runnable checks count only when Susanoo executed them itself (`susanoo verify --execute`), and a reported failure never counts as evidence.
 
 **Can Susanoo run automatically, without typing `/susanoo`?**
-Yes. `susanoo init --global` installs a hook that classifies every prompt in every project. Clear coding tasks ("add ...", "can you fix ...") are routed and a short brief is added to Claude's context; questions and ambiguous prompts pass through, and a prompt starting with `?` is never routed. Records go to `~/.susanoo/projects/`, so nothing is added to your repositories.
+Yes. `susanoo init --global` installs a hook that classifies every prompt in every project. Clear coding tasks ("add ...", "can you fix ...") are routed and a short brief is added to Claude's context. Other prompts get a one-line note: if one needs code changes ("the checkout page is broken"), Claude routes it itself, never lower than the keyword result for your message. A prompt starting with `?` is never routed. Records go to `~/.susanoo/projects/`, so nothing is added to your repositories.
 
 **Will it keep asking me questions?**
 No more than you allow. In Claude Code's normal mode, a STANDARD or DEEP task has one check-in: approving the plan (plus a confirmation for irreversible commands such as deploys while that safety control is active). In accept-edits, auto, dontAsk, or bypass mode, Susanoo asks nothing and Claude Code's own permissions decide; saying "work autonomously" or "don't ask" in a task counts as approving its plan. In every mode, Claude still cannot finish without passing checks.
 
 **Does Susanoo use an AI model to make decisions?**
-No. Assessment and routing are deterministic keyword and rule heuristics configured in TOML. The same task and configuration always produce the same result, and every score comes with the reasons that produced it.
+Not for its own scores. Assessment and routing are deterministic keyword and rule heuristics configured in TOML, so the same task and configuration always produce the same result, with the reasons that produced it. Susanoo makes no model calls of its own. With automatic routing, the Claude you are already working with adds its judgment on top: it routes messages the keywords did not recognize as tasks and can raise a route that understates a task. It cannot go below the keyword result for your own message, and only you can pick a lighter workflow. Whether Claude routes a message, and how it describes it, can vary between runs.
 
 **Will it change my Claude Code settings or `CLAUDE.md`?**
 Not unless you ask it to. A project install adds only its own skill, subagents, and `.susanoo/` folder, and never overwrites a file it did not create; `--enforce-scope settings` adds only Susanoo's own hook entries to `.claude/settings.local.json`. The opt-in global install (`susanoo init --global`) writes to `~/.claude`: Susanoo's hook entries in `settings.json` (other hooks and settings are kept) and a marked workflow block in `CLAUDE.md` (your own text is never changed, and a backup is written first). `--uninstall` removes what it added.

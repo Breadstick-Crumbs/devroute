@@ -1,6 +1,6 @@
 # 0002: Deterministic, configurable heuristics for assessment and routing
 
-**Status:** accepted (v0.1)
+**Status:** accepted (v0.1). Extended by [0006](0006-model-judgment-above-a-keyword-floor.md): with automatic routing, Claude's judgment applies above the keyword result.
 
 ## Context
 

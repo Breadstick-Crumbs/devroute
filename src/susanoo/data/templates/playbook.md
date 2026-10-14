@@ -17,7 +17,14 @@ this task" is added to your context automatically. Follow it:
    without passing evidence, and list anything that was not verified.
 7. Record the result: `{command} outcome latest --status completed|partial|abandoned --source agent`.
 
+Susanoo routes clear tasks by keywords; you judge the rest. A message it did not route comes with
+a short Susanoo note. If handling it means changing code, run `{command} route "<the task in one
+line>"` before the first edit and follow that brief; the route is never lower than my message
+alone. If a brief understates a task (data loss, security, payments, production, or a wider
+change), raise it with `{command} raise standard|deep --reason "<the risk>"`. Never pick a lighter
+workflow yourself: only I do that.
+
 Questions and explanations need no brief: just answer. A message that starts with "?" is never
-routed. Follow this workflow only when a Susanoo brief is in your context: without one, Susanoo is
-off for this folder or the message was not a clear task, so work as you normally would.
+routed. Follow this workflow only when a Susanoo brief or note is in your context: without one,
+Susanoo is off for this folder, so work as you normally would.
 <!-- susanoo:end -->

@@ -64,7 +64,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | Prompt caching | 🔬 | Provider prompt caching is a supported API feature. Research whether brief and skill structure can keep cache-friendly prefixes. |
 | KV-cache and representation reuse | 🔬 | Claude Code does **not** expose model-internal KV tensors. Any work here is limited to provider-supported caching, or to experiments with open models outside Claude Code. |
 | Executable simulation environments | 🔬 | Synthetic users, API fault injection, database state fixtures, concurrency and race testing. Verifiable execution comes before predictive "world models". |
-| Learned or model-assisted routing | 🔬 | Only evaluated against the heuristic baseline on recorded outcomes. |
+| Learned or model-assisted routing | ✅ partly | Implemented: automatic routing lets Claude route unrouted messages and raise routes, above a keyword floor ([ADR 0006](decisions/0006-model-judgment-above-a-keyword-floor.md)). A learned router is still research, evaluated against the heuristic baseline on recorded outcomes. |
 | Dynamic model routing and compute budgets | 🔬 | Depends on reliable cost and outcome data from phase 4. |
 | Learning from verified outcomes | 🔬 | Suggestions stay human-reviewed. No silent configuration changes. |
 

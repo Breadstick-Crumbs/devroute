@@ -118,10 +118,11 @@ Automatic routing (`scripts/live_auto_check.py`, projects installed with `--enfo
 
 | Check | Result |
 |---|---|
-| A question ("What does app.py do?") | Pass: not routed |
+| A question ("What does app.py do?") | Pass: not routed. Rerun twice with the unrouted-message note (Unreleased): still not routed |
 | A task in default mode | Routed automatically. In two runs Claude presented the plan and waited for approval instead of editing, so the edit gate was not needed as a backstop (inconclusive as a gate test) |
 | A task in acceptEdits mode | Pass: routed and built with no Susanoo approval or question. Claude Code's own permissions blocked the unapproved `susanoo verify` shell command headlessly, and the evidence gate then held the turn for `max_stop_blocks` |
 | A task in bypassPermissions mode | Pass: routed, built without questions, `susanoo verify --execute` run (a failing test was fixed and rerun), outcome recorded as completed, no stop blocks needed |
+| A problem report the hook does not route ("app.py is missing the hello() function ..."), bypassPermissions, Unreleased | Mixed, 4 of 5 runs pass. In the passing runs Claude followed the note, ran `susanoo route` itself (recorded as routed by Claude; STANDARD before the vague-message fix, FAST after it), and built the change. In one run Claude built the change without routing, so no gates applied |
 
 These are single runs. Results can change with Claude Code versions; rerun the scripts after upgrading.
 
@@ -130,6 +131,7 @@ These are single runs. Results can change with Claude Code versions; rerun the s
 - **Guardrails, not a sandbox.** The gates catch drift; they are not a security boundary against a determined agent. Shell-write detection is pattern-based and cannot recognize every way a command can change files.
 - **Resumed sessions with the skill scope are not enforced.** Skill hooks live in the process that invoked `/susanoo`. If you quit and later continue the session with `claude --resume` or `--continue`, the route is still active in Susanoo's records but no hook runs, so none of the gates apply. Use `--enforce-scope settings` if you resume sessions, or start a new `/susanoo` task. Do not add the hooks to your settings by hand while the skill has them: Claude Code does not deduplicate identical hooks, so every gate would run twice and the `Stop` gate would release early.
 - **Permission modes.** By default the hands-off modes skip Susanoo's approvals and questions on purpose (see [Autonomy](#autonomy)). With `autonomous_modes = []`, the live runs above show the approval `ask` holding in every permission mode, including bypassPermissions and dontAsk; the Claude Code docs do not document this for every mode, so treat it as observed behavior for the tested version.
-- **Automatic routing is keyword-based.** It routes only prompts that start like a task ("add ...", "can you fix ..."); requests phrased differently ("the checkout page is broken") are not routed. Use `/susanoo <task>` for those, or reword.
+- **A lighter workflow is the user's choice.** With automatic routing, `susanoo route --profile fast|standard` itself refuses a profile below Susanoo's recommendation for the task (your message, the open route, and Claude's description together) unless your latest message named it; Claude then asks you. Safety controls stay with any `--profile`. This check runs inside Susanoo, not in a hook, so it does not depend on how the shell command is written.
+- **Automatic routing is keyword-based, with Claude's judgment on top.** The hook routes only prompts that start like a task ("add ...", "can you fix ..."). Other prompts depend on Claude following the note to route them itself, which varies between runs; a code change Claude makes without routing gets no gates. The floor keeps a route Claude makes at or above the keyword result for your message, but nothing makes Claude notice risk the keywords missed.
 - **Live coverage.** The gate logic and the hook bridge are tested end to end with recorded hook payloads. The live checks above cover the main gates in single runs; the shell-write, irreversible-action, and route-integrity gates use the same `ask` path but were not exercised live.
 - **`/clear` and `--fork-session`** give the session a new id, which ends enforcement for routes created before it.

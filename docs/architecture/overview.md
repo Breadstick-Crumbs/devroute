@@ -7,7 +7,7 @@ Susanoo is a deterministic Python library with a CLI and a Claude Code adapter. 
 1. **Right-sized process.** More agents, tools, and steps are not automatically better. Each profile adds process only where the assessment justifies it.
 2. **Complexity and risk are independent.** A small change can be dangerous, and a large one can be safe. Risk is dominated by its worst dimension so it cannot be averaged away.
 3. **Explainability over cleverness.** Every score lists the signals and context that produced it. The heuristics are plain TOML.
-4. **Determinism.** No model is involved in assessment, routing, selection, or verification planning. The same inputs produce the same brief, which makes behavior testable and evaluable.
+4. **Determinism.** Susanoo makes no model calls: assessment, routing, selection, and verification planning are rules. The same inputs produce the same brief, which makes behavior testable and evaluable. With automatic routing, Claude may route a message itself or raise a route, but the result never goes below the keyword floor of the user's message ([ADR 0006](../decisions/0006-model-judgment-above-a-keyword-floor.md)).
 5. **Read-only by default.** Discovery reads files and looks up executables. It runs nothing unless you pass `--verify` (version probes) or `verify --execute` (project checks).
 6. **Evidence, not assertions.** Verification results record who produced them (`executed` by Susanoo or `reported` by an agent or person), plus the command, exit code, and duration.
 7. **Never silently change trusted configuration.** The installer writes only Susanoo-owned files. Learning produces suggestions, not edits.
@@ -16,8 +16,8 @@ Susanoo is a deterministic Python library with a CLI and a Claude Code adapter. 
 
 ```text
 src/susanoo/
-  analyzer/            Task Intelligence Engine        assess(task, config, context) -> Assessment
-  router.py            Adaptive Workflow Router         route(assessment, profiles, config, override) -> RouteDecision
+  analyzer/            Task Intelligence Engine        assess(task, config, context, floor) -> Assessment
+  router.py            Adaptive Workflow Router         route(assessment, profiles, config, override, minimum) -> RouteDecision
   discovery/           Capability Intelligence Engine   build_inventory(root, registry) -> Inventory
   registry.py          Tool & capability catalog        load_registry(root) -> Registry
   selection.py         Tool Selection Engine            recommend(requirements, inventory, registry)
@@ -36,6 +36,7 @@ src/susanoo/
 
 - **Signals** (`[[signals]]` in `defaults.toml`) are regular expressions matched on word boundaries. Each signal raises one or more of ten dimensions to a level from 0 to 3, may mark a *feature area*, and may require or recommend capabilities.
 - **Dimension scoring.** A dimension's level is the maximum contribution. When two or more independent signals push the same dimension to level 2 or higher, it rises one more step. The number of distinct feature areas drives `affected_components` and `parallelization`. Small-change signals cap complexity dimensions unless a scope signal is present.
+- **Floor.** When Claude routes a task in its own words (automatic routing only), the keyword assessment of the user's message (and any open route it replaces, or a route being raised) is passed as a floor: after caps and before project context, every dimension takes the stricter level and the message's signals and areas are added, so the result never goes below the message alone.
 - **Project context** adjusts a few dimensions and always says so in the output: no test framework, not a git repository, a very large repository.
 - **Composites:**
   - *complexity* is a weighted mean of implementation, architecture, components, and testing difficulty;
