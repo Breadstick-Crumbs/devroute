@@ -47,6 +47,7 @@ from susanoo.adapters.claude_code.settings_hooks import (
     plan_settings,
     settings_hooks,
 )
+from susanoo.adapters.claude_code.usage import fill_outcome
 from susanoo.analyzer import Floor, assess
 from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
@@ -234,7 +235,9 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
         # The new route first, so the session never lacks an active route.
         store.append("routes", data)
         if state is not None:
-            close_superseded(store, state, f"superseded by {plan.record_id} (a new route in this session)")
+            close_superseded(
+                store, state, f"superseded by {plan.record_id} (a new route in this session)", ctx.config
+            )
         if hands_off and not skill:
             grant_autonomy(store, plan.record_id, session)
     replaced = (
@@ -831,11 +834,16 @@ def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
         "notes": a.notes or "",
         "unmet_verification": unmet,
     }
+    fill_outcome(data, record, store, ctx.config)
     store.append("outcomes", data)
     if a.json:
         ctx.emit_json(data)
     else:
-        ctx.emit(f"Recorded outcome for {record['id']}: {a.status} (source: {a.source})")
+        captured = data.get("captured", {}).get("fields", [])
+        ctx.emit(
+            f"Recorded outcome for {record['id']}: {a.status} (source: {a.source})"
+            + (f"; captured from the session transcript: {', '.join(captured)}" if captured else "")
+        )
     return EXIT_OK
 
 
@@ -906,7 +914,7 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
             data[key] = state.route[key]
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
-    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}")
+    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", ctx.config)
     # The same task with more process: checks already run still count. A plan approval covers the
     # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
     # adds a check), so only autonomy asked for in the user's own words carries over.
