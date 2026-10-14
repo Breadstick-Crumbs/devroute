@@ -14,7 +14,8 @@
     "pyproject.toml",
     "uv.lock",
     "web/package.json",
-    "web/package-lock.json"
+    "web/package-lock.json",
+    ".susanoo/"
   ],
   "serial_paths": [
     "migrations/"

@@ -83,7 +83,7 @@
     },
     "coordinator_owns": {
       "type": "array",
-      "description": "Paths no unit may change; the coordinator changes them after merging. Defaults come from data (lockfiles, CHANGELOG.md, manifests, version files).",
+      "description": "Paths no unit may change; the coordinator changes them after merging. Defaults come from data (lockfiles, CHANGELOG.md, manifests, version files, .susanoo/).",
       "items": {
         "$ref": "#/$defs/path"
       },
