@@ -13,6 +13,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 EXTENSION_LANGUAGES: dict[str, str] = {
     ".py": "python",
@@ -310,6 +311,24 @@ _URL_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s]*@")
 def _redact_url(url: str) -> str:
     """Strip user info (which may hold tokens or passwords) from any scheme://user@host URL."""
     return _URL_USERINFO.sub(r"\1", url)
+
+
+def remote_host(url: str) -> str | None:
+    """Host of a git remote: ``scheme://[user@]host[:port]/path`` or scp-like ``[user@]host:path``."""
+    if "://" in url:
+        try:
+            return urlsplit(url).hostname
+        except ValueError:
+            return None
+    head, sep, _ = url.partition(":")
+    if not sep or "/" in head:
+        return None  # A local path, not scp-like syntax.
+    return head.rpartition("@")[2].lower() or None
+
+
+def is_github_remote(url: str) -> bool:
+    host = remote_host(url)
+    return host is not None and (host == "github.com" or host.endswith(".github.com"))
 
 
 def scan_project(root: Path) -> ProjectFacts:
