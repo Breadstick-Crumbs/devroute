@@ -568,6 +568,21 @@ def test_raise_with_autonomy_does_not_ask_for_approval_again(tmp_path: Path):
     assert "Do not wait for approval" in out and "instead of guessing" not in out
 
 
+def test_mid_task_autonomy_carries_into_raise_and_new_routes(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "Add pagination to the /users API endpoint")
+    _prompt(root, "also add a page size limit, work autonomously")
+    assert RecordStore(root).read("routes")[-1]["autonomous"] is False  # granted as an approval
+    code, out, err = run(root, "raise", "deep", "--reason", "the change is wider than it looks")
+    assert code == 0, err
+    assert "instead of guessing" not in out
+    # Claude routes the task anew after a message without the request: it still holds.
+    _prompt(root, "also handle the empty page case")
+    code, out, err = run(root, "route", "Handle the empty page case in the /users pagination")
+    assert code == 0, err
+    assert "This replaces route" in out and "instead of guessing" not in out
+
+
 # --- no way around the floors in a session ----------------------------------------------------
 
 

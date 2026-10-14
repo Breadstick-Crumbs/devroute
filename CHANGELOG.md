@@ -5,7 +5,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
-- The automatic-routing brief says "Do not wait for approval" instead of "Work autonomously", and asks Claude to ask you instead of guessing when an ambiguity would change what it builds. When the assessment has low confidence, it tells Claude to ask one to three focused questions about scope before editing. Neither appears when your message asked for autonomy ("work autonomously", "don't ask"). Hands-off still adds no approvals or confirmations (ADR 0009).
+- The automatic-routing brief says "Do not wait for approval" instead of "Work autonomously", and asks Claude to ask you instead of guessing when an ambiguity would change what it builds. When the assessment has low confidence, it tells Claude to ask one to three focused questions about scope before editing. Neither appears once you asked for autonomy in the task ("work autonomously", "don't ask", also mid-task, after a raise, or when Claude routes the task anew). Hands-off still adds no approvals or confirmations (ADR 0009).
+- A bare "don't ask" at the end of a clause ("fix it, don't ask") now counts as asking for autonomy; before, only "don't ask me" did. "Don't ask for the password twice" still does not.
 
 ### Added
 - ADR 0008 (proposed): how Susanoo will handle UI and UX work. It requires and records UI checks (a visual check at common widths, accessibility scans in DEEP), gives short domain checklists, and points Claude at design context; it does not judge aesthetics. Not implemented yet beyond the evaluation pieces below.

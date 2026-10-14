@@ -19,13 +19,13 @@ The automatic-routing brief went further than that. It told Claude to "work auto
 Option 3. Hands-off means no permission or approval prompts from Susanoo. It does not mean "never ask about the task".
 
 - The brief says "Do not wait for approval" instead of "Work autonomously", so it no longer sounds like the user asked for autonomy.
-- It adds: "If the request is ambiguous in a way that changes what you build, ask the user instead of guessing."
-- When the assessment has low confidence (a very short description, or no recognizable signals), the brief lists why and tells Claude to ask one to three focused questions about scope and expected behavior before editing, unless the conversation already answers them.
-- When the user's message asked for autonomy in words ("work autonomously", "don't ask"), neither line appears, also after `susanoo raise`.
-- No gate changes. Nothing waits for an answer, and the evidence gate never blocks ending a turn to ask a question.
+- It adds: "If the request is ambiguous in a way that changes what you build, ask the user instead of guessing." With `hands_off = false`, the plan check-in asks Claude to include such questions with the plan.
+- When the assessment of the route has low confidence (a very short description, or no recognizable signals), the brief lists why and tells Claude to ask one to three focused questions about scope and expected behavior before editing, unless the user's message or the conversation already answers them. When Claude routes a task itself, this is its own description, so a terse description can ask about a detailed message; "unless ... already answers them" covers that.
+- When the user asked for autonomy in words ("work autonomously", "don't ask", "no questions"), neither line appears: in the brief for that message, after a mid-task request (the follow-up note also says not to stop for questions), when Claude routes the task anew, and after `susanoo raise`.
+- No gate changes. Nothing waits for an answer. The evidence gate does not block ending a turn to ask before any file has changed; after edits, a turn ends only once required checks have evidence, or after `max_stop_blocks` blocks, as before.
 
 ## Consequences
 
-- Vague tasks get a question before any edit, which costs one exchange and avoids rework.
+- Vague tasks get a question before any edit, which costs one exchange and avoids rework. A question asked after edits meets the evidence gate like any other turn end.
 - Whether Claude asks still depends on the model; the brief makes it explicit, it does not enforce it.
 - `/susanoo` already told Claude to ask clarifying questions when confidence is low; the automatic brief now matches it.
