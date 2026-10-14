@@ -117,11 +117,15 @@ def drop_toolless_optional(
     """Leave out `only_with_tool` steps whose capability has no usable tool.
 
     Such a step (visual regression needs screenshot baselines) is only worth doing when the project
-    already has the tool; otherwise it would only add a gap. A capability that something else asks
-    for (another step, a signal, the profile) is kept. Returns the steps and the dropped capabilities.
+    already has the tool; otherwise it would only add a gap. A required step, and a capability that
+    something else asks for (another step, a signal, the profile), are kept. Returns the steps and
+    the dropped capabilities.
     """
     optional = {s.rule["capability"] for s in selected if s.rule.get("only_with_tool")}
-    elsewhere = {s.rule["capability"] for s in selected if not s.rule.get("only_with_tool")}
+    # A required step (its profile level, an escalation, or a safety control) is never left out.
+    elsewhere = {
+        s.rule["capability"] for s in selected if not s.rule.get("only_with_tool") or s.level == "required"
+    }
     elsewhere |= {
         r.capability for r in requirements if any(not x.startswith("verification: ") for x in r.reasons)
     }
@@ -147,9 +151,10 @@ def build_plan(
         )
         if rec is not None and rec.selected is not None:
             step.tool = rec.selected.name
-            step.command = rec.selected.command
-            step.mode = "ready" if rec.selected.command else "manual"
-            step.withheld = rec.selected.command_withheld
+            reported_only = rule.get("evidence") == "reported"
+            step.command = None if reported_only else rec.selected.command
+            step.mode = "ready" if step.command else "manual"
+            step.withheld = "" if reported_only else rec.selected.command_withheld
             if rule["capability"] == "code_review":
                 step.notes.append(
                     "Delegate to the susanoo-reviewer subagent (separate context) or a human reviewer."

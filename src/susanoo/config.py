@@ -273,6 +273,10 @@ def validate(config: Config) -> None:
             isinstance(rule.get("only_with_tool", False), bool),
             f"verification '{rid}': 'only_with_tool' must be true or false",
         )
+        _require(
+            rule.get("evidence", "any") in ("any", "reported"),
+            f"verification '{rid}': 'evidence' must be \"reported\" (or left out)",
+        )
         for profile, level in rule.get("levels", {}).items():
             _require(profile in PROFILE_ORDER, f"verification '{rid}': unknown profile '{profile}'")
             _require(level in REQUIREMENT_LEVELS, f"verification '{rid}': unknown level '{level}'")

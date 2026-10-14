@@ -137,7 +137,11 @@ def test_lighthouse_ci_is_detected(tmp_path: Path, home: Path, registry):
 
 @pytest.mark.parametrize(
     ("rule", "message"),
-    [({"instructions": 3}, "instructions"), ({"only_with_tool": "yes"}, "only_with_tool")],
+    [
+        ({"instructions": 3}, "instructions"),
+        ({"only_with_tool": "yes"}, "only_with_tool"),
+        ({"evidence": "executed"}, "evidence"),
+    ],
 )
 def test_verification_rule_keys_are_validated(tmp_path: Path, rule: dict[str, object], message: str):
     body = "\n".join(f"{k} = {v!r}".replace("'", '"') for k, v in rule.items())
@@ -148,3 +152,77 @@ def test_verification_rule_keys_are_validated(tmp_path: Path, rule: dict[str, ob
     )
     with pytest.raises(ConfigError, match=message):
         load_config(tmp_path)
+
+
+def test_a_project_tool_cannot_make_the_visual_check_runnable(
+    tmp_path: Path, home: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv(DESKTOP, raising=False)
+    root = _js_project(tmp_path, {})
+    write(
+        root,
+        ".susanoo/tools.toml",
+        '[[tools]]\nid = "shot"\nname = "Shot"\nkind = "cli"\ncapabilities = ["visual_check"]\n'
+        'npm_packages = ["shot"]\nrun = { visual_check = ["shot", "--all"] }\n',
+    )
+    (root / "node_modules" / "shot").mkdir(parents=True)
+    write(root, "package.json", {"devDependencies": {"shot": "1.0.0"}})
+    step = _step(_plan(root, home=home), "visual_check")
+    assert step.tool == "Shot" and step.mode == "manual" and step.command is None
+
+
+def test_only_with_tool_never_drops_a_required_step(tmp_path: Path, home: Path):
+    root = _js_project(tmp_path, {})
+    write(
+        root,
+        ".susanoo/config.toml",
+        '[[controls]]\nid = "ui-baselines"\nwhen = { dimension = "affected_components", min = 1 }\n'
+        'description = "Screenshots must match."\ncheckpoint = "-"\nverification = ["visual_regression"]\n',
+    )
+    plan = plan_task(UI_TASK, root, load_config(root), home=home)
+    step = _step(plan, "visual_regression")
+    assert step is not None and step.level == "required" and step.mode == "unavailable"
+    assert any(g.capability == "visual_regression" and g.blocking for g in plan.gaps)
+
+
+def test_instructions_name_the_command_that_runs_susanoo(
+    tmp_path: Path, home: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from susanoo.render import render_brief
+
+    monkeypatch.setenv(DESKTOP, "1.0")
+    plan = _plan(_js_project(tmp_path, {}), home=home)
+    assert "`susanoo evidence latest --step visual_check" in render_brief(plan)
+    brief = compact_brief(plan, "su-1", True, "C:/tools/susanoo.exe")
+    assert "`C:/tools/susanoo.exe evidence latest --step visual_check" in brief and "{command}" not in brief
+
+
+def test_deep_accessibility_scan_needs_an_executed_pass(tmp_path: Path, home: Path):
+    root = _js_project(tmp_path, {"@playwright/test": "1.48.0", "@axe-core/playwright": "4.10.0"})
+    plan = _plan(root, "Build a SaaS dashboard with authentication and billing", home=home)
+    step = _step(plan, "accessibility_scan")
+    assert step.level == "required" and step.mode == "ready"
+    # Same argv as the browser tests, so `verify --execute` runs the suite once for both.
+    assert step.command == _step(plan, "browser_tests").command
+    record = route_record(plan, "r1", load_config())
+    reported = {"record_id": "r1", "step": "accessibility_scan", "status": "passed", "source": "reported"}
+    executed = {**reported, "source": "executed"}
+    assert "accessibility_scan" in evidence_status(record, [reported])[0]
+    assert "accessibility_scan" not in evidence_status(record, [executed])[0]
+
+
+def test_required_files_gate_detection(tmp_path: Path, home: Path, registry):
+    from susanoo.discovery import build_inventory
+
+    def found(root: Path) -> set[str]:
+        return {f.name for f in build_inventory(root, registry, home=home).findings}
+
+    pa11y = _js_project(tmp_path / "pa11y", {"pa11y-ci": "3.1.0"})
+    assert "pa11y-ci" not in found(pa11y)  # nothing to scan without its config
+    write(pa11y, ".pa11yci.json", "{}\n")
+    finding = next(f for f in build_inventory(pa11y, registry, home=home).findings if f.name == "pa11y-ci")
+    assert finding.status.usable and any(e.startswith("found: .pa11yci") for e in finding.evidence)
+    # A file named like a snapshot folder is not a baseline.
+    plain = _js_project(tmp_path / "plain", {"@playwright/test": "1.48.0"})
+    write(plain, "tests/notes-snapshots", "x\n")
+    assert "Playwright screenshot baselines" not in found(plain)

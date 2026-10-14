@@ -10,7 +10,8 @@
 #   npm_scripts      script names defined in package.json
 #   make_targets     targets defined in a top-level Makefile
 #   files            project files or globs whose presence indicates configuration
-#   requires_files   the tool is only detected when one of these files or globs exists (AND, not OR)
+#   requires_files   the tool is only detected when one of these files or globs exists (AND, not OR);
+#                    a trailing / matches folders only
 #   pyproject_tools  [tool.<name>] sections in pyproject.toml
 #   mcp_patterns     substrings matched against configured MCP server names
 #   env              environment variables that indicate availability
@@ -574,7 +575,7 @@ context_cost = 1
 setup_cost = 2
 security_exposure = 1
 install = "{js_add_dev} @axe-core/playwright"
-notes = "Runs the Playwright suite, which includes the axe checks."
+notes = "Runs the Playwright suite, which includes the axe checks. It passes whenever the suite passes, so it means something only if tests call AxeBuilder."
 
 [[tools]]
 id = "pa11y-ci"
@@ -584,7 +585,8 @@ capabilities = ["accessibility_testing"]
 task_keywords = ["pa11y", "accessibility", "a11y"]
 languages = ["javascript", "typescript"]
 npm_packages = ["pa11y-ci"]
-files = [".pa11yci", ".pa11yci.json", ".pa11yci.js"]
+# Without a config listing URLs, pa11y-ci has nothing to scan, and a pass would mean nothing.
+requires_files = [".pa11yci", ".pa11yci.json", ".pa11yci.js"]
 run = { accessibility_testing = ["npx", "--no-install", "pa11y-ci"] }
 reliability = 3
 context_cost = 1
@@ -615,8 +617,10 @@ kind = "cli"
 capabilities = ["visual_regression"]
 languages = ["javascript", "typescript"]
 npm_packages = ["@playwright/test"]
-# Only when baselines exist: Susanoo never creates them. Default snapshot folders, one level deep.
-requires_files = ["*-snapshots", "tests/*-snapshots", "test/*-snapshots", "e2e/*-snapshots", "tests/e2e/*-snapshots"]
+# Only when baselines exist: Susanoo never creates them. Default snapshot folders (a trailing / matches
+# folders only), at the top level or one level down; deeper folders and custom snapshotPathTemplate
+# locations are not found.
+requires_files = ["*-snapshots/", "tests/*-snapshots/", "test/*-snapshots/", "e2e/*-snapshots/", "tests/e2e/*-snapshots/"]
 run = { visual_regression = ["npx", "--no-install", "playwright", "test"] }
 reliability = 3
 context_cost = 1

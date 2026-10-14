@@ -41,7 +41,7 @@ keywords = ["browser", "playwright", "puppeteer", "chrome", "visual check"]
 id = "accessibility_testing"
 title = "Accessibility scanning"
 description = "Automated accessibility checks (axe-core, pa11y). They find only part of the problems; keyboard and focus still need a person or the agent."
-keywords = ["accessibility", "a11y", "axe", "pa11y", "wcag"]
+keywords = ["a11y", "axe", "pa11y", "wcag", "accessibility scan", "accessibility test"]
 
 [[capabilities]]
 id = "visual_regression"
