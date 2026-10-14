@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from susanoo import __version__
-from susanoo.analyzer import Assessment, CapabilityRequirement, ProjectContext, assess
+from susanoo.analyzer import Assessment, CapabilityRequirement, Floor, ProjectContext, assess
+from susanoo.analyzer.engine import without_vagueness
 from susanoo.config import Config
 from susanoo.discovery import Inventory, build_inventory, has_test_framework
 from susanoo.registry import Registry, load_registry
 from susanoo.research import Gap, analyze_gaps
-from susanoo.router import Profile, RouteDecision, load_profiles, route
+from susanoo.router import Profile, RouteDecision, load_profiles, recommended_profile, route
 from susanoo.selection import SelectionContext, ToolRecommendation, recommend
 from susanoo.verification import VerificationPlan, build_plan, select_steps, verification_requirements
 
@@ -98,13 +99,16 @@ def plan_task(
     inventory: Inventory | None = None,
     verify_tools: bool = False,
     home: Path | None = None,
+    floor: Floor | None = None,
 ) -> TaskPlan:
     registry = registry or load_registry(root)
     profiles = profiles or load_profiles(root)
     inventory = inventory or build_inventory(root, registry, verify=verify_tools, home=home)
 
-    assessment = assess(task, config, project_context(inventory))
-    decision = route(assessment, profiles, config, override=override)
+    assessment = assess(task, config, project_context(inventory), floor=floor)
+    decision = route(
+        assessment, profiles, config, override=override, minimum=floor.profile if floor else None
+    )
     profile = profiles[decision.profile]
 
     selected_steps = select_steps(assessment, decision.profile, decision.controls, config)
@@ -138,6 +142,47 @@ def plan_task(
     )
 
 
+# A floor reads at most this much of a message, so a pasted log cannot slow every prompt down.
+FLOOR_MAX_CHARS = 20_000
+
+
+def message_floor(message: str, config: Config) -> Floor | None:
+    """The keyword assessment of the user's own message, kept as a minimum (see :class:`Floor`).
+
+    Cheap: no discovery, no project context. A vague message is not treated as risky (no
+    low-confidence penalty). ``None`` for an empty message.
+    """
+    try:
+        a = without_vagueness(assess(message[:FLOOR_MAX_CHARS], config), config)
+    except ValueError:
+        return None
+    return Floor(
+        levels={name: d.level for name, d in a.dimensions.items()},
+        signals=sorted(a.signal_ids()),
+        areas=list(a.areas),
+        profile=recommended_profile(a),
+    )
+
+
+def route_floor(record: dict[str, Any]) -> Floor | None:
+    """A recorded route as a floor, for a route that raises or replaces it.
+
+    Uses the levels before project context; records without them fall back to the stored
+    dimension levels, which can only make the floor stricter.
+    """
+    base = Floor.from_dict(record.get("base"))
+    if base is not None:
+        return base
+    return Floor.from_dict(
+        {
+            "levels": record.get("dimensions"),
+            "signals": record.get("signals"),
+            "areas": record.get("areas"),
+            "profile": record.get("profile"),
+        }
+    )
+
+
 def route_record(
     plan: TaskPlan, record_id: str, config: Config, session_id: str | None = None
 ) -> dict[str, Any]:
@@ -161,6 +206,13 @@ def route_record(
         "signals": sorted(a.signal_ids()),
         "areas": a.areas,
         "controls": [c.id for c in plan.decision.controls],
+        # Levels before project context: the floor for a route that raises or replaces this one.
+        "base": {
+            "levels": a.base_levels,
+            "signals": sorted(a.signal_ids()),
+            "areas": a.areas,
+            "profile": plan.decision.profile,
+        },
         "gaps": [{"capability": g.capability, "blocking": g.blocking} for g in plan.gaps],
         "verification": [{"id": s.id, "level": s.level, "mode": s.mode} for s in plan.verification.steps],
         "checkpoints": plan.decision.checkpoints,

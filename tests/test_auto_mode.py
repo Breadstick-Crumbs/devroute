@@ -180,8 +180,10 @@ def _auto_project(tmp_path: Path, gated: bool = False) -> Path:
 def test_project_auto_routes_tasks_and_ignores_questions(tmp_path: Path):
     root = _auto_project(tmp_path)
     assert "UserPromptSubmit" in owned_events(json.loads((root / ".claude/settings.local.json").read_text()))
-    assert _prompt(root, "What does app.py do?") == ""
+    note = _prompt(root, "What does app.py do?")
+    assert note.startswith("Susanoo did not route this message") and "susanoo route" in note
     assert _prompt(root, "?add a column to the users table") == ""
+    assert RecordStore(root).read("routes") == []
     context = _prompt(root, "Add pagination to the /users API endpoint")
     assert "Susanoo routed this task automatically" in context and "STANDARD" in context
     assert "Work autonomously" in context and "wait for the user's approval" not in context

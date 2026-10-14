@@ -21,6 +21,8 @@ import live_enforcement_check as live
 
 TASK = "Add a function hello() to app.py that returns the string 'hi'"
 QUESTION = "What does app.py do? Answer in one sentence."
+# Phrased as a problem, not a task: the hook does not route it, so Claude has to.
+UNROUTED = "app.py is missing the hello() function that should return the string 'hi'"
 
 
 def project(base: Path, name: str) -> Path:
@@ -107,6 +109,28 @@ def check_autonomous(base: Path, args: argparse.Namespace) -> live.Result:
     return res
 
 
+def check_unrouted(base: Path, args: argparse.Namespace) -> live.Result:
+    res = live.Result("unrouted problem report: Claude routes it itself, then builds", "INCONCLUSIVE")
+    root = project(base, "unrouted")
+    results = live.session([UNROUTED], root, "bypassPermissions", args)
+    if not results or results[-1].get("is_error"):
+        return live.Result(
+            res.check, "ERROR", [str(results[-1].get("result") if results else "no output")[:200]]
+        )
+    routes = live.records(root, "routes")
+    agent = [r for r in routes if r.get("routed_by") == "agent"]
+    changed = (root / "app.py").read_text(encoding="utf-8") != live.APP
+    noted = any((root / ".susanoo" / "records" / "hooks").glob("*.prompt.json"))
+    res.details.append(
+        f"routes: {len(routes)}; routed by Claude: {len(agent)}; app.py changed: {'yes' if changed else 'no'}; "
+        f"prompt hook ran: {'yes' if noted else 'NO'}"
+    )
+    if agent:
+        res.details.append(f"profile {agent[0].get('profile')}, task {str(agent[0].get('task'))[:80]!r}")
+    res.verdict = "PASS" if agent and changed else "FAIL"
+    return res
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Check automatic routing in real headless Claude Code sessions."
@@ -115,13 +139,18 @@ def main() -> int:
     parser.add_argument("--model", default="sonnet")
     parser.add_argument("--budget", type=float, default=0.5)
     parser.add_argument("--timeout", type=int, default=300)
-    parser.add_argument("--only", choices=["question", "default", "autonomous"])
+    parser.add_argument("--only", choices=["question", "default", "autonomous", "unrouted"])
     args = parser.parse_args()
     if not args.claude:
         print("claude CLI not found on PATH", file=sys.stderr)
         return 2
     live.SCOPE = "settings"
-    checks = {"question": check_question, "default": check_default, "autonomous": check_autonomous}
+    checks = {
+        "question": check_question,
+        "default": check_default,
+        "autonomous": check_autonomous,
+        "unrouted": check_unrouted,
+    }
     results: list[live.Result] = []
     print("Susanoo live auto-routing check (results print as each check finishes)")
     print("=" * 32, flush=True)

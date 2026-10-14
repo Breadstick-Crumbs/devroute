@@ -102,6 +102,11 @@ def _build_profile(data: dict[str, Any]) -> Profile:
         raise ConfigError(f"profile '{data.get('name', '?')}' is missing field {exc}") from exc
 
 
+def recommended_profile(assessment: Assessment) -> str:
+    """The profile the routing rules select for ``assessment``, before any override."""
+    return _recommend(assessment)[0]
+
+
 def _recommend(assessment: Assessment) -> tuple[str, list[str]]:
     """Apply the routing rules; the strictest profile any rule selects wins."""
     complexity = assessment.complexity.level
@@ -156,9 +161,22 @@ def route(
     profiles: dict[str, Profile],
     config: Config,
     override: str | None = None,
+    minimum: str | None = None,
 ) -> RouteDecision:
-    """Choose a profile. ``override`` changes the profile but never removes safety controls."""
+    """Choose a profile. ``override`` changes the profile but never removes safety controls.
+
+    ``minimum`` raises the recommendation (the user's message alone routes at least that high);
+    it never lowers it.
+    """
     recommended, reasons = _recommend(assessment)
+    if minimum in PROFILE_ORDER and rank(minimum) > rank(recommended):
+        own = (
+            []
+            if recommended == "fast"
+            else [r if r.startswith("(also: ") else f"(also: {r})" for r in reasons]
+        )
+        reasons = [f"the user's message alone routes {minimum.upper()}", *own]
+        recommended = minimum
     profile = recommended
     notes: list[str] = []
 

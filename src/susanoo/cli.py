@@ -47,13 +47,20 @@ from susanoo.adapters.claude_code.settings_hooks import (
     plan_settings,
     settings_hooks,
 )
-from susanoo.analyzer import assess
+from susanoo.analyzer import Floor, assess
 from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
-from susanoo.enforcement.auto import auto_settings
-from susanoo.enforcement.hooks import HOOK_EVENTS, handle
+from susanoo.enforcement import prompt as prompt_state
+from susanoo.enforcement.auto import (
+    auto_settings,
+    close_superseded,
+    compact_brief,
+    grant_autonomy,
+    unfinished_work,
+)
+from susanoo.enforcement.hooks import HOOK_EVENTS, SessionState, handle
 from susanoo.enforcement.hooks import _project_root as _hook_root
-from susanoo.enforcement.state import evidence_status
+from susanoo.enforcement.state import active_route, evidence_status
 from susanoo.entry import _project_has_own_hooks
 from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
 from susanoo.evaluation.store import RecordError, RecordStore, new_record_id
@@ -68,7 +75,7 @@ from susanoo.paths import (
     records_dir,
     state_dir,
 )
-from susanoo.pipeline import TaskPlan, plan_task, project_context, route_record
+from susanoo.pipeline import TaskPlan, message_floor, plan_task, project_context, route_floor, route_record
 from susanoo.registry import load_registry
 from susanoo.render import (
     render_assessment,
@@ -84,6 +91,7 @@ from susanoo.research import research
 from susanoo.router import load_profiles
 from susanoo.selection import SelectionContext
 from susanoo.verification import EVIDENCE_STATUSES, execute_plan, reported_evidence
+from susanoo.verification.executor import redact
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -159,8 +167,119 @@ def _record_route(ctx: Context, plan: TaskPlan) -> str | None:
     return record_id
 
 
+def _brief_command(root: Path) -> str:
+    return str(auto_settings(root).get("command") or "susanoo")
+
+
+def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any]) -> int:
+    """`susanoo route` in a session with automatic routing.
+
+    Claude routes in its own words (or `/susanoo` routes the user's): the route is never lower
+    than the user's latest message (its keyword floor) or than the open route it replaces, whose
+    levels join the floor; record that route's outcome first to start fresh. A route with
+    unfinished work is never replaced. ``--profile`` changes only the profile, and a profile
+    below Susanoo's recommendation is refused unless the user's message named it.
+    """
+    skill = message.get("skill") is True
+    store = RecordStore(ctx.root)
+    record = not ctx.args.no_record and is_initialized(ctx.root)
+    state = active_route(store, session) if is_initialized(ctx.root) else None
+    if record and state is not None and unfinished_work(ctx.root, state, session):
+        raise CLIError(
+            f"route {state.record_id} has unfinished work: finish it, or record its outcome first "
+            '(`susanoo outcome latest --status partial --source agent --notes "..."`)'
+        )
+    floor = Floor.merge(
+        [prompt_state.floor(message), route_floor(state.route) if state is not None else None], PROFILE_ORDER
+    )
+    plan = plan_task(
+        task,
+        ctx.root,
+        ctx.config,
+        override=ctx.args.profile,
+        verify_tools=ctx.args.verify_tools,
+        floor=floor,
+    )
+    if state is not None and not set(state.controls) <= {c.id for c in plan.decision.controls}:
+        raise CLIError(
+            f"refusing to route: route {state.record_id} has safety controls this route would lose "
+            f"({', '.join(sorted(set(state.controls) - {c.id for c in plan.decision.controls}))}). Record its "
+            "outcome first if that task is finished."
+        )
+    recommended = plan.decision.recommended
+    raw_named = message.get("named")
+    named: list[Any] = raw_named if isinstance(raw_named, list) else []
+    lighter = ctx.args.profile and PROFILE_ORDER.index(ctx.args.profile) < PROFILE_ORDER.index(recommended)
+    if lighter and ctx.args.profile not in named:
+        raise CLIError(
+            f"only the user can choose a lighter workflow than {recommended.upper()}, and their message did "
+            f"not name {ctx.args.profile.upper()}. Route without --profile, or ask the user; if they want "
+            f'it, their message can say "use the {ctx.args.profile} workflow".'
+        )
+    hands_off = message.get("hands_off") is True
+    if record:
+        plan.record_id = new_record_id()
+        data = route_record(plan, plan.record_id, ctx.config, session)
+        extra: dict[str, Any] = {"floor": message.get("floor")}
+        if not skill:
+            if data.get("task"):
+                data["task"] = redact(str(data["task"]))[:1000]
+            # A route Claude makes keeps the replaced route's evidence rules (`auto` relaxes them).
+            auto = state is None or state.route.get("auto") is True
+            extra.update({"routed_by": "agent", "autonomous": hands_off, **({"auto": True} if auto else {})})
+        if state is not None:
+            extra["replaced"] = state.record_id
+        data.update(extra)
+        # The new route first, so the session never lacks an active route.
+        store.append("routes", data)
+        if state is not None:
+            close_superseded(store, state, f"superseded by {plan.record_id} (a new route in this session)")
+        if hands_off and not skill:
+            grant_autonomy(store, plan.record_id, session)
+    replaced = (
+        f"This replaces route {state.record_id} ({state.profile.upper()}), and its levels are kept as a minimum. "
+        "If that task was finished, record its outcome before routing a new one."
+        if state is not None
+        else ""
+    )
+    if ctx.args.json:
+        ctx.emit_json(plan.to_dict(include_inventory=ctx.args.include_inventory))
+    elif skill:
+        ctx.emit(render_brief(plan) + (f"\n{replaced}" if replaced else ""))
+    else:
+        enforcement = ctx.config.get("enforcement", {})
+        modes = set(enforcement.get("autonomous_modes", []))
+        live_hands_off = (
+            hands_off or bool(enforcement.get("hands_off")) or message.get("permission_mode") in modes
+        )
+        brief = compact_brief(
+            plan,
+            plan.record_id or "not recorded",
+            live_hands_off,
+            _brief_command(ctx.root),
+            lead="from your description, never lower than the user's message",
+        )
+        ctx.emit(brief + (f"\n{replaced}" if replaced else ""))
+    return EXIT_OK
+
+
+def _refuse_extra_config(ctx: Context) -> None:
+    """In a session with automatic routing, `--config` could switch off controls or signals."""
+    if getattr(ctx.args, "config", None):
+        raise CLIError(
+            "--config is not accepted in a Claude Code session with automatic routing: it could weaken "
+            "the route's safety controls. Ask the user to change Susanoo's configuration if needed."
+        )
+
+
 def cmd_route(ctx: Context, stdin: TextIO) -> int:
     task = _task_text(ctx.args, stdin)
+    session = ctx.args.session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if session and auto_settings(ctx.root):
+        # Every route in such a session goes through the floors, even when the prompt record is
+        # missing or unreadable (then only the open route is a floor and no profile is named).
+        _refuse_extra_config(ctx)
+        return _session_route(ctx, task, session, prompt_state.load(ctx.root, session) or {})
     plan = plan_task(
         task, ctx.root, ctx.config, override=ctx.args.profile, verify_tools=ctx.args.verify_tools
     )
@@ -737,6 +856,89 @@ def cmd_approve(ctx: Context, stdin: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_raise(ctx: Context, stdin: TextIO) -> int:
+    """Raise the open route of this session to a stricter profile. Never lowers anything.
+
+    The open route itself is the floor, and risk named in ``--reason`` ("deletes production
+    data") is added to it, so its safety controls apply. The raised route replaces the open one
+    and keeps its recorded evidence. The user's plan approval is kept too, unless the reason
+    adds a safety control: then the user approves the plan again.
+    """
+    store = _require_initialized(ctx)
+    session = ctx.args.session or _session()
+    if session and auto_settings(ctx.root):
+        _refuse_extra_config(ctx)
+    state = active_route(store, session) if session else None
+    if not session or state is None:
+        raise CLIError("no open route in this Claude Code session to raise (route the task first)")
+    reason = redact(" ".join(ctx.args.reason.split()))[:500]
+    if not reason:
+        raise CLIError("give the reason for raising the route with --reason")
+    old = state.record_id
+    stored = state.route.get("task")
+    task = stored if isinstance(stored, str) and stored.strip() else reason
+    # The target is a minimum, not an override: a reason that routes higher wins.
+    floor = Floor.merge(
+        [route_floor(state.route), message_floor(reason, ctx.config), Floor({}, [], [], ctx.args.profile)],
+        PROFILE_ORDER,
+    )
+    plan = plan_task(task, ctx.root, ctx.config, floor=floor)
+    controls = {c.id for c in plan.decision.controls}
+    if not set(state.controls) <= controls:  # cannot happen: the floor keeps every level
+        raise CLIError(f"refusing to raise route {old}: safety controls would be lost")
+    added = sorted(controls - set(state.controls))
+    target = plan.decision.profile
+    if PROFILE_ORDER.index(target) <= PROFILE_ORDER.index(state.profile) and not added:
+        ctx.emit(
+            f"Route {old} already uses the {state.profile.upper()} workflow and the reason adds no safety "
+            "control; routes are never lowered."
+        )
+        return EXIT_OK
+    plan.record_id = new_record_id()
+    data = route_record(plan, plan.record_id, ctx.config, session)
+    data["task"] = stored if isinstance(stored, str) else None
+    for key in ("auto", "routed_by", "floor", "autonomous"):
+        if key in state.route:
+            data[key] = state.route[key]
+    data.update({"raised_from": old, "raise_reason": reason})
+    store.append("routes", data)  # the new route first, so the session never lacks an active route
+    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}")
+    # The same task with more process: checks already run still count. A plan approval covers the
+    # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
+    # adds a check), so only autonomy asked for in the user's own words carries over.
+    for item in store.read("evidence"):
+        if item.get("record_id") == old:
+            store.append("evidence", {**item, "record_id": plan.record_id, "carried_from": old})
+    for item in store.read("approvals"):
+        if item.get("record_id") == old and item.get("checkpoint") == "autonomy":
+            store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
+    hook_state = SessionState(ctx.root, session)
+    if hook_state.data.get("record_id") == old:
+        hook_state.data["record_id"] = plan.record_id
+        hook_state.save()
+    if ctx.args.json:
+        ctx.emit_json({"raised_from": old, "added_controls": added, **plan.to_dict()})
+        return EXIT_OK
+    header = f"Raised route {old} from {state.profile.upper()} to {target.upper()}: {reason}"
+    approved = any(a.get("record_id") == plan.record_id for a in store.read("approvals"))
+    if added:
+        header += f"\nNew safety controls: {', '.join(added)}."
+    enforcement = ctx.config.get("enforcement", {})
+    configured_hands_off = bool(enforcement.get("hands_off"))
+    if not approved and not configured_hands_off and target in set(enforcement.get("approval_profiles", [])):
+        header += " The plan needs the user's approval again."
+    if state.route.get("auto") is True:
+        modes = set(enforcement.get("autonomous_modes", []))
+        message = prompt_state.load(ctx.root, session) or {}
+        hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
+        ctx.emit(
+            header + "\n" + compact_brief(plan, plan.record_id, hands_off, _brief_command(ctx.root), "again")
+        )
+    else:
+        ctx.emit(header + "\n\n" + render_brief(plan))
+    return EXIT_OK
+
+
 def cmd_hook(ctx: Context, stdin: TextIO) -> int:
     raw = stdin.read()
     try:
@@ -827,7 +1029,13 @@ def build_parser() -> argparse.ArgumentParser:
     task_args(p)
     p.set_defaults(func=cmd_assess)
 
-    p = sub.add_parser("route", parents=[common], help="recommend a workflow and print the execution brief")
+    # Options are spelled out (no `--prof fast`), so what ran is what the records and logs show.
+    p = sub.add_parser(
+        "route",
+        parents=[common],
+        allow_abbrev=False,
+        help="recommend a workflow and print the execution brief",
+    )
     task_args(p)
     p.add_argument(
         "--profile",
@@ -841,6 +1049,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--session", help="Claude Code session id (default: $CLAUDE_CODE_SESSION_ID)")
     p.set_defaults(func=cmd_route)
+
+    p = sub.add_parser(
+        "raise",
+        parents=[common],
+        allow_abbrev=False,
+        help="raise the open route of this session to a stricter workflow (never lowers)",
+    )
+    p.add_argument("profile", choices=PROFILE_ORDER[1:], help="the stricter workflow")
+    p.add_argument("--reason", required=True, help="why the route understates the task (recorded)")
+    p.add_argument("--session", help="Claude Code session id (default: $CLAUDE_CODE_SESSION_ID)")
+    p.set_defaults(func=cmd_raise)
 
     p = sub.add_parser("init", parents=[common], help="install the /susanoo skill and project files safely")
     p.add_argument("--dry-run", action="store_true", help="show what would change without writing")
