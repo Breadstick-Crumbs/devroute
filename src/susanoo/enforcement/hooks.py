@@ -7,6 +7,7 @@ Failures never block work: an internal error exits 1 (Claude Code shows a non-bl
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 from datetime import UTC, datetime
@@ -73,6 +74,18 @@ def _log(store: RecordStore, state: RouteState | None, event_name: str, decision
         )
 
 
+def _exempt(file_path: str, root: Path, config: dict[str, Any]) -> bool:
+    """Whether ``file_path`` matches `[auto] route_before_edit_exempt` (agent memory and settings)."""
+    patterns = config.get("auto", {}).get("route_before_edit_exempt", [])
+    path = Path(os.path.expanduser(file_path))
+    try:
+        absolute = os.path.realpath(path if path.is_absolute() else root / path)
+        relative = Path(os.path.relpath(absolute, os.path.realpath(root))).as_posix()
+    except (OSError, ValueError):
+        return False
+    return any(fnmatch.fnmatch(relative, str(pattern)) for pattern in patterns)
+
+
 def _route_first(
     event: dict[str, Any], root: Path, config: dict[str, Any], store: RecordStore, session: str
 ) -> gates.Decision | None:
@@ -82,21 +95,24 @@ def _route_first(
     edit that is not part of a coding task is only delayed. It never asks the user anything, so it
     applies in every permission mode. Edits made through shell commands are not covered.
     """
-    if not session or config.get("auto", {}).get("route_before_edit", True) is not True:
+    if not session or not config.get("auto", {}).get("route_before_edit", True):
         return None
     if str(event.get("tool_name", "")) not in set(config.get("enforcement", {}).get("edit_tools", [])):
         return None
     raw_input = event.get("tool_input")
     tool_input: dict[str, Any] = raw_input if isinstance(raw_input, dict) else {}
     file_path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
-    if not file_path or not gates._inside(file_path, root):
+    if not file_path or not gates._inside(file_path, root) or _exempt(file_path, root, config):
         return None
     message = prompt_state.load(root, session)
     # Only messages that got the note ("question" and "ambiguous" in the classifier); a task was
     # routed by the hook, and "?" or a slash command asked for no routing.
-    if not message or message.get("kind") not in ("question", "ambiguous") or message.get("nudged"):
+    if not message or message.get("kind") not in ("question", "ambiguous"):
         return None
     at = str(message.get("at", ""))
+    marker = str(message.get("id") or at)
+    if not at or prompt_state.nudged(root, session, marker):
+        return None
     if any(
         r.get("session_id") == session and str(r.get("created_at", "")) >= at for r in store.read("routes")
     ):
@@ -106,7 +122,8 @@ def _route_first(
     settings = auto_settings(root)
     if not settings:
         return None  # automatic routing was turned off after the message
-    prompt_state.save(root, session, {**message, "nudged": True})
+    if not prompt_state.mark_nudged(root, session, marker):
+        return None  # without the mark a retry would be denied again: fail open instead
     command = str(settings.get("command") or "susanoo")
     return gates.Decision(
         permission="deny",

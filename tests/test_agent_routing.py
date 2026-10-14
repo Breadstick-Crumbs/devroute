@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 
 import pytest
 
 from susanoo.analyzer import Floor, assess
-from susanoo.config import PROFILE_ORDER, Config
+from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.enforcement import handle
 from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.hooks import SessionState
 from susanoo.evaluation.store import RecordStore
 from susanoo.evaluation.suite import load_suite
-from susanoo.paths import install_manifest_path
+from susanoo.paths import install_manifest_path, records_dir
 from susanoo.pipeline import message_floor
 from susanoo.router import Profile, route
 from tests.conftest import write
@@ -682,3 +684,92 @@ def test_no_nudge_without_automatic_routing(tmp_path: Path):
     assert run(root, "init")[0] == 0
     _prompt(root, "The footer is misaligned")
     assert _edit(root, root / "app.py") == {}
+
+
+def test_a_failed_nudge_mark_fails_open_and_keeps_the_floor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _project(tmp_path)
+    _prompt(root, "The payments refund flow drops production customer data, it is broken")
+    before = prompt_state.load(root, SESSION)
+    real_replace = os.replace
+
+    def failing_replace(src: object, dst: object) -> None:
+        if str(dst).endswith(".nudged.json"):
+            raise OSError(28, "No space left on device")
+        real_replace(src, dst)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    for _ in range(3):  # never a loop of denials
+        assert _edit(root, root / "app.py") == {}
+    assert prompt_state.load(root, SESSION) == before  # the floor record is untouched
+    assert not list((records_dir(root) / "hooks").glob("*.tmp"))
+
+
+def test_the_nudge_never_rewrites_the_prompt_record(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    path = prompt_state.session_file(root, SESSION, ".prompt")
+    before = path.read_bytes()
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.md", "docs/CLAUDE.md", "AGENTS.md", ".claude/settings.local.json"])
+def test_agent_memory_and_settings_are_exempt(tmp_path: Path, name: str):
+    root = _project(tmp_path)
+    _prompt(root, "remember that we use pytest here")
+    assert _edit(root, name) == {}
+    assert _edit(root, root / name) == {}
+
+
+def test_a_route_from_before_the_message_does_not_count(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned on mobile")
+    assert run(root, "route", "Fix the footer alignment on mobile")[0] == 0
+    assert run(root, "outcome", "latest", "--status", "partial", "--source", "agent")[0] == 0
+    time.sleep(1.1)  # records are stamped to the second
+    _prompt(root, "The header is misaligned too")
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+
+
+def test_a_route_from_another_session_does_not_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned on mobile")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "another-session")
+    assert run(root, "route", "--session", "another-session", "Fix the footer")[0] == 0
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+
+
+def test_no_nudge_once_automatic_routing_is_turned_off(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    manifest = install_manifest_path(root)
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest.write_text(json.dumps({**data, "auto": False}), encoding="utf-8")
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_notebooks_are_covered_and_a_missing_path_is_not(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The analysis notebook gives wrong totals")
+    notebook = {
+        "session_id": SESSION,
+        "cwd": str(root),
+        "tool_name": "NotebookEdit",
+        "tool_input": {"notebook_path": str(root / "analysis.ipynb")},
+        "permission_mode": "default",
+    }
+    no_path = {**notebook, "tool_name": "Edit", "tool_input": {}}
+    assert handle("pre-tool-use", no_path)[1] == ""
+    out = json.loads(handle("pre-tool-use", notebook)[1])["hookSpecificOutput"]
+    assert out["permissionDecision"] == "deny"
+
+
+def test_route_before_edit_settings_are_validated(tmp_path: Path):
+    root = _project(tmp_path)
+    config = root / ".susanoo" / "config.toml"
+    original = config.read_text(encoding="utf-8")
+    for bad in ('route_before_edit = "true"', 'route_before_edit_exempt = "CLAUDE.md"'):
+        config.write_text(original + f"\n[auto]\n{bad}\n", encoding="utf-8")
+        with pytest.raises(ConfigError):
+            load_config(root)

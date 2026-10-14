@@ -141,6 +141,12 @@ follow_up_minutes = 20
 # retry goes through. It never asks the user, so it applies in every permission mode. Edits made
 # through shell commands are not covered.
 route_before_edit = true
+# Files the route-before-edit gate leaves alone (paths relative to the project, shell-style
+# patterns): agent memory and Claude Code settings are not coding tasks.
+route_before_edit_exempt = [
+    "CLAUDE.md", "*/CLAUDE.md", "CLAUDE.local.md", "*/CLAUDE.local.md", "AGENTS.md", "*/AGENTS.md",
+    ".claude/*",
+]
 
 [enforcement]
 # Used only when the /susanoo skill was installed with `susanoo init --enforce`.
