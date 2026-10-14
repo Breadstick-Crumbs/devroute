@@ -17,7 +17,13 @@ from susanoo.discovery.executables import (
     resolve_executable,
 )
 from susanoo.discovery.models import Finding, Inventory, Status
-from susanoo.discovery.project import BUILD_FILES, ProjectFacts, normalize_package, scan_project
+from susanoo.discovery.project import (
+    BUILD_FILES,
+    ProjectFacts,
+    is_github_remote,
+    normalize_package,
+    scan_project,
+)
 from susanoo.registry import Registry, ToolSpec
 
 VERSION_TIMEOUT_SECONDS = 5
@@ -244,7 +250,7 @@ def build_inventory(
     if facts.is_git_repo:
         evidence = ["repository detected (.git)"]
         capabilities = ["version_control"]
-        if any("github.com" in remote for remote in facts.git_remotes):
+        if any(is_github_remote(remote) for remote in facts.git_remotes):
             evidence.append("GitHub remote configured")
         findings.append(
             Finding(
