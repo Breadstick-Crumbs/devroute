@@ -1,6 +1,6 @@
 # 0013: Leases, interface-change notices, and an evidence-gated landing queue
 
-**Status:** proposed (draft for review). Nothing here is implemented; every command and file marked *proposed* is new work. Builds on [0012](0012-delegation-plans.md). Phases 1 to 3 are built only if the phase 0 measurement shows they are needed. Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md). If accepted, it amends 0007's list of prompts that stay in every mode (see "Applying a landing"). Example: [`0013-coordination-state.example.json`](0013-coordination-state.example.json).
+**Status:** proposed (draft for review). Nothing here is implemented; every command and file marked *proposed* is new work. Builds on [0012](0012-delegation-plans.md). The landing queue (phase 3) is built first and doubles as the measurement; leases and notices (phases 1 and 2) are built only if its data meet the rule in phase 0. Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md). If accepted, it amends 0007's list of prompts that stay in every mode (see "Applying a landing"). Example: [`0013-coordination-state.example.json`](0013-coordination-state.example.json).
 
 ## Context
 
@@ -19,12 +19,22 @@ How often semantic breaks happen in practice is not known. Building all of this 
 1. **Rely on CI and the remote merge queue.** No new work. Breaks are found after push, are attributed to a pull request rather than to an agent, and ad-hoc local sessions get nothing.
 2. **Leases only.** Agents see who is working on what, and avoid it. Cheap, but avoidance cannot prove the combined tree works.
 3. **A landing queue only.** It checks every combination and catches breaks, at the cost of a check run per branch.
-4. **Measure first, then build leases, notices, and the queue as a fixed rule decides.** Chosen.
+4. **Build the landing queue first, use its records as the measurement, and build leases and notices only as a fixed rule decides.** Chosen.
 5. **A standalone, harness-agnostic tool now.** Premature before anything shows it is needed.
 
 ## Decision
 
 Option 4.
+
+### Build order (decided on 2026-10-15)
+
+An earlier draft measured first with a separate tool and built the queue only if the data called for it. Measuring needs most of the queue anyway (temporary worktrees, combined runs, tip-bound evidence), so the user chose this order, dogfooding each step on Susanoo's own parallel sessions before deciding anything about a separate product:
+
+1. **`susanoo land`** (phase 3 below). It is built first, in its own session, under the next ADR number (0014). Its `landings` records, together with `land --measure`, are the phase 0 data. Where the two designs differ, the later ADR says which part of this one it replaces.
+2. **A board**: one view of what each parallel session and branch is doing and where each stands in the queue. It is not designed here.
+3. **Leases and intents.** An intent is a session declaring what it plans to change before it edits. It extends the declared-claim path of phase 1 and is not designed here yet.
+
+The kill criterion in phase 0 now gates leases and notices (phases 1 and 2), not the queue.
 
 These build on the plan format of ADR 0012 but also work without a plan, for ad-hoc parallel sessions. Formats are sketched in [`0013-coordination-state.example.json`](0013-coordination-state.example.json).
 
@@ -39,7 +49,7 @@ These build on the plan format of ADR 0012 but also work without a plan, for ad-
 
 ### Phase 0: measure first (the kill criterion)
 
-Before phases 1 to 3 are built, Susanoo measures how often they would have mattered, on the user's real parallel work. Phase 0 needs much of phase 3's machinery: temporary worktrees, combined runs, and the evidence `head` field proposed in ADR 0012. What the kill criterion can save is leases, notices, blast radius, and a queue that applies anything. It cannot make phase 0 itself cheap.
+Before phases 1 and 2 are built, Susanoo measures how often they would have mattered, on the user's real parallel work. The measurement runs on the landing queue's machinery: temporary worktrees, combined runs, and the evidence `head` field proposed in ADR 0012. What the kill criterion can save is leases, notices, and blast radius.
 
 - *Proposed:* `susanoo land --measure <branch>...`.
   - It moves no branch.
@@ -56,9 +66,9 @@ Before phases 1 to 3 are built, Susanoo measures how often they would have matte
 
   Anything else is recorded, but not as a break. A failure can come from drift in the base, a flaky check, or a missing environment rather than from agents interacting.
 - **Decision rule.** The rule below is fixed in this ADR before any data exists. Each `landings` record stores the rule's version, so a later change of configuration cannot reinterpret the data. The rule is evaluated after at least 30 distinct measurements from at least 5 episodes:
-  - **No semantic breaks:** build no notices and no blast radius. The queue stays a dry-run report (`land --measure`).
-  - **One or more semantic breaks:** build the landing queue, phase 3.
-  - **Two or more semantic breaks:** also build leases and notices, phases 1 and 2. Notices need leases to find the affected sessions.
+  - **No semantic breaks:** build no notices and no blast radius. `land` stays as built.
+  - **One semantic break:** no change. One break is not enough to justify notices, but it shows the queue is worth keeping.
+  - **Two or more semantic breaks:** build leases and notices, phases 1 and 2. Notices need leases to find the affected sessions.
   - **Three or more textual conflicts between agent branches, outside coordinator-owned files:** build leases (phase 1), even with no semantic breaks.
 
   These are counts, not rates, and they form a stopping rule, not a validated threshold.
@@ -166,7 +176,7 @@ Leases, notices, and the queue do not depend on Claude Code. They could become a
 
 - Leases, notices, and the queue add Susanoo state inside `.git` (the common directory). It is local, never pushed, and removed with the clone. `susanoo doctor` should show it and `susanoo lease prune` should clean it.
 - The landing queue runs the project's checks at least once per branch on the combined tree, plus setup in a fresh worktree, plus one rerun and one solo run per failure. That is the real cost, and the reason for the cache and for measuring first.
-- If phase 0 finds no semantic breaks and fewer than three textual conflicts between agent branches, phases 1 to 3 shrink to a dry-run report. The kill criterion is part of this decision, not an afterthought.
+- If the measurement finds no semantic breaks and fewer than three textual conflicts between agent branches, phases 1 and 2 are never built, and `land` is all there is. The kill criterion is part of this decision, not an afterthought.
 
 ## Open questions
 

@@ -109,7 +109,7 @@ Output is Markdown, or JSON with `--json`. Text from unit records (notes, output
 
 ### Executors
 
-An executor turns plan units into running agents and tells `delegate status` where each workspace is. Executors are optional. The plan and the verdict work without any, for example with people working in branches.
+An executor turns plan units into running agents and tells `delegate status` where each workspace is. Executors are optional. The plan and the verdict work without any, for example with people working in branches. Claude Code is the primary executor: it runs natively on Windows, macOS, and Linux and needs nothing beyond what Susanoo already uses. Scion is described as an optional executor at most, for the reasons recorded under "Setup on Windows, tried" below.
 
 *Proposed:* `susanoo delegate dispatch <plan_id> --executor <name> [--wave <n>]` renders one brief per unit in the wave, records the wave's base commit, and prints what it would run. With `--execute` it runs those commands once and exits. There is no loop, no polling, and no merge. Commands run as argument lists, never through a shell. Unit ids match `^[a-z0-9][a-z0-9-]{0,39}$`. Agent and branch names are `<plan_id, first 15 characters>-<unit_id, first 24 characters>`, at most 40 characters, which never start with `-`.
 
@@ -121,7 +121,7 @@ An executor turns plan units into running agents and tells `delegate status` whe
 
 #### (b) Scion
 
-Facts below are from Scion's docs and source at commit `7e228a6` (2026-10-14), read without running Scion. Scion is pre-1.0 and changes weekly, so they are rechecked before any of this is built.
+Facts below are from Scion's docs and source at commit `7e228a6` (2026-10-14), plus a setup attempt on the user's Windows machine on 2026-10-15 that stopped before any agent ran. Scion is pre-1.0 and changes weekly, so they are rechecked before any of this is built.
 
 - **Prerequisites.** Every Scion agent command goes through a hub, so the user runs `scion server start` (a local hub on `127.0.0.1:8080`) and `scion init` in the repository. `scion init` git-ignores `.scion/agents/`. Scion needs git 2.48 or later. After its first agent worktree, the repository's git config requires git 2.48 or later for every tool that touches the repository.
 - **Template.** A Scion template is a directory containing:
@@ -136,7 +136,7 @@ Facts below are from Scion's docs and source at commit `7e228a6` (2026-10-14), r
 - **Project mode only.** In global mode, a unit's records would go to `~/.susanoo/projects/` inside the container and be lost when it stops. Scion units need the repository's `.susanoo/` committed, so records land in the workspace's `.susanoo/records/` on the host. `delegate check` warns when the executor is Scion and the repository is not in project mode.
 - **Start.** For each unit in the wave, `dispatch --executor scion --execute` runs `scion start <agent> --type <template> --task-file <brief file> --no-wait`.
   - The template is always named, because without `--type` Scion uses its default (`gemini`).
-  - `--task-file` takes up to 96 KiB, so briefs never go on the command line. That avoids Windows' command-line limit and keeps briefs out of the process list.
+  - `--task-file` takes up to 96 KiB, so briefs never go on the command line. That avoids Windows' command-line limit and keeps briefs out of the process list. It exists only in Scion's nightly builds: the newest stable release (v0.2.21, July 2026) has neither `--task-file` nor `--no-wait`.
   - Scion turns names into slugs. Susanoo's names (`[a-z0-9-]`, no leading `-`) already are slugs, and Susanoo stores the name it expects.
   - `dispatch` refuses an agent name equal to the branch checked out in the main worktree. Scion would otherwise put the agent in the user's own checkout.
 - **Messages.** Follow-ups go through `scion message <agent> --body-file <file>`, for example:
@@ -154,7 +154,15 @@ Facts below are from Scion's docs and source at commit `7e228a6` (2026-10-14), r
 
   `completed` is reported by the agent itself, so it carries no more weight than the unit's records.
 - **Data leaving the machine.** Dispatching to Scion hands unit briefs (task text) to Scion and to the model provider of its harness. Scion also stores the task with the agent record on the hub and writes it to `~/.scion/task.md` in the agent's home. The output of `dispatch --execute` says so.
-- **Platform.** Scion publishes Linux and macOS binaries only, runs CI on Linux, and its docs do not mention WSL. On Windows, the only plausible route is WSL 2: the Linux binary, git 2.48 or later on the Linux side, a container runtime reachable from WSL, the repository on the Linux file system, and Susanoo run inside WSL too, so no path translation is needed. This is an inference, not a documented setup, and it needs a spike.
+- **Platform.** Scion publishes Linux and macOS binaries only, runs CI on Linux, and its docs do not mention WSL. On Windows the only route is WSL 2, with the repository on the Linux file system and Susanoo run inside WSL too, so no path translation is needed.
+- **Setup on Windows, tried (2026-10-15).** Getting as far as Scion's machine setup took all of this, and no agent had run yet:
+  - **WSL 2 itself.** The WSL disk had to move off a nearly full C: drive, because Docker images live inside it. The WSL VM then failed to start several times (`HCS_E_CONNECTION_TIMEOUT`) while Windows had about 2 GB of free memory, until `wsl --shutdown`.
+  - **Git.** Ubuntu 24.04 ships git 2.43, below Scion's minimum of 2.48. Upgrading it needs sudo, so git was built from source in the user's home directory. The newest git (2.55) needs Rust to build, so 2.50.1 was used.
+  - **Scion itself.** The stable release lacks flags this design relies on, so the newer build has to be a nightly. Scion's own installer needs a cloud bucket and `gcloud`; the binaries come from the Homebrew tap's or the repository's GitHub releases.
+  - **Images.** Before any agent starts, Scion needs an `image_registry` setting and a container image built locally (`scion build claude`). The agent then needs its own Claude sign-in inside the container.
+  - **App sandboxing.** The Claude desktop app is a Microsoft Store app, so its `AppData\Roaming` folder is redirected and invisible to WSL under the usual path. Any file handed from the app to WSL must use the redirected path under `AppData\Local\Packages\`.
+
+  This is the main reason Scion stays an optional executor at most. A coordination layer for parallel agents has to work where the user already works, which here is Windows with Claude Code. Susanoo's own commands (`land`, the merge verdict, leases) need only git and Python, and run natively.
 
 ### Discovery
 
@@ -187,7 +195,7 @@ It never reads `.scion/settings.yaml`, `~/.scion/`, Scion templates, or agent fo
    - whether `git rev-parse HEAD` and `git status` work inside an agent container, under both Docker and Podman;
    - whether Claude Code in the container picks up the repository's `.claude/settings.json` hooks;
    - whether a template's `home/.claude/settings.json` merges with the harness's or replaces it.
-2. Scion on Windows: whether the WSL 2 route works end to end. Scion does not document it.
+2. Scion on Windows: whether the WSL 2 route works end to end. The 2026-10-15 attempt stopped at image building by choice, not because of a failure. Scion does not document this route.
 3. Separate Claude Code sessions in a worktree: confirm that their hooks resolve the worktree, not the main checkout, as the project root.
 4. Whether `owns` should allow globs later. They make overlap checks approximate, so version 1 leaves them out.
 5. Whether evidence should also travel as git notes on the unit's tip commit, for clone-based and remote executors, at the cost of a second evidence path.

@@ -14,4 +14,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0008](0008-ui-ux-workflow.md) | UI work: require and record visual and accessibility checks, give domain checklists, never judge aesthetics (partly implemented) |
 | [0009](0009-clarifying-questions-under-hands-off.md) | Hands-off covers permission prompts, not clarifying questions: Claude asks about the task when confidence is low |
 | [0012](0012-delegation-plans.md) | Task decomposition and delegation plans: Claude drafts a tool-neutral JSON plan; Susanoo checks it and gives each unit a merge verdict from its own copy of the plan; Claude Code and Scion are optional executors (proposed) |
-| [0013](0013-leases-and-landing-queue.md) | Leases, interface-change notices, and an evidence-gated local landing queue, built only as far as a measure-first phase justifies (proposed) |
+| [0013](0013-leases-and-landing-queue.md) | Leases, interface-change notices, and an evidence-gated local landing queue: the queue comes first and its records decide whether leases and notices are built (proposed) |
