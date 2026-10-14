@@ -10,12 +10,24 @@ Susanoo is a deterministic Python CLI and library (no runtime dependencies) that
 
 ```bash
 pip install -e ".[dev]"
-pytest                                   # full test suite
+pytest -n auto                           # full test suite, in parallel (pytest-xdist)
 ruff check . && ruff format --check .    # lint + format
 mypy                                     # strict type checking of src/susanoo
 bandit -q -r src -c pyproject.toml       # security lint
 susanoo eval                             # routing behavior on the reference suite
 ```
+
+## Testing while you work
+
+The full suite takes minutes, and several agents often work on branches at once. Run it when
+the code has changed in a way nobody has tested, not on every edit:
+
+- While iterating, run only the affected tests: `pytest tests/test_x.py` or `pytest -k <name>`.
+- Run the full suite (`pytest -n auto`) once after each merge of `main` into your branch (the
+  combination is new) and once before pushing. Do not rerun it when only docs or comments changed
+  since the last full run.
+- Rerun `susanoo eval` only after changing signals, thresholds, profiles, or the routing suite.
+- CI runs everything on three operating systems; do not repeat locally what it will run anyway.
 
 ## Rules
 

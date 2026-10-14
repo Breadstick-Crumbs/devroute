@@ -16,7 +16,7 @@ Before opening a pull request, run what CI runs:
 ```bash
 ruff check . && ruff format --check .
 mypy
-pytest
+pytest -n auto                 # parallel; plain `pytest` runs serially
 bandit -q -r src -c pyproject.toml
 susanoo eval --min-agreement 0.9 --fail-on-risk-violation
 ```

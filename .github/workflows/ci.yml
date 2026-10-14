@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -e ".[dev]"
-      - run: pytest --cov=susanoo --cov-report=term-missing:skip-covered
+      - run: pytest -n auto --cov=susanoo --cov-report=term-missing:skip-covered
       - name: Routing evaluation
         run: susanoo eval --min-agreement 0.9 --fail-on-risk-violation
       - name: CLI smoke test
