@@ -259,7 +259,19 @@ _CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 MAX_PER_PATTERN = 3
 
 
-def _matches(root: Path, pattern: str) -> list[str]:
+MAX_NAME_LENGTH = 120
+
+
+def safe_name(name: str) -> bool:
+    """A file name that can appear in a brief: printable and short.
+
+    A name with a newline (possible on Linux and macOS) could otherwise add lines to the brief
+    that look like Susanoo's own instructions.
+    """
+    return len(name) <= MAX_NAME_LENGTH and name.isprintable()
+
+
+def match_paths(root: Path, pattern: str) -> list[str]:
     """Root-relative paths matching a pattern, case-insensitively on every OS.
 
     Only the last path segment may contain a wildcard (not recursive). A trailing / matches
@@ -275,7 +287,7 @@ def _matches(root: Path, pattern: str) -> list[str]:
     wanted = name.lower()
     hits = []
     for entry in entries:
-        if not fnmatch.fnmatchcase(entry.lower(), wanted):
+        if not safe_name(entry) or not fnmatch.fnmatchcase(entry.lower(), wanted):
             continue
         path = parent / entry
         if folders_only != path.is_dir() or (not folders_only and not path.is_file()):
@@ -313,10 +325,10 @@ def detect_design_files(root: Path, npm_packages: set[str]) -> list[dict[str, st
 
     for kind, patterns in (("docs", spec.docs), ("tokens", spec.tokens), ("storybook", spec.storybook)):
         for pattern in patterns:
-            for path in _matches(root, pattern):
+            for path in match_paths(root, pattern):
                 add(kind, path)
     for pattern in spec.css_files:
-        for path in _matches(root, pattern):
+        for path in match_paths(root, pattern):
             if _defines_theme(root / path, spec.min_custom_properties):
                 add("tokens", path)
     if not any(f["kind"] == "storybook" for f in found):

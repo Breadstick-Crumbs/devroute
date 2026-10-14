@@ -14,6 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from susanoo.architecture import architecture_line
 from susanoo.config import PROFILE_ORDER, Config
 from susanoo.discovery.executables import save_path_cache, use_path_cache
 from susanoo.enforcement import gates
@@ -190,6 +191,8 @@ def compact_brief(
         lines.append(compact_design_line(ui.design))
         if ui.taste_note:
             lines.append(ui.taste_note)
+    if plan.architecture is not None:
+        lines.append(architecture_line(plan.architecture, compact=True))
     lines.append("Steps: " + " -> ".join(p.title for p in plan.profile.phases) + ".")
     lines.append(
         "If this route understates the task (data loss, security, payments, production, or a wider change "
