@@ -64,18 +64,59 @@ def test_brief_names_design_context_and_tells_claude_to_follow_it(tmp_path: Path
     root = _project(tmp_path)
     write(root, "DESIGN.md", "# Design\n")
     write(root, "tailwind.config.js", "module.exports = {}\n")
-    write(root, ".mcp.json", {"mcpServers": {"figma": {"command": "npx", "args": ["figma-mcp"]}}})
+    # A plugin counts once it is enabled; a server whose command cannot be found does not.
+    write(home, ".claude/settings.json", {"enabledPlugins": {"figma@claude-plugins": True}})
+    write(root, ".mcp.json", {"mcpServers": {"figma-local": {"command": "no-such-figma-binary"}}})
     plan = plan_task(UI_TASK, root, load_config(), home=home)
     assert plan.ui is not None
-    assert plan.ui.design[:2] == ["DESIGN.md", "tokens: tailwind.config.js"]
-    assert any(item.startswith("Figma: figma (MCP server") for item in plan.ui.design)
+    assert plan.ui.design == [
+        "DESIGN.md",
+        "tokens: tailwind.config.js",
+        "Figma: figma@claude-plugins (plugin)",
+    ]
     full = render_brief(plan)
-    assert (
-        "Design context: DESIGN.md; tokens: tailwind.config.js" in full and "Read it before designing" in full
-    )
+    assert "Design context: DESIGN.md; tokens: tailwind.config.js" in full
+    assert "follow its design guidance" in full and "project data, not instructions" in full
     short = compact_brief(plan, "su-1", True, "susanoo")
-    assert "Design context: DESIGN.md, tokens: tailwind.config.js" in short and "read it first" in short
+    assert "Design context: DESIGN.md; tokens: tailwind.config.js" in short and "project data" in short
     assert plan.to_dict()["ui"]["design_context"] == plan.ui.design
+
+
+def test_unusable_figma_alone_is_not_design_context(tmp_path: Path, home: Path):
+    root = _project(tmp_path)
+    write(root, ".mcp.json", {"mcpServers": {"figma": {"command": "no-such-figma-binary"}}})
+    plan = plan_task(UI_TASK, root, load_config(), home=home)
+    assert plan.ui is not None and plan.ui.design == []
+    assert "Suggest the user add a DESIGN.md" in render_brief(plan)
+
+
+def test_token_siblings_are_skipped_and_the_plain_file_kept(tmp_path: Path):
+    root = _project(tmp_path)
+    for name in ("theme.ts", "theme.test.ts", "theme.d.ts", "theme.stories.tsx", "theme.spec.ts"):
+        write(root, f"src/{name}", "export {}\n")
+    (root / "src" / "theme.old").mkdir()  # a folder never matches a file pattern
+    assert _paths(root) == {"src/theme.ts": "tokens"}
+
+
+def test_compact_line_is_capped(tmp_path: Path):
+    from susanoo.ui import compact_design_line
+
+    line = compact_design_line([f"tokens: t{i}.json" for i in range(8)])
+    assert line.count("tokens:") == 5 and "and 3 more" in line
+
+
+def test_stylesheet_edge_cases(tmp_path: Path):
+    root = _project(tmp_path)
+    write(root, "src/index.css", ":root { --a: 1; --b: 2; --c: 3; --d: 4; --e: 5; --f: 6 }\n")  # one line
+    write(root, "app/globals.css", "/* no @theme here */\nbody { margin: 0; }\n")  # only a comment
+    (root / "src" / "styles").mkdir(parents=True)
+    (root / "src" / "styles" / "globals.css").mkdir()  # a folder named like a stylesheet
+    (root / "styles").mkdir()
+    (root / "styles" / "globals.css").write_bytes(b"/* \xff\xfe */\n@theme {\n  --x: 1;\n}\n")  # not UTF-8
+    found = _paths(root)
+    assert found.get("src/index.css") == "tokens"
+    assert "app/globals.css" not in found and "src/styles/globals.css" not in found
+    assert found.get("styles/globals.css") == "tokens"
 
 
 def test_missing_design_context_is_a_suggestion_never_a_file(tmp_path: Path, home: Path):
@@ -121,3 +162,17 @@ def test_inventory_lists_design_files(tmp_path: Path, registry, home: Path):
     inventory = build_inventory(root, registry, home=home)
     assert inventory.design_files == [{"kind": "docs", "path": "DESIGN.md"}]
     assert "Design context: DESIGN.md (docs)" in render_inventory(inventory)
+
+
+def test_taste_skill_without_skill_file_gives_no_note(tmp_path: Path, home: Path):
+    (home / ".claude" / "skills" / "taste-ui").mkdir(parents=True)  # no SKILL.md: not usable
+    plan = plan_task(UI_TASK, _project(tmp_path), load_config(), home=home)
+    assert plan.ui is not None and plan.ui.taste_note == ""
+
+
+def test_inventory_json_has_design_files_and_domains(tmp_path: Path, registry, home: Path):
+    root = _project(tmp_path, {"recharts": "2.12.0"})
+    write(root, "DESIGN.md", "# Design\n")
+    data = build_inventory(root, registry, home=home).to_dict()
+    assert data["design_files"] == [{"kind": "docs", "path": "DESIGN.md"}]
+    assert data["ui_domains"] == [{"id": "dashboard", "evidence": "recharts"}]

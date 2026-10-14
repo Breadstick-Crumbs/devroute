@@ -101,6 +101,8 @@ class Inventory:
             "languages": self.languages,
             "source_files": self.source_files,
             "package_manager": self.package_manager,
+            "ui_domains": self.ui_domains,
+            "design_files": self.design_files,
             "findings": [f.to_dict() for f in self.findings],
             "warnings": self.warnings,
         }
