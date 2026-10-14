@@ -729,12 +729,43 @@ def test_the_nudge_never_rewrites_the_prompt_record(tmp_path: Path):
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize("name", ["CLAUDE.md", "docs/CLAUDE.md", "AGENTS.md", ".claude/settings.local.json"])
+@pytest.mark.parametrize(
+    "name",
+    ["CLAUDE.md", "docs/CLAUDE.md", "AGENTS.md", ".claude/settings.local.json", "pkg/.claude/settings.json"],
+)
 def test_agent_memory_and_settings_are_exempt(tmp_path: Path, name: str):
     root = _project(tmp_path)
     _prompt(root, "remember that we use pytest here")
     assert _edit(root, name) == {}
     assert _edit(root, root / name) == {}
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Git Bash paths exist only on Windows")
+def test_exempt_paths_match_in_git_bash_form(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "remember that we use pytest here")
+    drive, rest = os.path.splitdrive(str(root.resolve()))
+    git_bash = f"/{drive[0].lower()}{rest.replace(chr(92), '/')}/.claude/settings.local.json"
+    assert _edit(root, git_bash) == {}
+
+
+def test_duplicate_hooks_never_loop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    # Parallel edits whose hooks all read the marker before any of them wrote it: each is denied.
+    real_nudged = prompt_state.nudged
+    monkeypatch.setattr(prompt_state, "nudged", lambda *args: False)
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+    assert _edit(root, root / "b.py")["permissionDecision"] == "deny"
+    monkeypatch.setattr(prompt_state, "nudged", real_nudged)
+    # Every retry goes through.
+    assert _edit(root, root / "app.py") == {} and _edit(root, root / "b.py") == {}
+
+
+def test_approval_integrity_still_asks_after_an_unrouted_message(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "What does app.py do?")
+    assert _bash(root, "susanoo approve")["permissionDecision"] == "ask"
 
 
 def test_a_route_from_before_the_message_does_not_count(tmp_path: Path):

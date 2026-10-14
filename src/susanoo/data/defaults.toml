@@ -157,7 +157,7 @@ route_before_edit = true
 # patterns): agent memory and Claude Code settings are not coding tasks.
 route_before_edit_exempt = [
     "CLAUDE.md", "*/CLAUDE.md", "CLAUDE.local.md", "*/CLAUDE.local.md", "AGENTS.md", "*/AGENTS.md",
-    ".claude/*",
+    ".claude/*", "*/.claude/*",
 ]
 
 [enforcement]
