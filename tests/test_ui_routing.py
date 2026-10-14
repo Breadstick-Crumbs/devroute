@@ -98,6 +98,19 @@ def test_visual_edits_drop_payment_and_architecture_weight(task: str, ignored: s
         "Change the checkout layout to the web layout on the ios app",
         "Change the payment form layout to a modal on mobile",
         "Restyle the checkout page into a modal",
+        # Third review of #51: words that sound visual but change what is collected or shown.
+        "Make the payment forms consistent",
+        "Make the payment form fields consistent",
+        "Make the checkout pages consistent",
+        "Make the checkout form compact",
+        "Make the checkout form layout compact",
+        "Make the checkout form compact on mobile",
+        "Increase the payments page size",
+        "Change the payments page size",
+        "Make the checkout page size smaller",
+        "Change the checkout fee label copy",
+        "Change the billing cancellation section wording",
+        "Change the checkout autorenew section wording",
     ],
 )
 def test_payment_logic_keeps_every_payment_control(task: str):
@@ -125,6 +138,21 @@ def test_payment_logic_keeps_every_payment_control(task: str):
         "Redesign the react components into web components",
         "Redesign the page components into web components",
         "Redesign the web views into ios views",
+        # Third review of #51: the page-name slot is a closed list, so architecture words stay.
+        "Redesign the container components",
+        "Redesign the client components",
+        "Redesign the store components",
+        "Redesign the micro-frontend pages",
+        "Redesign the micro-frontend layout",
+        "Redesign the SSR pages",
+        "Redesign the SPA pages",
+        "Redesign the RSC components",
+        "Redesign the headless components",
+        "Redesign the routing layout",
+        "Redesign the shell layout",
+        "Redesign the module layouts",
+        "Redesign the Angular components",
+        "Redesign the Vue components",
     ],
 )
 def test_architectural_redesigns_stay_architectural(task: str):

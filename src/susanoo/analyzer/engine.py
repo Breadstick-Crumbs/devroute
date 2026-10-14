@@ -145,7 +145,7 @@ def _visual_only(words: list[str], verbs: set[str], config: dict[str, Any], requ
     """Read the task word by word (linear, no backtracking) against a structural grammar:
 
         verb [det] [look-word... on|of|in|for [det]] object [tail...]
-        object = payment-page words and at most one page name, then one or two UI nouns
+        object = payment-page words and at most one `page_names` word, then one or two UI nouns
         tail   = a look word, a hex color, "to" + a look value ("to green"), or
                  on|for|in|across|at [det] + platform or look words ("on small screens")
 
@@ -158,7 +158,16 @@ def _visual_only(words: list[str], verbs: set[str], config: dict[str, Any], requ
         return False
     v = {
         key: {str(w).lower() for w in config.get(key, [])}
-        for key in ("determiners", "ui_nouns", "appearance", "values", "platform", "subjects", "reject_words")
+        for key in (
+            "determiners",
+            "ui_nouns",
+            "appearance",
+            "values",
+            "platform",
+            "subjects",
+            "reject_words",
+            "page_names",
+        )
     }
     if any(w in v["reject_words"] for w in words):
         return False
@@ -185,7 +194,7 @@ def _visual_only(words: list[str], verbs: set[str], config: dict[str, Any], requ
         word = at(i)
         if word in v["subjects"]:
             i += 1
-        elif free and not (is_look(word) or word in v["platform"] or word in v["determiners"]):
+        elif free and word in v["page_names"]:
             free -= 1
             i += 1
         else:

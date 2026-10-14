@@ -257,7 +257,7 @@ def validate(config: Config) -> None:
     _check_patterns("[assessment.presentational] keep", presentational.get("keep", []))
     known = {
         "max_words", "reject_words", "determiners", "ui_nouns", "appearance", "values", "platform", "subjects",
-        "phrases", "keep", "rules",
+        "phrases", "keep", "rules", "page_names",
     }  # fmt: skip
     unknown_keys = sorted(set(presentational) - known)
     _require(not unknown_keys, f"[assessment.presentational]: unknown key(s) {', '.join(unknown_keys)}")
@@ -265,6 +265,7 @@ def validate(config: Config) -> None:
         "reject_words",
         "determiners",
         "values",
+        "page_names",
         "ui_nouns",
         "appearance",
         "platform",

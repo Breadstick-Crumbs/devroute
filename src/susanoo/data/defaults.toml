@@ -64,7 +64,7 @@ clause = '[,;:]|(?<![\w-])(?:and|then|plus|also|but|or|while)(?![\w-])'
 #   question mark, or line break inside;
 # - the first word is one of the rule's `verbs` (after an optional "please");
 # - then a structure: [determiner] [appearance words + on/of/in/for + determiner] object tail,
-#   where the object is `subjects` words and at most one page name ("the settings page") before
+#   where the object is `subjects` words and at most one `page_names` word ("the settings page") before
 #   one or two `ui_nouns`, and the tail is only appearance words, hex colors, "to" + a `values`
 #   word ("to green"), or on/for/in/across/at + determiner + `platform` or appearance words
 #   ("on small screens"); nothing may turn the object into something else ("to a modal",
@@ -91,7 +91,7 @@ appearance = [
     "light_mode", "style", "styles", "styling", "layout", "layouts", "responsive", "size", "sizes", "width",
     "widths", "height", "heights", "contrast", "icon", "icons", "hover_state", "hover_states", "focus_state",
     "focus_states", "look", "look_and_feel", "visual", "visuals", "appearance", "copy", "wording",
-    "larger", "smaller", "bigger", "wider", "narrower", "compact", "consistent", "blue", "green", "red",
+    "larger", "smaller", "bigger", "wider", "narrower", "blue", "green", "red",
     "black", "white", "gray", "grey", "orange", "purple", "pink", "yellow", "brand_color", "brand_colors",
     "to_match_the_brand", "to_match_the_design", "to_match_the_mockup", "to_match_the_mockups",
     "restyle", "re-style", "recolor", "recolour",
@@ -99,12 +99,20 @@ appearance = [
 # Allowed after "to" in the tail ("to green", "to match the brand" is an appearance phrase).
 values = [
     "blue", "green", "red", "black", "white", "gray", "grey", "orange", "purple", "pink", "yellow", "larger",
-    "smaller", "bigger", "wider", "narrower", "compact", "consistent", "responsive", "brand_color",
+    "smaller", "bigger", "wider", "narrower", "responsive", "brand_color",
     "brand_colors",
 ]
 platform = [
     "mobile", "desktop", "tablet", "tablets", "phone", "phones", "small_screens", "large_screens", "web",
     "app", "ios", "android", "react_native",
+]
+# Page names allowed in the object ("the settings page"); a closed list, so "the container
+# components" or "the micro-frontend pages" are not a visual redesign.
+page_names = [
+    "settings", "onboarding", "profile", "account", "accounts", "landing", "home", "homepage", "dashboard",
+    "admin", "search", "product", "products", "orders", "order", "contact", "about", "faq", "help", "blog",
+    "team", "careers", "error", "empty", "welcome", "marketing", "primary", "secondary", "main", "top",
+    "bottom", "side", "header", "hero", "feature", "features", "testimonials", "notifications", "inbox",
 ]
 # Payment-page words: allowed only directly before a UI noun ("the checkout button").
 subjects = ["checkout", "pricing", "billing", "payment", "payments", "cart"]
@@ -123,7 +131,9 @@ keep = [
     "multi step", "api", "endpoints?", "database", "db", "schemas?", "data", "state", "backend", "server",
     "architecture", "migrat\\w*", "auth\\w*", "login", "security", "disabl\\w*", "enabl\\w*", "hid(?:e|ing)",
     "text (?:fields?|inputs?)", "card (?:fields?|inputs?|elements?)", "iframes?", "redirect\\w*", "web ?views?",
-    "links? to",
+    "links? to", "page ?sizes?", "per page", "paginat\\w*", "fees?", "surcharges?", "auto-?renew\\w*",
+    "cancel\\w*", "terms", "trials?", "plans?", "micro-?frontends?", "ssr", "rsc", "spa", "headless",
+    "hydrat\\w*", "islands?", "shell", "rout\\w*", "modul\\w*", "containers?", "stores?",
 ]
 
 [[assessment.presentational.rules]]
