@@ -319,8 +319,9 @@ def test_route_before_edit_respects_the_global_opt_out(isolated: Path, tmp_path:
     }
     _prompt(root, "The footer is misaligned")
     assert json.loads(handle("pre-tool-use", edit)[1])["hookSpecificOutput"]["permissionDecision"] == "deny"
-    (root / OFF_FILE).write_text("", encoding="utf-8")
+    # A new message is saved, then the project opts out before its first edit.
     _prompt(root, "The header is misaligned too")
+    (root / OFF_FILE).write_text("", encoding="utf-8")
     assert handle("pre-tool-use", edit) == (0, "")
 
 
