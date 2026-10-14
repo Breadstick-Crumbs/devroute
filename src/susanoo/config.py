@@ -255,10 +255,16 @@ def validate(config: Config) -> None:
     presentational = config.get("assessment", {}).get("presentational", {})
     _require(isinstance(presentational, dict), "[assessment.presentational] must be a table")
     _check_patterns("[assessment.presentational] keep", presentational.get("keep", []))
+    known = {
+        "max_words", "reject_words", "determiners", "ui_nouns", "appearance", "values", "platform", "subjects",
+        "phrases", "keep", "rules",
+    }  # fmt: skip
+    unknown_keys = sorted(set(presentational) - known)
+    _require(not unknown_keys, f"[assessment.presentational]: unknown key(s) {', '.join(unknown_keys)}")
     for key in (
         "reject_words",
         "determiners",
-        "prepositions",
+        "values",
         "ui_nouns",
         "appearance",
         "platform",

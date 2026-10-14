@@ -148,6 +148,6 @@ def test_bundled_ui_suite_keeps_safety_floors(config, profiles):
     # routing fixes (slice 4), at least 90% agreement, as CI checks.
     path = Path(__file__).resolve().parents[1] / "src" / "susanoo" / "data" / "suites" / "ui-v1.toml"
     result = run_suite(config, profiles, path)
-    assert result.total >= 35
+    assert result.total >= 44
     assert result.risk_floor_violations == 0
     assert result.profile_agreement >= 0.9  # slice 4 brought the UI routing fixes

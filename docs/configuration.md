@@ -123,15 +123,16 @@ An instruction to leave a part of the code base alone is ignored when signals ar
 Keep this narrow. Ignoring text can only lower risk.
 
 ### `[assessment.presentational]`
-A task that only changes how something looks ("Change the checkout button color to green", "Redesign the pricing page layout for mobile") does not count as payment logic or as an architectural change ([ADR 0008](decisions/0008-ui-ux-workflow.md)). The brief lists what was ignored as "Ignored as a purely visual change". The task is read word by word against a closed vocabulary:
-- `max_words` (default 20) and `reject_words` ("and", "or", "then", ...): longer tasks, tasks with one of these words, and tasks with a comma, semicolon, colon, or line break are never presentational.
-- `determiners`, `prepositions`, `ui_nouns`, `appearance`, `platform`, `subjects` (payment-page words, allowed only directly before a UI noun), `phrases` (multi-word entries read as one word): lowercase words; every word of the task after the verb must be one of them, except one page name directly before the first UI noun.
-- `keep`: regexes that keep every signal when they match anywhere, also with hyphens read as spaces (payment logic, providers, data, state, flows, APIs, authentication, ...).
-- `rules`: each has `signals` (ids to ignore), `verbs` (the first word of the task), and optionally `require_appearance = true` (an appearance word must appear; platform words do not count). A signal is only ignored if every phrase it matched is a rule verb or a `subjects` word. Unknown keys are an error. `rules = []` turns it off.
+A task that only changes how something looks ("Change the checkout button color to green", "Redesign the pricing page layout for mobile") does not count as payment logic or as an architectural change ([ADR 0008](decisions/0008-ui-ux-workflow.md)). The brief lists what was ignored as "Ignored as a purely visual change". The task is read word by word against a closed vocabulary and a fixed structure (see the ADR):
+- `max_words` (default 20) and `reject_words` ("and", "or", "then", ...): longer tasks, tasks with one of these words, and tasks with a comma, semicolon, colon, question mark, line break, or sentence end inside are never presentational. A leading "please" and a trailing period or exclamation mark are ignored.
+- `determiners`, `ui_nouns`, `appearance`, `values` (allowed after "to": colors, sizes), `platform`, `subjects` (payment-page words, allowed only in the object before a UI noun), `phrases` (multi-word entries read as one word): lowercase words. Hex colors count as appearance words.
+- `keep`: regexes that keep every signal when they match anywhere, also with hyphens read as spaces (payment logic, providers, data, state, flows, card or text fields, APIs, authentication, ...).
+- `rules`: each has `signals` (ids to ignore), `verbs` (the first word of the task), and optionally `require_appearance = true` (an appearance word must appear; platform words do not count). A signal is only ignored if every phrase it matched is a rule verb or a `subjects` word. `rules = []` turns it off.
+- Unknown keys are an error. Lists replace the defaults rather than adding to them, so a project that sets `keep` must repeat every default entry it wants to keep.
 
 Keep this narrow. Ignoring a signal can only lower risk, and a missed payment control is a safety bug.
 
-A signal can also limit its `caps` with `caps_if_signals` (caps apply only when one of these signals matched), next to `caps_unless_signals`.
+A signal can also limit its `caps` with `caps_if_signals` (caps apply only when one of these signals matched), next to `caps_unless_signals` and `caps_only_if`.
 
 ### `[complexity]`, `[risk]`, `[uncertainty]`
 - `weights` (complexity): relative weights of the complexity dimensions.

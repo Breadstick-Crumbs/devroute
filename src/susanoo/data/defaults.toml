@@ -63,11 +63,13 @@ clause = '[,;:]|(?<![\w-])(?:and|then|plus|also|but|or|while)(?![\w-])'
 # - at most `max_words` words, one clause: no `reject_words`, and no comma, semicolon, colon,
 #   question mark, or line break inside;
 # - the first word is one of the rule's `verbs` (after an optional "please");
-# - every other word is a determiner, a preposition, a UI noun, an appearance word, a platform
-#   word, a `subjects` word directly before a UI noun, or at most one other word directly before
-#   a UI noun (a page name: "the settings page"); `phrases` count as one word;
-# - there is at least one UI noun, and a rule with `require_appearance` needs an appearance word
-#   (platform words such as "mobile" do not count);
+# - then a structure: [determiner] [appearance words + on/of/in/for + determiner] object tail,
+#   where the object is `subjects` words and at most one page name ("the settings page") before
+#   one or two `ui_nouns`, and the tail is only appearance words, hex colors, "to" + a `values`
+#   word ("to green"), or on/for/in/across/at + determiner + `platform` or appearance words
+#   ("on small screens"); nothing may turn the object into something else ("to a modal",
+#   "into web views", "text fields"), and `phrases` count as one word;
+# - a rule with `require_appearance` needs an appearance word (platform words do not count);
 # - every phrase the ignored signal matched is one of the rule's `verbs` or `subjects`, so
 #   "microservices" or "payment provider" elsewhere keeps the signal;
 # - no `keep` regex matches anywhere, also with hyphens read as spaces ("Stripe-hosted").
@@ -75,13 +77,12 @@ clause = '[,;:]|(?<![\w-])(?:and|then|plus|also|but|or|while)(?![\w-])'
 max_words = 20
 reject_words = ["and", "or", "then", "but", "so", "also", "plus", "while", "if", "when", "unless", "because", "&"]
 determiners = ["the", "a", "an", "our", "its", "their", "this", "that", "all"]
-prepositions = ["on", "in", "of", "for", "to", "at", "across", "with", "into"]
 ui_nouns = [
     "page", "pages", "screen", "screens", "view", "views", "layout", "layouts", "component", "components",
     "button", "buttons", "form", "forms", "modal", "modals", "dialog", "dialogs", "card", "cards", "footer",
     "footers", "navbar", "navbars", "nav_bar", "sidebar", "sidebars", "menu", "menus", "banner", "banners",
     "hero", "section", "sections", "icon", "icons", "tab", "tabs", "field", "fields", "label", "labels",
-    "tooltip", "tooltips", "badge", "badges", "link", "links", "ui",
+    "tooltip", "tooltips", "badge", "badges", "ui",
 ]
 appearance = [
     "color", "colors", "colour", "colours", "spacing", "padding", "margin", "margins", "gap", "gaps", "font",
@@ -89,11 +90,17 @@ appearance = [
     "borders", "radius", "shadow", "shadows", "background", "backgrounds", "theme", "themes", "dark_mode",
     "light_mode", "style", "styles", "styling", "layout", "layouts", "responsive", "size", "sizes", "width",
     "widths", "height", "heights", "contrast", "icon", "icons", "hover_state", "hover_states", "focus_state",
-    "focus_states", "look", "look_and_feel", "visual", "visuals", "appearance", "copy", "wording", "text",
+    "focus_states", "look", "look_and_feel", "visual", "visuals", "appearance", "copy", "wording",
     "larger", "smaller", "bigger", "wider", "narrower", "compact", "consistent", "blue", "green", "red",
     "black", "white", "gray", "grey", "orange", "purple", "pink", "yellow", "brand_color", "brand_colors",
     "to_match_the_brand", "to_match_the_design", "to_match_the_mockup", "to_match_the_mockups",
     "restyle", "re-style", "recolor", "recolour",
+]
+# Allowed after "to" in the tail ("to green", "to match the brand" is an appearance phrase).
+values = [
+    "blue", "green", "red", "black", "white", "gray", "grey", "orange", "purple", "pink", "yellow", "larger",
+    "smaller", "bigger", "wider", "narrower", "compact", "consistent", "responsive", "brand_color",
+    "brand_colors",
 ]
 platform = [
     "mobile", "desktop", "tablet", "tablets", "phone", "phones", "small_screens", "large_screens", "web",
@@ -115,6 +122,8 @@ keep = [
     "one-click", "authori[sz]\\w*", "card numbers?", "credit cards?", "logic", "flows?", "steps?",
     "multi step", "api", "endpoints?", "database", "db", "schemas?", "data", "state", "backend", "server",
     "architecture", "migrat\\w*", "auth\\w*", "login", "security", "disabl\\w*", "enabl\\w*", "hid(?:e|ing)",
+    "text (?:fields?|inputs?)", "card (?:fields?|inputs?|elements?)", "iframes?", "redirect\\w*", "web ?views?",
+    "links? to",
 ]
 
 [[assessment.presentational.rules]]
@@ -524,7 +533,13 @@ patterns = [
 ]
 caps = { implementation_complexity = 0, architectural_complexity = 0, affected_components = 1, testing_difficulty = 1 }
 caps_if_signals = ["ui"]
-caps_unless_signals = ["database", "destructive-data", "production", "api", "payments", "dependency-change"]
+caps_unless_signals = [
+    "database", "destructive-data", "production", "api", "payments", "dependency-change", "concurrency",
+    "authentication", "multi-tenant", "sensitive-data", "security-explicit", "third-party",
+    "performance", "uncertain-cause",
+]
+# One clause only: "adjust the spacing ... and implement real-time sync" is not a small change.
+caps_only_if = ['(?!.*(?:[,;:]|\\b(?:and|plus|then|also|with|while|but|as well as)\\b)).+']
 
 [[signals]]
 id = "visual-redesign"
@@ -533,12 +548,12 @@ label = "visual redesign"
 # rule drops the architectural signal and this one keeps the work at STANDARD. "Restyle" was added
 # after the slice 4 suite run showed "Restyle the checkout page" routing FAST.
 patterns = ["re-?design\\w*", "revamp\\w*", "re-?styl\\w*"]
-effects = { implementation_complexity = 2, testing_difficulty = 1 }
+effects = { implementation_complexity = 2, testing_difficulty = 2 }
 
 [[signals]]
 id = "responsive-layout"
 label = "responsive layout"
-patterns = ["responsive\\w*", "(?:css|layout|responsive|media[- ]query) breakpoints?", "(?:for|on) (?:mobile|phones?|tablets?|small screens?)"]
+patterns = ["responsive\\w*", "(?:css|layout|responsive|media[- ]query) breakpoints?", "(?:for|on) (?:mobile|phones?|tablets?|small screens?)(?! (?:clients?|networks?|apis?|sdks?|connections?|carriers?|backends?|devices? ids?)\\b)"]
 effects = { implementation_complexity = 2, testing_difficulty = 2 }
 
 [[signals]]

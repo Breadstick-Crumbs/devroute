@@ -142,45 +142,81 @@ def _words(task: str, phrases: Iterable[str]) -> list[str]:
 
 
 def _visual_only(words: list[str], verbs: set[str], config: dict[str, Any], require_appearance: bool) -> bool:
-    """Read the task word by word against the closed vocabulary (linear, no backtracking)."""
+    """Read the task word by word (linear, no backtracking) against a structural grammar:
+
+        verb [det] [look-word... on|of|in|for [det]] object [tail...]
+        object = payment-page words and at most one page name, then one or two UI nouns
+        tail   = a look word, a hex color, "to" + a look value ("to green"), or
+                 on|for|in|across|at [det] + platform or look words ("on small screens")
+
+    Nothing may follow the object that turns it into something else ("to a modal", "into web
+    views", "text fields", "link to ..."), and platform words appear only after a preposition.
+    """
     if words and words[0] == "please":
         words = words[1:]
     if not words or words[0] not in verbs:
         return False
-    vocab = {
+    v = {
         key: {str(w).lower() for w in config.get(key, [])}
-        for key in (
-            "determiners",
-            "prepositions",
-            "ui_nouns",
-            "appearance",
-            "platform",
-            "subjects",
-            "reject_words",
-        )
+        for key in ("determiners", "ui_nouns", "appearance", "values", "platform", "subjects", "reject_words")
     }
-    plain = vocab["determiners"] | vocab["prepositions"] | vocab["appearance"] | vocab["platform"]
-    appearance = words[0] in vocab["appearance"]
-    saw_ui = False
-    # One page name directly before the first UI noun ("the settings page"); after the object, a
-    # free word could change behavior ("to a single page").
-    free_left = 1
-    for i, word in enumerate(words[1:], start=1):
-        following = words[i + 1] if i + 1 < len(words) else ""
-        if word in vocab["reject_words"]:
-            return False
-        if word in vocab["ui_nouns"]:
-            saw_ui = True
-            appearance = appearance or word in vocab["appearance"]
-        elif word in plain or _HEX_COLOR.fullmatch(word):
-            appearance = appearance or word in vocab["appearance"] or bool(_HEX_COLOR.fullmatch(word))
-        elif word in vocab["subjects"] and (following in vocab["ui_nouns"] or following in vocab["subjects"]):
-            pass
-        elif free_left and not saw_ui and following in vocab["ui_nouns"]:
-            free_left -= 1
+    if any(w in v["reject_words"] for w in words):
+        return False
+    n = len(words)
+
+    def at(k: int) -> str:
+        return words[k] if k < n else ""
+
+    def is_look(word: str) -> bool:
+        return word in v["appearance"] or bool(_HEX_COLOR.fullmatch(word))
+
+    has_look = is_look(words[0])
+    i = 1 + (at(1) in v["determiners"])
+    # "tighten the padding on the payment form": look words, then a preposition, then the object.
+    j = i
+    while is_look(at(j)):
+        j += 1
+    if j > i and at(j) in ("on", "of", "in", "for", "around"):
+        has_look = True
+        i = j + 1 + (at(j + 1) in v["determiners"])
+    # The object: payment-page words and at most one page name, then one or two UI nouns.
+    free = 1
+    while at(i) and at(i) not in v["ui_nouns"]:
+        word = at(i)
+        if word in v["subjects"]:
+            i += 1
+        elif free and not (is_look(word) or word in v["platform"] or word in v["determiners"]):
+            free -= 1
+            i += 1
         else:
             return False
-    return saw_ui and (appearance or not require_appearance)
+    nouns = 0
+    while at(i) in v["ui_nouns"] and nouns < 2:
+        nouns += 1
+        i += 1
+    if not nouns:
+        return False
+    # The tail: only how it looks, and where.
+    while i < n:
+        word = at(i)
+        if is_look(word):
+            has_look = True
+            i += 1
+        elif word == "to" and (at(i + 1) in v["values"] or _HEX_COLOR.fullmatch(at(i + 1))):
+            has_look = True
+            i += 2
+        elif word in ("on", "for", "in", "across", "at"):
+            k = i + 1 + (at(i + 1) in v["determiners"])
+            m = k
+            while at(m) in v["platform"] or is_look(at(m)):
+                has_look = has_look or is_look(at(m))
+                m += 1
+            if m == k:
+                return False
+            i = m
+        else:
+            return False
+    return has_look or not require_appearance
 
 
 def presentational_matches(

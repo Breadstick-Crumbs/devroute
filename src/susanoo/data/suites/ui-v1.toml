@@ -277,3 +277,64 @@ expected = "deep"
 id = "ui4r-redesign-redux"
 task = "Redesign the settings page to use Redux"
 expected = "deep"
+
+# --- Added after the second slice 4 review, labeled before the structural grammar was written.
+
+[[cases]]
+id = "ui4s-card-fields-text"
+# Card entry moved out of the provider's fields: PCI scope.
+task = "Change the payment form card fields to text fields"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-checkout-to-modal"
+# Turning the checkout page into a modal changes the flow.
+task = "Change the checkout layout to a modal"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-checkout-link-web"
+# A link to another checkout changes where payment happens.
+task = "Make the white checkout button link to the web checkout page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-checkout-compact-modal"
+task = "Make the checkout page a compact modal"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-redesign-into-web-views"
+# Moving native screens to web views is a platform change.
+task = "Redesign the react native screens into web views"
+expected = "deep"
+
+[[cases]]
+id = "ui4s-redesign-into-web-components"
+task = "Redesign the page components into web components"
+expected = "deep"
+
+[[cases]]
+id = "ui4s-redesign-onboarding-cards"
+# A visual redesign of a few cards: plan it and check it.
+task = "Redesign the onboarding cards"
+expected = "standard"
+
+[[cases]]
+id = "ui4s-spacing-and-realtime-sync"
+# A small UI tweak next to heavy work must not cap the heavy work.
+task = "Adjust the spacing on the dashboard page and implement real-time sync with conflict resolution"
+expected = "deep"
+
+[[cases]]
+id = "ui4s-variants-and-job-queue"
+task = "Add size variants to the button component and build a distributed job queue with retries and exactly-once delivery"
+expected = "deep"

@@ -85,6 +85,19 @@ def test_visual_edits_drop_payment_and_architecture_weight(task: str, ignored: s
         "Change the checkout button color to green and disable on mobile",
         "Change the checkout button color, then the tax label",  # a second clause
         "Change the checkout button color.\nAlso recalculate the order",
+        # Found in the second review of #51: allowed words that still change the flow or card entry.
+        "Change the payment form card fields to text fields",
+        "Make the payment form card fields text fields",
+        "Make the card fields on the payment form text fields",
+        "Change the checkout layout to a modal",
+        "Change the cart modal to the checkout page layout",
+        "Change the checkout page layout into a web view",
+        "Make the checkout page a compact modal",
+        "Make the checkout button text link to the web checkout page",
+        "Make the white checkout button link to the web checkout page",
+        "Change the checkout layout to the web layout on the ios app",
+        "Change the payment form layout to a modal on mobile",
+        "Restyle the checkout page into a modal",
     ],
 )
 def test_payment_logic_keeps_every_payment_control(task: str):
@@ -106,6 +119,12 @@ def test_payment_logic_keeps_every_payment_control(task: str):
         "Redesign the settings page to use Redux",
         "Redesign the search page with Elasticsearch",
         "Redesign the orders page with GraphQL",
+        # Second review of #51: platform or framework moves phrased as a redesign.
+        "Redesign the react native screens into web views",
+        "Redesign the ios app screens into web views",
+        "Redesign the react components into web components",
+        "Redesign the page components into web components",
+        "Redesign the web views into ios views",
     ],
 )
 def test_architectural_redesigns_stay_architectural(task: str):
@@ -199,3 +218,48 @@ def test_new_patterns_stay_out_of_non_ui_work(task: str, profile: str):
 def test_visual_tweak_caps_never_apply_with_data_changes():
     a, _ = _route("Add a color variant to the button and migrate the DB")
     assert a.complexity.level != "low"
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Redesign the onboarding cards",
+        "Redesign the settings tabs",
+        "Redesign the dialogs",
+        "Redesign the profile menu",
+        "Redesign the hero section",
+        "Redesign the icons",
+        "Redesign the tooltips",
+    ],
+)
+def test_a_visual_redesign_is_at_least_standard(task: str):
+    a, d = _route(task)
+    assert d.profile == "standard" and a.presentational
+
+
+@pytest.mark.parametrize(
+    "task",
+    [
+        "Adjust the spacing on the dashboard page and implement real-time sync with conflict resolution",
+        "Add size variants to the button component and build a distributed job queue with retries and "
+        "exactly-once delivery",
+        "Implement style variants for the card component and the concurrent job scheduler",
+        "Reduce the padding in the settings page and add multi-tenant isolation to the permissions model",
+        "Add size variants to the Button component plus a websocket notification system",
+    ],
+)
+def test_visual_tweak_caps_never_lighten_a_second_clause(task: str):
+    assert _route(task)[1].profile == "deep"
+
+
+@pytest.mark.parametrize(
+    "task", ["Fix the API timeouts for mobile clients", "The API is unresponsive on mobile networks"]
+)
+def test_mobile_clients_and_networks_are_not_responsive_layout(task: str):
+    assert "responsive-layout" not in _route(task)[0].signal_ids()
+
+
+def test_unknown_presentational_keys_are_errors(tmp_path: Path):
+    write(tmp_path, ".susanoo/config.toml", '[assessment.presentational]\nkeeps = ["ledger"]\n')
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_config(tmp_path)
