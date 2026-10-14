@@ -597,3 +597,88 @@ def test_a_lost_prompt_record_keeps_the_open_route_floor(tmp_path: Path, damage:
     assert code == 0, err
     new = RecordStore(root).read("routes")[-1]
     assert new["profile"] == "deep" and set(deep["controls"]) <= set(new["controls"])
+
+
+# --- route before the first edit ----------------------------------------------------------------
+
+
+def _edit(root: Path, path: Path | str, mode: str = "default") -> dict[str, str]:
+    event = {
+        "session_id": SESSION,
+        "cwd": str(root),
+        "tool_name": "Edit",
+        "tool_input": {"file_path": str(path)},
+        "permission_mode": mode,
+    }
+    code, out = handle("pre-tool-use", event)
+    assert code == 0
+    return json.loads(out)["hookSpecificOutput"] if out else {}
+
+
+@pytest.mark.parametrize("mode", ["default", "acceptEdits", "bypassPermissions"])
+def test_first_edit_of_an_unrouted_message_is_denied_once(tmp_path: Path, mode: str):
+    root = _project(tmp_path)
+    _prompt(root, "app.py is missing the hello() function that should return the string 'hi'", mode)
+    first = _edit(root, root / "app.py", mode)
+    assert first["permissionDecision"] == "deny"
+    assert "susanoo route" in first["permissionDecisionReason"]
+    assert "ask the user" not in first["permissionDecisionReason"]
+    assert _edit(root, root / "app.py", mode) == {}  # a retry goes through
+    logged = RecordStore(root).read("enforcement")
+    assert [e["permission"] for e in logged] == ["deny"]
+
+
+def test_each_new_unrouted_message_gets_its_own_nudge(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned")
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+    _prompt(root, "The header is misaligned too")
+    assert _edit(root, root / "app.py")["permissionDecision"] == "deny"
+
+
+def test_no_nudge_once_claude_routed(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "The footer is misaligned on mobile", "bypassPermissions")
+    assert run(root, "route", "Fix the footer alignment on mobile")[0] == 0
+    assert _edit(root, root / "app.py", "bypassPermissions") == {}
+    # The route is closed, and more edits follow for the same message: still no nudge.
+    assert run(root, "outcome", "latest", "--status", "partial", "--source", "agent")[0] == 0
+    assert _edit(root, root / "app.py", "bypassPermissions") == {}
+
+
+@pytest.mark.parametrize("message", ["?add a hello function to app.py", "/fix-issue 12", "!ls"])
+def test_no_nudge_for_messages_that_asked_for_no_routing(tmp_path: Path, message: str):
+    root = _project(tmp_path)
+    _prompt(root, message)
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_no_nudge_for_edits_outside_the_project(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "What does app.py do?")
+    assert _edit(root, tmp_path / "scratch" / "notes.md") == {}
+
+
+def test_no_nudge_for_routed_tasks(tmp_path: Path):
+    root = _project(tmp_path)
+    _prompt(root, "Fix typo in README")  # routed by the hook (FAST)
+    assert _edit(root, root / "README.md") == {}
+
+
+def test_route_before_edit_can_be_switched_off(tmp_path: Path):
+    root = _project(tmp_path)
+    config = root / ".susanoo" / "config.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "\n[auto]\nroute_before_edit = false\n", encoding="utf-8"
+    )
+    _prompt(root, "The footer is misaligned")
+    assert _edit(root, root / "app.py") == {}
+
+
+def test_no_nudge_without_automatic_routing(tmp_path: Path):
+    root = tmp_path / "plain"
+    write(root, "app.py", "x = 1\n")
+    (root / ".git").mkdir()
+    assert run(root, "init")[0] == 0
+    _prompt(root, "The footer is misaligned")
+    assert _edit(root, root / "app.py") == {}
