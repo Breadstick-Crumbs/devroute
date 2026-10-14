@@ -23,15 +23,25 @@
     }
     return best || doc;
   }
-  function scrollTo(y) { const s = scroller(); s.scrollTo(0, y); return { y: s.scrollTop, max: s.scrollHeight - s.clientHeight, container: s === (document.scrollingElement || document.documentElement) ? 'document' : label(s) }; }
+  // Jump instantly (CSS smooth scrolling would otherwise still be gliding when the sample is taken).
+  function scrollTo(y) {
+    const s = scroller();
+    const lenis = window.lenis || window.__lenis;
+    if (lenis && typeof lenis.scrollTo === 'function') { try { lenis.scrollTo(y, { immediate: true, force: true }); } catch {} }
+    s.scrollTo({ top: y, behavior: 'instant' });
+    return { y: s.scrollTop, max: s.scrollHeight - s.clientHeight, container: s === (document.scrollingElement || document.documentElement) ? 'document' : label(s) };
+  }
 
   function findNav() {
     const cands = [...document.querySelectorAll('header, nav, [role="banner"], [class*="nav" i], [class*="header" i]')].filter((el) => {
       const r = el.getBoundingClientRect(); return vis(el) && r.top < 140 && r.width > innerWidth * 0.5 && r.height < 220 && r.height > 24;
     });
-    cands.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width || a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-    // Prefer the outermost bar (header over the nav inside it).
-    return cands.find((el) => !cands.some((o) => o !== el && o.contains(el))) || cands[0] || null;
+    // The real navbar is the top bar with the most links (an announcement bar has one or two), then the outermost.
+    const links = (el) => [...el.querySelectorAll('a, button')].filter(vis).length;
+    const outer = cands.filter((el) => !cands.some((o) => o !== el && o.contains(el) && links(o) <= links(el) + 1));
+    const pool = outer.length ? outer : cands;
+    pool.sort((a, b) => links(b) - links(a) || b.getBoundingClientRect().height - a.getBoundingClientRect().height);
+    return pool.find((el) => links(el) >= 3) || pool[0] || null;
   }
   function nav() {
     const el = window.__susanooNav && document.contains(window.__susanooNav) ? window.__susanooNav : (window.__susanooNav = findNav());
@@ -101,9 +111,14 @@
       const href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
       if (href && !href.startsWith('#') && !href.startsWith('javascript:')) return false;
       if (el.closest('form') && el.type === 'submit') return false;
+      // Not search, cart, account or locale buttons.
+      const what = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${typeof el.className === 'string' ? el.className : ''}`;
+      if (/search|cart|bag|basket|account|login|log in|user|locale|language|currency|wishlist|theme|dark|light|mode/i.test(what)) return false;
       const text = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${typeof el.className === 'string' ? el.className : ''} ${el.textContent}`;
       return el.hasAttribute('aria-expanded') || /menu|burger|hamburger|nav|toggle|drawer/i.test(text);
     });
+    // Prefer an explicit menu label over a generic aria-expanded control.
+    cands.sort((a, b) => (/menu|burger|hamburger|navigation/i.test(b.getAttribute('aria-label') || b.className || '') ? 1 : 0) - (/menu|burger|hamburger|navigation/i.test(a.getAttribute('aria-label') || a.className || '') ? 1 : 0));
     const el = cands[0]; if (!el) return null; const r = el.getBoundingClientRect();
     return { l: label(el), x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
   }

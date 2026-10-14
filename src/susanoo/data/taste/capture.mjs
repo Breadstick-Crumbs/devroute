@@ -29,7 +29,11 @@ const HIDE_CONSENT = `(() => { const vw = innerWidth * innerHeight; let n = 0;
     const text = el.textContent.slice(0, 800);
     const hasChoice = [...el.querySelectorAll('button, a, [role=button]')].some((b) => /\b(accept|agree|reject|decline|allow|deny|got it|ok)\b/i.test(b.textContent));
     if ((s.position === 'fixed' || s.position === 'sticky' || +s.zIndex > 999) && /cookie|consent|gdpr/i.test(text) && hasChoice && r.width * r.height > vw * 0.03) { el.style.setProperty('display', 'none', 'important'); n++; } });
-  document.documentElement.style.overflow = 'auto'; document.body.style.overflow = 'auto'; return n; })()`;
+  // Also remove the dim backdrop a consent dialog leaves behind, and undo common scroll locks.
+  if (n) document.querySelectorAll('body *').forEach((el) => { const s = getComputedStyle(el); const r = el.getBoundingClientRect();
+    if (s.position === 'fixed' && r.width >= innerWidth * 0.95 && r.height >= innerHeight * 0.95 && !el.textContent.trim() && s.backgroundColor !== 'rgba(0, 0, 0, 0)') el.style.setProperty('display', 'none', 'important'); });
+  for (const el of [document.documentElement, document.body]) { el.style.setProperty('overflow', 'auto', 'important'); if (getComputedStyle(el).position === 'fixed') el.style.setProperty('position', 'static', 'important'); }
+  return n; })()`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const profile = mkdtempSync(join(tmpdir(), 'susanoo-capture-'));
@@ -122,7 +126,9 @@ async function probeMotion(c, out) {
   for (let i = 0; i < 8; i++) {
     const s = await evalIn(c, M(`scrollTo(${i * 540})`)); await sleep(750);
     steps.push({ y: s.y, els: await evalIn(c, M('snapshot()')) });
-    const shot = await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 50, clip: { x: 0, y: 0, width: 1440, height: 900, scale: 0.25 } });
+    // The clip is in page coordinates, so it starts at the current scroll position (0 for a scroll container).
+    const top = s.container === 'document' ? s.y : 0;
+    const shot = await c.send('Page.captureScreenshot', { format: 'jpeg', quality: 50, clip: { x: 0, y: top, width: 1440, height: 900, scale: 0.25 } });
     if (shot.result?.data) writeFileSync(join(frames, `${String(i).padStart(2, '0')}.jpg`), Buffer.from(shot.result.data, 'base64'));
     if (s.y >= s.max) break;
   }
