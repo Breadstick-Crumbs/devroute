@@ -123,7 +123,9 @@ python_packages = ["pytest"]
 pyproject_tools = ["pytest"]
 files = ["pytest.ini", "conftest.py", "tests/conftest.py"]
 version_args = ["--version"]
-run = { unit_testing = ["pytest", "-q"], integration_testing = ["pytest", "-q"] }
+# `python -m pytest`, not the `pytest` script: only the module form puts the project root on
+# sys.path, so tests still import a package that is not installed (flat layout).
+run = { unit_testing = ["python", "-m", "pytest", "-q"], integration_testing = ["python", "-m", "pytest", "-q"] }
 reliability = 3
 context_cost = 1
 setup_cost = 1

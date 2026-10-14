@@ -272,7 +272,8 @@ def test_pipenv_dev_dependency_runs_through_pipenv(tmp_path: Path, registry):
     assert environment is not None
     inv = Inventory(str(tmp_path), "", False, facts.languages, [pytest_finding, environment])
     [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
-    assert rec.selected is not None and rec.selected.command == ["pipenv", "run", "pytest", "-q"]
+    assert rec.selected is not None
+    assert rec.selected.command == ["pipenv", "run", "python", "-m", "pytest", "-q"]
 
 
 def test_poetry_detected_from_pyproject_without_lock(tmp_path: Path, registry):
