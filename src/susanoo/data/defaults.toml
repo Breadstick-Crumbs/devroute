@@ -640,7 +640,7 @@ capability = "performance_budget"
 signals = ["ui"]
 ui_domains = ["website"]
 levels = { standard = "recommended", deep = "recommended" }
-instructions = "Lab numbers only; Core Web Vitals thresholds are defined on real-user data at the 75th percentile."
+instructions = "Lighthouse CI gives lab numbers (no INP; Total Blocking Time stands in). Core Web Vitals thresholds apply to real-user data at the 75th percentile, so a lab pass is not a Core Web Vitals pass."
 
 [[verification]]
 id = "security_scan"

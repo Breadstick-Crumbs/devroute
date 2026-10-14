@@ -92,13 +92,13 @@ UI domain: Dashboard or data-heavy app (the task mentions "dashboard"; set [ui] 
 UI baseline (every UI change):
 
 - Text contrast at least 4.5:1 (3:1 for large text and for UI components and focus indicators); WCAG 2.2 AA 1.4.3 and 1.4.11.
-- Pointer targets at least 24x24 CSS px, or enough space around them (WCAG 2.2 AA 2.5.8); 44x44 is the better aim.
-- Everything works with the keyboard alone, in a sensible order, with a visible focus indicator that sticky headers or banners never fully hide (2.1.1, 2.4.7, 2.4.11).
+- Pointer targets at least 24x24 CSS px, or enough space around them (WCAG 2.2 AA 2.5.8); 44x44 (2.5.5, level AAA) is the better aim.
+- Everything works with the keyboard alone, in a sensible order, with a visible focus indicator that sticky headers or banners never fully hide (2.1.1, 2.4.3, 2.4.7, 2.4.11).
 - Empty, loading, and error states, plus long content and very long words.
 - Check at 375, 768, and 1280 CSS px wide (common widths, not a standard).
 - Use the project's design tokens and components rather than one-off values.
 
-Sources: WCAG 2.2 level AA (W3C); the widths are conventions.
+Sources: WCAG 2.2 (W3C), level AA unless noted; the states, long-content, and design-token items are common practice, and the widths are conventions.
 
 Dashboard or data-heavy app:
 

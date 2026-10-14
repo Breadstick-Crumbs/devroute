@@ -194,7 +194,8 @@ def render_brief(plan: TaskPlan) -> str:
 def render_ui(ui: UIContext) -> list[str]:
     """The UI section of a brief: domain and why, then the baseline and the domain checklist."""
     domain = f"{ui.title} ({ui.reason})" if ui.title else ui.reason
-    lines = ["## UI", "", f"UI domain: {domain}. This is a heuristic, not a verified classification.", ""]
+    guess = " This is a heuristic, not a verified classification." if ui.heuristic else ""
+    lines = ["## UI", "", f"UI domain: {domain}.{guess}", ""]
     for checklist in (ui.baseline, ui.checklist):
         if checklist is None:
             continue
@@ -209,6 +210,9 @@ def render_inventory(inv: Inventory) -> str:
     if inv.languages:
         langs = ", ".join(f"{k} ({v})" for k, v in inv.languages.items())
         lines += [f"Languages: {langs}", ""]
+    if inv.ui_domains:
+        found = ", ".join(f"{d['id']} (from {d['evidence']})" for d in inv.ui_domains)
+        lines += [f"UI domains suggested by dependencies: {found}", ""]
     groups = [
         ("Build systems", "build_system"),
         ("Python environment manager", "environment"),
