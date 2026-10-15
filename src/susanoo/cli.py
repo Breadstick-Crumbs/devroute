@@ -62,7 +62,7 @@ from susanoo.enforcement.auto import (
 )
 from susanoo.enforcement.hooks import HOOK_EVENTS, SessionState, handle
 from susanoo.enforcement.hooks import _project_root as _hook_root
-from susanoo.enforcement.state import active_route, evidence_status
+from susanoo.enforcement.state import active_route, evidence_status, find_active_route
 from susanoo.entry import _project_has_own_hooks
 from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
 from susanoo.evaluation.store import RecordError, RecordStore, find_route, new_record_id
@@ -937,14 +937,27 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     data") is added to it, so its safety controls apply. The raised route replaces the open one
     and keeps its recorded evidence. The user's plan approval is kept too, unless the reason
     adds a safety control: then the user approves the plan again.
+
+    The open route may be in another checkout of the repository (a git worktree, ADR 0017): the
+    raised route then replaces it there, where that checkout's Stop hook reads it.
     """
-    store = _require_initialized(ctx)
     session = ctx.args.session or _session()
     if session and auto_settings(ctx.root):
         _refuse_extra_config(ctx)
-    state = active_route(store, session) if session else None
-    if not session or state is None:
+    found = find_active_route(ctx.root, session) if session else None
+    if not session or found is None:
+        if not is_initialized(ctx.root) and not any(is_initialized(c) for c in sibling_checkouts(ctx.root)):
+            raise CLIError("local records are disabled; run `susanoo init` first")
         raise CLIError("no open route in this Claude Code session to raise (route the task first)")
+    store, state = found
+    # The route's own checkout gates it: its configuration decides the safety side of the raise
+    # (signals in the reason, approvals, records). The checks are planned here, like verify's.
+    route_config = ctx.config
+    if store.root != ctx.root:
+        if auto_settings(store.root):
+            _refuse_extra_config(ctx)
+        extra = Path(ctx.args.config) if getattr(ctx.args, "config", None) else None
+        route_config = load_config(store.root, extra)
     reason = redact(" ".join(ctx.args.reason.split()))[:500]
     if not reason:
         raise CLIError("give the reason for raising the route with --reason")
@@ -953,7 +966,12 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     task = stored if isinstance(stored, str) and stored.strip() else reason
     # The target is a minimum, not an override: a reason that routes higher wins.
     floor = Floor.merge(
-        [route_floor(state.route), message_floor(reason, ctx.config), Floor({}, [], [], ctx.args.profile)],
+        [
+            route_floor(state.route),
+            message_floor(reason, ctx.config),
+            message_floor(reason, route_config) if route_config is not ctx.config else None,
+            Floor({}, [], [], ctx.args.profile),
+        ],
         PROFILE_ORDER,
     )
     plan = plan_task(task, ctx.root, ctx.config, floor=floor)
@@ -969,14 +987,14 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
         )
         return EXIT_OK
     plan.record_id = new_record_id()
-    data = route_record(plan, plan.record_id, ctx.config, session)
+    data = route_record(plan, plan.record_id, route_config, session)
     data["task"] = stored if isinstance(stored, str) else None
     for key in ("auto", "routed_by", "floor", "autonomous"):
         if key in state.route:
             data[key] = state.route[key]
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
-    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", ctx.config)
+    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", route_config)
     # The same task with more process: checks already run still count. A plan approval covers the
     # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
     # adds a check), so only autonomy asked for in the user's own words carries over.
@@ -986,7 +1004,7 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     for item in store.read("approvals"):
         if item.get("record_id") == old and item.get("checkpoint") == "autonomy":
             store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
-    hook_state = SessionState(ctx.root, session)
+    hook_state = SessionState(store.root, session)
     if hook_state.data.get("record_id") == old:
         hook_state.data["record_id"] = plan.record_id
         hook_state.save()
@@ -997,17 +1015,24 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     approved = any(a.get("record_id") == plan.record_id for a in store.read("approvals"))
     if added:
         header += f"\nNew safety controls: {', '.join(added)}."
-    enforcement = ctx.config.get("enforcement", {})
+    enforcement = route_config.get("enforcement", {})
     configured_hands_off = bool(enforcement.get("hands_off"))
     if not approved and not configured_hands_off and target in set(enforcement.get("approval_profiles", [])):
         header += " The plan needs the user's approval again."
+    if store.root != ctx.root:
+        header += f"\nThe route was recorded in {store.root}; the raised route replaces it there."
     if state.route.get("auto") is True:
         modes = set(enforcement.get("autonomous_modes", []))
-        message = prompt_state.load(ctx.root, session) or {}
+        message = prompt_state.load(store.root, session) or prompt_state.load(ctx.root, session) or {}
         hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
         asked_autonomy = autonomy_requested(store, state.route, old, message)
         brief = compact_brief(
-            plan, plan.record_id, hands_off, _brief_command(ctx.root), "again", asked_autonomy=asked_autonomy
+            plan,
+            plan.record_id,
+            hands_off,
+            _brief_command(store.root),
+            "again",
+            asked_autonomy=asked_autonomy,
         )
         ctx.emit(header + "\n" + brief)
     else:
