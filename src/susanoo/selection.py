@@ -156,7 +156,10 @@ def _registry_candidate(
         return None
     if tool.kind == "script" and finding is None:
         return None  # Project scripts are only meaningful where they exist.
-    command = _expand(tool.run[capability], run_pm) if capability in tool.run else None
+    # Discovery picks the project-configured variant of `run` (see ToolSpec.configured_run).
+    configured = finding.detail.get("run") if finding else None
+    run = configured if isinstance(configured, dict) else tool.run
+    command = _expand(tuple(run[capability]), run_pm) if capability in run else None
     evidence = list(finding.evidence) if finding else []
     withheld = ""
     environment = next(iter(inventory.by_kind("environment")), None)

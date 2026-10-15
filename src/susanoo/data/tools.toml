@@ -21,6 +21,9 @@
 # `{js_add_dev}` / `{js_create}` in `install` and `{js_run}` in `run` follow the project's package manager
 # ([[package_managers]] at the end of this file).
 # run: capability -> argv used by `susanoo verify --execute` (argv lists, never a shell)
+# [[tools.configured_run]]: `when` (file:section[:key] sources in the tool's own lookup order) and a
+#   `run` that replaces the commands above when the project's config sets that key; the config's
+#   values are only checked for being set, never put into a command
 
 [[tools]]
 id = "claude-code-subagents"
@@ -382,6 +385,21 @@ setup_cost = 2
 security_exposure = 1
 install = "pip install mypy"
 
+# `mypy .` replaces the configured targets (`files`, `packages`, `modules`) with every Python file
+# in the project, and bare `mypy` fails without them. Sources in mypy's lookup order: it reads only
+# the first config it finds.
+[[tools.configured_run]]
+when = ["mypy.ini:mypy:files", ".mypy.ini:mypy:files", "pyproject.toml:tool.mypy:files", "setup.cfg:mypy:files"]
+run = { type_checking = ["mypy"] }
+
+[[tools.configured_run]]
+when = ["mypy.ini:mypy:packages", ".mypy.ini:mypy:packages", "pyproject.toml:tool.mypy:packages", "setup.cfg:mypy:packages"]
+run = { type_checking = ["mypy"] }
+
+[[tools.configured_run]]
+when = ["mypy.ini:mypy:modules", ".mypy.ini:mypy:modules", "pyproject.toml:tool.mypy:modules", "setup.cfg:mypy:modules"]
+run = { type_checking = ["mypy"] }
+
 [[tools]]
 id = "pyright"
 name = "Pyright"
@@ -430,6 +448,17 @@ context_cost = 1
 setup_cost = 1
 security_exposure = 1
 install = "pip install bandit"
+
+# Targets on the command line replace the targets in .bandit, so name the file instead. This is
+# the project's own `bandit --ini .bandit`: Susanoo's default exclusions give way to the file's.
+[[tools.configured_run]]
+when = [".bandit:bandit:targets"]
+run = { security_analysis = ["bandit", "--ini", ".bandit", "-r", "-q"] }
+
+# Bandit reads [tool.bandit] (skips, exclude_dirs) only when pointed at pyproject.toml.
+[[tools.configured_run]]
+when = ["pyproject.toml:tool.bandit"]
+run = { security_analysis = ["bandit", "-c", "pyproject.toml", "-r", ".", "-q", "-x", "./.venv,./venv,./node_modules,./tests,./build,./dist"] }
 
 [[tools]]
 id = "semgrep"

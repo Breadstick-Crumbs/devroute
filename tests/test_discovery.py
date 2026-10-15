@@ -422,3 +422,124 @@ def test_package_script_is_runnable_through_the_detected_manager(tmp_path: Path,
     )
     assert only_npm is not None and not only_npm.status.usable
     assert with_pnpm is not None and with_pnpm.status.usable
+
+
+def _command(root: Path, registry, capability: str, tool_id: str) -> list[str] | None:
+    from susanoo.discovery import Inventory
+    from susanoo.selection import candidates_for
+
+    facts = scan_project(root)
+    finding = detect_tool(registry.tools[tool_id], facts, {}, False, which=all_binaries)
+    inv = Inventory(str(root), "", False, facts.languages, [finding] if finding else [])
+    return next(c.command for c in candidates_for(capability, inv, registry) if c.id == tool_id)
+
+
+def test_mypy_checks_the_files_the_project_configures(tmp_path: Path, registry):
+    def mypy_for(name: str, files: dict[str, str]) -> list[str] | None:
+        root = tmp_path / name
+        write(root, "app.py", "")
+        for rel, content in files.items():
+            write(root, rel, content)
+        return _command(root, registry, "type_checking", "mypy")
+
+    # `mypy .` would replace the configured files with every Python file in the project.
+    assert mypy_for("toml", {"pyproject.toml": '[tool.mypy]\nfiles = ["src"]\n'}) == ["mypy"]
+    assert mypy_for("ini", {"mypy.ini": "[mypy]\nfiles = src\n"}) == ["mypy"]
+    assert mypy_for("cfg", {"setup.cfg": "[mypy]\nfiles = src\n", "requirements.txt": "mypy\n"}) == ["mypy"]
+    assert mypy_for("hidden-ini", {".mypy.ini": "[mypy]\npackages = pkg\n"}) == ["mypy"]
+    assert mypy_for("modules", {"pyproject.toml": '[tool.mypy]\nmodules = ["app"]\n'}) == ["mypy"]
+    # Bare `mypy` fails without configured files, and mypy reads only the first config it finds:
+    # mypy.ini wins once it exists, while pyproject.toml and setup.cfg count only with a mypy section.
+    dot = ["mypy", "."]
+    files_toml = '[tool.mypy]\nfiles = ["src"]\n'
+    assert mypy_for("none", {"pyproject.toml": "[tool.mypy]\nstrict = true\n"}) == dot
+    assert mypy_for("shadowed", {"mypy.ini": "[mypy]\nstrict = True\n", "pyproject.toml": files_toml}) == dot
+    assert mypy_for("ini-without-section", {"mypy.ini": "", "pyproject.toml": files_toml}) == dot
+    shared = {"pyproject.toml": "[project]\nname = 'x'\n", "setup.cfg": "[mypy]\nfiles = src\n"}
+    assert mypy_for("shared", {**shared, "requirements.txt": "mypy\n"}) == ["mypy"]
+    shared_shadow = {"pyproject.toml": "[tool.mypy]\nstrict = true\n", "setup.cfg": "[mypy]\nfiles = src\n"}
+    assert mypy_for("shared-shadow", shared_shadow) == dot
+    # A file mypy cannot parse is skipped by mypy too, so the next one decides.
+    assert mypy_for("broken-ini", {"mypy.ini": "files = src\n", "pyproject.toml": files_toml}) == ["mypy"]
+    assert (
+        mypy_for("broken", {"pyproject.toml": "[tool.mypy\nfiles = 1\n", "requirements.txt": "mypy\n"}) == dot
+    )
+
+
+def test_configured_mypy_files_pass_where_mypy_dot_fails(tmp_path: Path, registry):
+    import subprocess
+    import sys
+
+    import pytest
+
+    pytest.importorskip("mypy")
+    root = tmp_path / "typed"
+    write(root, "pyproject.toml", '[tool.mypy]\nstrict = true\nfiles = ["pkg"]\n')
+    write(root, "pkg/__init__.py", "def add(a: int, b: int) -> int:\n    return a + b\n")
+    write(root, "tests/test_pkg.py", "def test_add():\n    assert True\n")
+    command = _command(root, registry, "type_checking", "mypy")
+    assert command is not None and command[0] == "mypy"
+
+    def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        cache = ["--cache-dir", str(tmp_path / ".mypy_cache")]
+        return subprocess.run(
+            [sys.executable, "-m", *argv, *cache], cwd=root, capture_output=True, text=True, check=False
+        )
+
+    everything = run(["mypy", "."])
+    assert everything.returncode != 0 and "test_pkg.py" in everything.stdout  # Untyped, strict mode.
+    assert run(command).returncode == 0
+
+
+def test_bandit_uses_the_project_configuration(tmp_path: Path, registry):
+    def bandit_for(name: str, files: dict[str, str]) -> list[str] | None:
+        root = tmp_path / name
+        write(root, "app.py", "")
+        write(root, "requirements.txt", "bandit\n")
+        for rel, content in files.items():
+            write(root, rel, content)
+        return _command(root, registry, "security_analysis", "bandit")
+
+    default = bandit_for("plain", {})
+    assert default is not None and default[:3] == ["bandit", "-r", "."] and "-c" not in default
+    # Without `-c pyproject.toml` bandit ignores [tool.bandit] (its skips and exclude_dirs).
+    configured = bandit_for("toml", {"pyproject.toml": '[tool.bandit]\nskips = ["B101"]\n'})
+    assert configured == ["bandit", "-c", "pyproject.toml", *default[1:]]
+    # Targets on the command line replace the targets in .bandit.
+    assert bandit_for("ini", {".bandit": "[bandit]\ntargets = src\n"}) == [
+        "bandit",
+        "--ini",
+        ".bandit",
+        "-r",
+        "-q",
+    ]
+    assert bandit_for("ini-no-targets", {".bandit": "[bandit]\nskips = B101\n"}) == default
+    both = {".bandit": "[bandit]\ntargets = src\n", "pyproject.toml": "[tool.bandit]\n"}
+    assert bandit_for("both", both) == ["bandit", "--ini", ".bandit", "-r", "-q"]
+
+
+def test_configured_run_entries_are_validated(tmp_path: Path):
+    import pytest
+
+    from susanoo.config import ConfigError
+    from susanoo.registry import load_registry
+
+    def load(configured_run: str) -> None:
+        tool = '[[tools]]\nid = "x"\nkind = "cli"\ncapabilities = ["type_checking"]\n'
+        write(tmp_path, ".susanoo/tools.toml", tool + configured_run)
+        load_registry(tmp_path)
+
+    run = 'run = { type_checking = ["x"] }\n'
+    load('[[tools.configured_run]]\nwhen = ["x.ini:x:files"]\n' + run)
+    for bad in (
+        'configured_run = "x"\n',
+        "[[tools.configured_run]]\nwhen = []\n" + run,
+        '[[tools.configured_run]]\nwhen = ["x.ini"]\n' + run,
+        '[[tools.configured_run]]\nwhen = ["x.ini:x:files"]\nrun = {}\n',
+        # Discovery never reads outside the project root.
+        '[[tools.configured_run]]\nwhen = ["../x.ini:x:files"]\n' + run,
+        '[[tools.configured_run]]\nwhen = ["/etc/x.ini:x"]\n' + run,
+        '[[tools.configured_run]]\nwhen = ["..:x"]\n' + run,
+    ):
+        with pytest.raises(ConfigError):
+            load(bad)

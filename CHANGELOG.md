@@ -9,6 +9,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - A bare "don't ask" at the end of a clause ("fix it, don't ask") now counts as asking for autonomy; before, only "don't ask me" did. "Don't ask for the password twice" still does not.
 
 ### Added
+- Tool registry entries can declare `[[tools.configured_run]]` commands that replace a capability's `run` command when the project's config sets a given key (see the configuration docs). Discovery only checks that the key is set; config values never become part of a command, and only files in the project root are read.
 - **The taste-ui skill**, installed by `susanoo init` (project and `--global`; `--no-taste` leaves it out).
   - **What it is:** a way for Claude to make visual decisions for UI work. Susanoo itself still never judges aesthetics.
   - **What it does:** reads your personal taste profile (`TASTE.md` plus captured reference sites), checks whether that look fits the product, proposes three distinct directions, defines design tokens first, and screenshots its own work at the visual check's widths (375, 768 and 1280 px) before handing back. See ADR 0010.
@@ -33,6 +34,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - ADR 0008 (accepted, partly implemented): how Susanoo will handle UI and UX work. It requires and records UI checks (a visual check at common widths, accessibility scans in DEEP), gives short domain checklists, and points Claude at design context; it does not judge aesthetics. Implemented so far: the UI checks, UI domains, design context, and the evaluation pieces below; the routing changes are not built yet.
 - UI reference suite `ui-v1.toml` (15 cases, labeled before any UI heuristic changed): `susanoo eval --suite src/susanoo/data/suites/ui-v1.toml` from a source checkout. With v0.7 heuristics it agrees on 8 of 15 with 0 risk-floor violations; visual redesigns and presentational checkout changes route DEEP.
 - Routing suites can list `controls` a case's route must include; a missing control counts as a risk-floor violation, and an unknown control id is a suite error.
+
+### Fixed
+- `susanoo verify --execute` no longer fails type checking on correct work in projects that tell mypy what to check. It ran `mypy .`, which replaces the configured targets (`files`, `packages`, `modules`) with every Python file in the project (on Susanoo itself, 567 errors in untyped tests while the configured `mypy` is clean). It now runs bare `mypy` when the config file mypy actually reads (`mypy.ini`, `.mypy.ini`, `[tool.mypy]` in `pyproject.toml`, or `[mypy]` in `setup.cfg`, in mypy's order) sets one of them, and `mypy .` otherwise, since bare `mypy` fails without targets.
+- The Bandit check follows the project's Bandit configuration: with a `[tool.bandit]` table it passes `-c pyproject.toml` (Bandit ignores that table otherwise, including its `skips` and `exclude_dirs`), and with `targets` in `.bandit` it runs `bandit --ini .bandit` instead of scanning `.`, which replaced those targets (Susanoo's default exclusions then give way to the file's, as in the project's own `bandit --ini .bandit`). Pyright already reads its own `include` and is unchanged.
 
 ## [0.7.0] - 2026-10-14
 
