@@ -102,25 +102,38 @@ def split_app_envelopes(prompt: str, cfg: dict[str, Any]) -> tuple[str, int]:
     frame lines (``app_envelope_frames``, whole lines) removed too. Whatever is left is the user's
     own text.
     """
+    spans = _envelope_spans(prompt, cfg)
+    if not spans:
+        return prompt, 0
+    kept: list[str] = []
+    pos = 0
+    for start, end in spans:
+        kept.append(prompt[pos:start])
+        pos = end
+    return _without_frames("".join(kept) + prompt[pos:], cfg), len(spans)
+
+
+def _envelope_spans(prompt: str, cfg: dict[str, Any]) -> list[tuple[int, int]]:
+    """Where the app's blocks are in ``prompt``, in order (see ``split_app_envelopes``)."""
     tags = tuple(cfg.get("app_envelopes", []))
     if not tags or len(prompt) > ENVELOPE_MAX_CHARS:
-        return prompt, 0
+        return []
     opening = _envelope_open(tags)
-    kept: list[str] = []
-    count = pos = 0
+    spans: list[tuple[int, int]] = []
+    pos = 0
     while found := opening.search(prompt, pos):
         closing = f"</{found.group(1)}>"
         end = prompt.find(closing, found.end())
         if end < 0:
             break
-        kept.append(prompt[pos : found.start()])
         pos = end + len(closing)
-        count += 1
-    text = "".join(kept) + prompt[pos:]
+        spans.append((found.start(), pos))
+    return spans
+
+
+def _without_frames(text: str, cfg: dict[str, Any]) -> str:
     frames = tuple(cfg.get("app_envelope_frames", []))
-    if count and frames:
-        text = _envelope_frames(frames).sub("", text)
-    return text, count
+    return _envelope_frames(frames).sub("", text) if frames else text
 
 
 def from_app(prompt: str, cfg: dict[str, Any]) -> bool:
@@ -129,14 +142,18 @@ def from_app(prompt: str, cfg: dict[str, Any]) -> bool:
     return count > 0 and not own.strip()
 
 
-def requests_text(own: str, cfg: dict[str, Any]) -> str:
-    """The text whose requests that lower process count (autonomy, a named workflow).
+def users_words(prompt: str, cfg: dict[str, Any]) -> str:
+    """The text that speaks for the user: whether it is a task, and its requests that lower process.
 
-    The user's own text, or nothing when it still holds one of the app's tags: a block closed
-    early (a peer quoting its closing tag) or left open puts someone else's words in ``own``.
+    In a prompt with the app's blocks, only the text before the first block and after the last
+    counts: a peer that closes its block early must open another one to hide the closing tag
+    left over, so whatever it writes lies between two blocks. Nothing counts when one of the
+    app's tags is still in that text (a block closed early or left open).
     """
+    spans = _envelope_spans(prompt, cfg)
+    text = _without_frames(prompt[: spans[0][0]] + prompt[spans[-1][1] :], cfg) if spans else prompt
     tags = tuple(cfg.get("app_envelopes", []))
-    return "" if tags and _envelope_tag(tags).search(own) else own
+    return "" if tags and _envelope_tag(tags).search(text) else text
 
 
 def wants_autonomy(prompt: str, cfg: dict[str, Any]) -> bool:
@@ -457,15 +474,20 @@ def on_prompt(
     own, envelopes = split_app_envelopes(prompt, cfg)
     if envelopes and not own.strip():
         return _on_app_message(event, root, session, command)
-    # Asking for autonomy or naming a workflow lowers process, so only the user's own text counts
+    # Asking for autonomy or naming a workflow lowers process, so only the user's own words count
     # for it; the floor below still reads the whole prompt, the app's blocks included.
-    requests = requests_text(own, cfg)
-    # Whether it is a task, and whether it continues the open one, is read from the user's own text
-    # too, so a reminder the app put first does not hide their task. With a stray tag left in it (a
-    # block closed early or left open), the whole prompt counts, as before. The floor and the plan
+    requests = users_words(prompt, cfg)
+    # Whether it is a task, and whether it continues the open one, is read from the user's words
+    # too, so a reminder the app put first does not hide their task. Without such words (a stray
+    # tag, or text only between blocks), the whole prompt counts, as before. The floor and the plan
     # below still read the whole prompt, so this never lowers a route.
-    said = requests if envelopes and requests.strip() else prompt
+    own_words = bool(envelopes and requests.strip())
+    said = requests if own_words else prompt
     kind = classify(said, cfg)
+    if kind == SKIP and own_words and not said.strip().startswith(str(cfg.get("skip_prefix", "?"))):
+        # "/", "!" and "#" act only at the start of the prompt, which here is the app's block; the
+        # user's "?" still means "do not route this".
+        kind = AMBIGUOUS
     hands_off = wants_autonomy(requests, cfg)
     # Every message is remembered (as its keyword floor, not its text), so a route Claude makes
     # later in this turn is never lower than the message, and only the user picks a lighter one.
