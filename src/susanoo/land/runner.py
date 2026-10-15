@@ -54,6 +54,8 @@ from susanoo.land.records import DECISION_RULE, append_record, find_pass, read_r
 
 SCRATCH_PREFIX = "susanoo-land-"
 ORPHAN_AGE_S = 12 * 3600
+HEAD_WAIT_ATTEMPTS = 6
+HEAD_WAIT_SECONDS = 2.0
 DEFAULT_BASE = "main"
 _ATTRIBUTION = ("co-authored-by:", "generated with", "🤖")
 
@@ -207,6 +209,11 @@ class Lander:
             self.record["result"] = "error"
             self.record["error"] = str(exc)
             self.say(f"stopped: {exc}")
+        except BaseException as exc:
+            # Configuration errors, interrupts, bugs: still recorded, then reported by the CLI.
+            self.record["result"] = "error"
+            self.record["error"] = f"{type(exc).__name__}: {exc}"
+            raise
         finally:
             self._cleanup()
             self.record["duration_s"] = round(time.monotonic() - started, 2)
@@ -235,7 +242,10 @@ class Lander:
         if not self._combine():
             self._stage("combine", t)
             self.record["result"] = "conflict"
-            self._status("conflict", "conflicts need a manual merge")
+            manual = [
+                f"{c['file']} ({c['candidate']})" for c in self.record["conflicts"] if not c["resolved"]
+            ]
+            self._status("conflict", "needs a manual merge: " + ", ".join(manual))
             return 1
         self._stage("combine", t)
 
@@ -357,6 +367,15 @@ class Lander:
                 self.repo.sha(f"refs/remotes/{remote}/{cand.branch}") if fetched.returncode == 0 else None
             )
             cand.tip = self._pick_tip(cand)
+            head = str(cand.pr.get("headRefOid") or "") if cand.pr else ""
+            if head and cand.tip != head:
+                note = f"{cand.label}: landing {_short(cand.tip)}, but its pull request shows {_short(head)}"
+                if self.options.merge:
+                    raise LandError(
+                        note + f"; push it first (git push {self.options.remote} {cand.branch}) so the pull "
+                        "request shows what lands"
+                    )
+                self._warn(note + " (the push makes them match)")
             if self.repo.is_ancestor(cand.tip, self.base_sha):
                 raise LandError(f"{cand.label} is already in {self.base}")
             cand.worktree = checked_out.get(cand.branch)
@@ -436,16 +455,23 @@ class Lander:
         tool_roots = list(dict.fromkeys([self.root, *([main] if main else [])]))
         steps: list[Any] = []
         if config.get("land", {}).get("use_verification", True) is not False:
-            # Discovery looks at the main worktree, where the project's environment usually lives.
+            # Discovery reads the base's files (the scratch tree is still at the base), never a
+            # checkout that may hold a candidate; tools are then looked up in the user's checkouts.
+            registry, profiles = load_registry(self.tree), load_profiles(self.tree)
             plan = plan_task(
-                PLAN_TASK,
-                tool_roots[-1],
-                config,
-                override="deep",
-                registry=load_registry(self.tree),
-                profiles=load_profiles(self.tree),
+                PLAN_TASK, self.tree, config, override="deep", registry=registry, profiles=profiles
             )
             steps = plan.verification.steps
+            missing = {s.id for s in steps if s.level == "required" and s.mode not in ("ready", "manual")}
+            if missing and main is not None and main != self.tree:
+                # A fresh scratch tree has no environment of its own. The main worktree's discovery
+                # may only fill in a command for a step the base already requires, so a branch
+                # checked out there can add a check but never remove one.
+                there = plan_task(
+                    PLAN_TASK, main, config, override="deep", registry=registry, profiles=profiles
+                )
+                ready = {s.id: s for s in there.verification.steps if s.mode == "ready" and s.command}
+                steps = [ready[s.id] if s.id in missing and s.id in ready else s for s in steps]
         settings = load_settings(config, steps, self.options.timeout)
         runner = Runner(settings, tool_roots)
         rules = parse_rules(settings.keep_both)
@@ -455,7 +481,9 @@ class Lander:
                 f"required check {step_id} has no tool Susanoo can run; it is not part of this landing"
             )
 
-    def _merge(self, git: Git, ref: str, message: str, label: str, *, base_side: str) -> bool:
+    def _merge(
+        self, git: Git, ref: str, message: str, label: str, *, base_side: str, log: str = "conflicts"
+    ) -> bool:
         """Merge ``ref`` into the scratch HEAD, keeping both sides of append-only conflicts.
 
         Returns False (with the merge aborted) when a conflict needs a person.
@@ -478,7 +506,7 @@ class Lander:
                 continue
             results.append(resolve_text(text, name, self.plan.rules, base_side=base_side))
         for res in results:
-            self.record["conflicts"].append({"candidate": label, **res.to_dict()})
+            self.record.setdefault(log, []).append({"candidate": label, **res.to_dict()})
         if not all(r.resolved for r in results):
             git.run("merge", "--abort", check=False)
             for res in results:
@@ -506,6 +534,19 @@ class Lander:
                 ok = False
         if not ok:
             return False
+        for path in self.git.changed_files(self.base_sha, self.prefixes[-1]):
+            if path.rsplit("/", 1)[-1] == ".gitattributes":
+                diff = self.git.run(
+                    "diff", "--unified=0", self.base_sha, self.prefixes[-1], "--", path
+                ).stdout
+                added = [
+                    line for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++")
+                ]
+                if any("merge=" in line for line in added):
+                    raise LandError(
+                        f"a candidate changes {path} with a merge= attribute, which changes how git resolves "
+                        "conflicts; land it by hand"
+                    )
         self.record["combined_sha"] = self.prefixes[-1]
         self.record["combined_tree"] = self.git.tree(self.prefixes[-1])
         self.record["base_tree"] = self.git.tree(self.base_sha)
@@ -523,35 +564,20 @@ class Lander:
         plan = self.plan
         combined = self.prefixes[-1]
         self.record["checks_key"] = plan.key
+        self.record["passed_trees"] = []
         if self.options.reuse:
-            hit = find_pass(
-                read_records(self.common) if self.common else [],
-                self.record["combined_tree"],
-                self.record["base_tree"],
-                plan.key,
-            )
+            hit = self._cached(self.record["combined_tree"])
             if hit is not None:
                 self.record["checks_passed"] = True
                 self.record["checks_reused"] = hit.get("id")
+                self.record["passed_trees"].append(self.record["combined_tree"])
                 self.say(f"checks: passed on this exact tree in {hit.get('id')}; not rerun")
                 return True
-        changed = self.git.changed_files(self.base_sha, combined)
-        compares = [c for c in plan.settings.compares if c.applies(changed)]
-        self.compares = compares
+        compares = self._prepare_compares()
         if not plan.settings.checks and not compares:
             raise LandError(
                 "no checks to run on the combined tree; add [[land.checks]] to the project configuration"
             )
-
-        if compares:
-            failed_setup = self._checkout(self.base_sha)
-            if failed_setup is not None:
-                raise LandError(f"setup failed on the base: {failed_setup.output_tail.strip()[-300:]}")
-            for compare in compares:
-                values, _duration, error = plan.runner.measure(compare, self.tree)
-                if values is None:
-                    raise LandError(f"{compare.id} failed on the base ({error}); fix the base first")
-                self.base_values[compare.id] = values
 
         failed_setup = self._checkout(combined)
         if failed_setup is not None:
@@ -588,7 +614,44 @@ class Lander:
             self._stage("attribute", t)
             return False
         self.record["checks_passed"] = True
+        self.record["passed_trees"].append(self.record["combined_tree"])
         return True
+
+    def _cached(self, tree: str) -> dict[str, Any] | None:
+        records = read_records(self.common) if self.common else []
+        return find_pass(records, tree, self.record["base_tree"], self.plan.key)
+
+    def _prepare_compares(self) -> list[Compare]:
+        """The compares the candidates trigger, with their values measured on the base (once)."""
+        changed = self.git.changed_files(self.base_sha, self.prefixes[-1])
+        self.compares = [c for c in self.plan.settings.compares if c.applies(changed)]
+        if self.compares and not self.base_values:
+            failed_setup = self._checkout(self.base_sha)
+            if failed_setup is not None:
+                raise LandError(f"setup failed on the base: {failed_setup.output_tail.strip()[-300:]}")
+            for compare in self.compares:
+                values, _duration, error = self.plan.runner.measure(compare, self.tree)
+                if values is None:
+                    raise LandError(f"{compare.id} failed on the base ({error}); fix the base first")
+                self.base_values[compare.id] = values
+        return self.compares
+
+    def _check_prefixes(self) -> None:
+        """Before merging pull requests one by one, check every state the base passes through."""
+        self._prepare_compares()  # also after a cache hit, which skipped them for the combined tree
+        for i, tree in enumerate(self.record["prefix_trees"][:-1]):
+            changed = self.git.changed_files(self.base_sha, self.prefixes[i])
+            ids = [c.id for c in self.plan.settings.checks]
+            ids += [c.id for c in self.compares if c.applies(changed)]
+            labels = " + ".join(c.label for c in self.order[: i + 1])
+            if self.options.reuse and self._cached(tree) is not None:
+                self.say(f"checks: {self.base} + {labels} passed before; not rerun")
+                self.record["passed_trees"].append(tree)
+                continue
+            self.say(f"checks on {self.base} + {labels}, a state the base passes through while merging")
+            if self._fails(self.prefixes[i], ids, f"prefix:{i + 1}"):
+                raise LandError(f"{self.base} + {labels} fails its checks on the way; nothing was merged")
+            self.record["passed_trees"].append(tree)
 
     def _record_check(self, result: CheckResult) -> None:
         data = result.to_dict()
@@ -653,7 +716,11 @@ class Lander:
                 culprit["kind"] = "alone"
         else:
             self.git.run("checkout", "--detach", "--force", self.base_sha)
-            if not self._merge(self.git, cand.tip, f"land: {cand.label} alone", cand.label, base_side="ours"):
+            self.git.run("clean", "-fdxq", check=False)
+            alone = f"land: {cand.label} alone"
+            if not self._merge(
+                self.git, cand.tip, alone, cand.label, base_side="ours", log="attribution_conflicts"
+            ):
                 culprit["kind"] = "unknown"
             elif self._fails("HEAD", ids, f"alone:{k}"):
                 culprit["kind"] = "alone"
@@ -685,32 +752,50 @@ class Lander:
     # -- 4 and 5. update, push, merge ----------------------------------------------------------
 
     def _land(self) -> str:
-        remote = self.options.remote
         if not self.options.push and not self.options.merge:
             self._ready()
             return "ready"
         expected = self.base_sha
+        if self.options.merge and len(self.order) > 1:
+            t = time.monotonic()
+            self._check_prefixes()
+            self._stage("checks", t)
         for i, cand in enumerate(self.order):
             if i > 0 and not self.options.merge:
                 break
             if self.options.merge:
-                self.repo.run(
-                    "fetch", "--no-tags", remote, f"+refs/heads/{self.base}:refs/remotes/{remote}/{self.base}"
-                )
-                current = self.repo.sha(f"refs/remotes/{remote}/{self.base}")
-                if current != expected:
-                    raise LandError(
-                        f"{remote}/{self.base} moved to {_short(current)} (expected {_short(expected)}); rerun land"
-                    )
+                self._expect_base(expected)
             updated = self._update(cand, expected, i)
             self._push(cand, updated)
             if self.options.merge:
-                expected = self._merge_pr(cand, updated, i)
+                expected = self._merge_pr(cand, updated, i, expected)
         if self.options.merge:
             self._status("merged", f"{self.base} is at {_short(expected)}, the tested tree")
             return "merged"
         self._ready()
         return "ready"
+
+    def _expect_base(self, expected: str) -> None:
+        remote = self.options.remote
+        self.repo.run(
+            "fetch", "--no-tags", remote, f"+refs/heads/{self.base}:refs/remotes/{remote}/{self.base}"
+        )
+        current = self.repo.sha(f"refs/remotes/{remote}/{self.base}")
+        if current != expected:
+            raise LandError(
+                f"{remote}/{self.base} moved to {_short(current)} (expected {_short(expected)}); rerun land"
+            )
+
+    def _wait_for_head(self, number: str, updated: str) -> None:
+        """GitHub updates a pull request's head shortly after a push; wait for it (bounded)."""
+        for attempt in range(HEAD_WAIT_ATTEMPTS):
+            view = gh_json(self.root, "pr", "view", number, "--json", "headRefOid")
+            if isinstance(view, dict) and view.get("headRefOid") == updated:
+                return
+            time.sleep(HEAD_WAIT_SECONDS * (attempt + 1))
+        raise LandError(
+            f"pull request {number} does not show the pushed head {_short(updated)} yet; rerun land"
+        )
 
     def _update(self, cand: Candidate, base_sha: str, i: int) -> str:
         """The candidate with the base merged in; its tree must equal the tested prefix."""
@@ -720,8 +805,11 @@ class Lander:
             # A plain merge in the user's name: this commit is pushed, so repository hooks run.
             git = Git(self.git.cwd, conflict_style=True)
             git.run("checkout", "--detach", "--force", cand.tip)
+            git.run("clean", "-fdxq", check=False)
             message = f"Merge branch '{self.base}' into {cand.branch}"
-            if not self._merge(git, base_sha, message, cand.label, base_side="theirs"):
+            if not self._merge(
+                git, base_sha, message, cand.label, base_side="theirs", log="update_conflicts"
+            ):
                 raise LandError(f"merging {self.base} into {cand.label} conflicts in a way the check did not")
             updated = git.out("rev-parse", "HEAD")
         tree = self.git.tree(updated)
@@ -748,23 +836,26 @@ class Lander:
                 f"  local {cand.branch}{where} is behind; update it with: git merge --ff-only {remote}/{cand.branch}"
             )
 
-    def _merge_pr(self, cand: Candidate, updated: str, i: int) -> str:
+    def _merge_pr(self, cand: Candidate, updated: str, i: int, expected: str) -> str:
         if cand.pr is None:
             raise LandError(f"{cand.label} has no pull request to merge")
         number = str(cand.pr["number"])
-        gh(
-            self.root,
-            "pr",
-            "merge",
-            number,
-            "--merge",
-            "--match-head-commit",
-            updated,
-            "--subject",
-            _merge_subject(cand.pr),
-            "--body",
-            _merge_body(cand.pr),
-        )
+        args = ["pr", "merge", number, "--merge", "--match-head-commit", updated]
+        args += ["--subject", _merge_subject(cand.pr), "--body", _merge_body(cand.pr)]
+        for attempt in (1, 2):
+            self._wait_for_head(number, updated)
+            # As late as possible: a base that moves after this is caught right after the merge.
+            self._expect_base(expected)
+            proc = gh(self.root, *args, check=False)
+            if proc.returncode == 0:
+                break
+            state = gh_json(self.root, "pr", "view", number, "--json", "state")
+            if isinstance(state, dict) and state.get("state") == "MERGED":
+                break  # merged on GitHub although gh reported an error; checked below
+            detail = (proc.stderr or proc.stdout).strip().splitlines()
+            if attempt == 2:
+                raise LandError(f"gh pr merge {number} failed: {detail[-1] if detail else proc.returncode}")
+            time.sleep(HEAD_WAIT_SECONDS)
         view = gh_json(self.root, "pr", "view", number, "--json", "state,mergeCommit")
         merged = (view.get("mergeCommit") or {}).get("oid") if isinstance(view, dict) else None
         if not isinstance(view, dict) or view.get("state") != "MERGED" or not merged:
@@ -782,7 +873,8 @@ class Lander:
         return str(merged)
 
     def _ready(self) -> None:
-        specs = " ".join(c.spec for c in self.order)
+        # Pull requests as bare numbers: "#2" would start a comment in Git Bash and PowerShell.
+        specs = " ".join(str(c.pr["number"]) if c.pr else c.branch for c in self.order)
         base = f" --base {self.base}" if self.options.base else ""
         remote = f" --remote {self.options.remote}" if self.options.remote != "origin" else ""
         self.say("ready to land. To merge (the user runs or approves this):")
@@ -790,8 +882,8 @@ class Lander:
         first = self.order[0]
         if first.pr and first.pushed:
             self.say(
-                f"  first step: gh pr merge {first.pr['number']} --merge --match-head-commit {first.pushed}"
-                f' --subject "{_merge_subject(first.pr)}"'
+                f"  it runs, first: gh pr merge {first.pr['number']} --merge --match-head-commit {first.pushed} "
+                f"with the subject {_merge_subject(first.pr)!r}"
             )
         self._status("ready", "waiting for the user's --merge")
 
@@ -799,7 +891,7 @@ class Lander:
         labels = " ".join(c.label for c in self.candidates)
         checks = [c for c in self.record["checks"] if c["tree"] == "combined"]
         passed = sum(1 for c in checks if c["status"] == "passed")
-        kept = sum(1 for c in self.record["conflicts"] if c["resolved"])
+        kept = sum(1 for c in self.record["conflicts"] if c["resolved"]) if result != "conflict" else 0
         parts = [f"land {result}: {labels} on {self.base}@{_short(self.base_sha)}"]
         if self.record.get("checks_reused"):
             parts.append(

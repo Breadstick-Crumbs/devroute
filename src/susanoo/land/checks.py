@@ -13,18 +13,27 @@ import fnmatch
 import hashlib
 import json
 import os
+import shutil
 
 # Bandit B404: compare commands are project checks, like the verification executor's.
 import subprocess  # nosec B404
+import sys
 import time
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from susanoo import __version__
 from susanoo.config import Config, ConfigError
-from susanoo.discovery.executables import resolve_executable
-from susanoo.verification.executor import OUTPUT_TAIL_CHARS, redact, run_command
+from susanoo.discovery.executables import project_dirs, resolve_executable
+from susanoo.verification.executor import (
+    KILL_GRACE_SECONDS,
+    OUTPUT_TAIL_CHARS,
+    _kill_tree,
+    redact,
+    run_command,
+)
 
 PLAN_TASK = "Check the combined tree of several branches before they land on the base branch"
 TREE = "{tree}"
@@ -68,6 +77,7 @@ class LandSettings:
     def key(self, tools: dict[str, str]) -> str:
         """Fingerprint of everything that decides a result besides the trees."""
         data = {
+            "susanoo": __version__,
             "checks": [c.command for c in self.checks],
             "compare": [c.to_dict() for c in self.compares],
             "setup": self.setup,
@@ -141,6 +151,7 @@ def load_settings(config: Config, plan_steps: list[Any], timeout: float) -> Land
         if item.get("enabled") is False:
             checks = [c for c in checks if c.id != item["id"]]
             continue
+        skipped = [x for x in skipped if x != item["id"]]
         command = _argv(item.get("command"), where)
         if existing is not None:
             existing.command, existing.source = command, "land"
@@ -214,11 +225,15 @@ class Runner:
         rest = [_expand(a, tree) for a in argv[1:]]
         if os.path.isabs(name):
             return [name, *rest]
+        # Every checkout's own environment before PATH: a scratch tree has none, and the main
+        # worktree's .venv usually holds the project's tools.
         for root in self.tool_roots:
-            found = resolve_executable(name, root)
-            if found:
-                return [found, *rest]
-        return [name, *rest]  # the executor reports "not found"
+            for directory in project_dirs(root):
+                found = shutil.which(name, path=str(directory))
+                if found:
+                    return [found, *rest]
+        found = resolve_executable(name, None)
+        return [found or name, *rest]  # the executor reports "not found"
 
     def tools(self, tree: Path) -> dict[str, str]:
         names = {c.command[0] for c in self.settings.checks} | {c.command[0] for c in self.settings.compares}
@@ -247,30 +262,43 @@ class Runner:
         """Run a compare command; return its watched numbers, the duration, and an error."""
         argv = self.resolve(compare.command, tree)
         started = time.monotonic()
+        # Its own process group, so a timeout stops the whole tree, as the executor does.
+        group: dict[str, Any]
+        if sys.platform == "win32":
+            group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        else:
+            group = {"start_new_session": True}
         try:
             with _environ(self.settings.env, tree):
                 # Bandit B603: argv list from project configuration, no shell.
-                proc = subprocess.run(  # nosec B603
+                proc = subprocess.Popen(  # nosec B603
                     argv,
                     cwd=tree,
                     stdin=subprocess.DEVNULL,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
-                    timeout=self.settings.timeout,
-                    check=False,
+                    **group,
                 )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except OSError as exc:
+            return None, 0.0, f"could not run: {exc}"
+        try:
+            stdout, stderr = proc.communicate(timeout=self.settings.timeout)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.communicate(timeout=KILL_GRACE_SECONDS)
             duration = time.monotonic() - started
             self.seconds += duration
-            return None, duration, f"could not run: {exc}"
+            return None, duration, f"did not finish within {self.settings.timeout:g} s"
         duration = time.monotonic() - started
         self.seconds += duration
         try:
-            data = json.loads(proc.stdout)
+            data = json.loads(stdout)
         except json.JSONDecodeError:
-            tail = redact((proc.stderr or proc.stdout or "")[-OUTPUT_TAIL_CHARS:])
+            tail = redact((stderr or stdout or "")[-OUTPUT_TAIL_CHARS:])
             return None, duration, f"exit {proc.returncode}, output is not JSON: {tail.strip()[-300:]}"
         values: dict[str, float] = {}
         for key in (*compare.no_drop, *compare.no_rise):

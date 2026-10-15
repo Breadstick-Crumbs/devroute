@@ -9,6 +9,7 @@ the file for a moment, so writes retry.
 from __future__ import annotations
 
 import json
+import os
 import statistics
 import time
 from pathlib import Path
@@ -32,13 +33,17 @@ def land_records_path(common: Path) -> Path:
 
 def append_record(common: Path, record: dict[str, Any]) -> Path:
     path = land_records_path(common)
-    line = json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n"
+    line = (json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     for attempt in range(WRITE_ATTEMPTS):
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            # One write call per line, so concurrent appends do not interleave within a line.
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write(line)
+            # One unbuffered binary write per line in append mode, so concurrent runs do not
+            # interleave within a line.
+            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o644)
+            try:
+                os.write(fd, line)
+            finally:
+                os.close(fd)
             return path
         except PermissionError:
             if attempt == WRITE_ATTEMPTS - 1:
@@ -73,13 +78,12 @@ def read_records(common: Path) -> list[dict[str, Any]]:
 def find_pass(
     records: list[dict[str, Any]], combined_tree: str, base_tree: str, key: str
 ) -> dict[str, Any] | None:
-    """The newest run whose checks passed on exactly this combined tree, base, and check set."""
+    """The newest run whose checks passed on exactly this tree, base, and check set."""
     for record in reversed(records):
         if (
-            record.get("checks_passed") is True
-            and record.get("combined_tree") == combined_tree
+            record.get("checks_key") == key
             and record.get("base_tree") == base_tree
-            and record.get("checks_key") == key
+            and combined_tree in (record.get("passed_trees") or [])
         ):
             return dict(record)
     return None
@@ -88,7 +92,12 @@ def find_pass(
 def stats(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Counts for ADR 0014's go or no-go rule. Counts, not validated thresholds."""
     runs = [r for r in records if r.get("kind") == "land"]
-    multi = [r for r in runs if len(r.get("candidates", [])) >= 2]
+    # A landing run as "ready" and then with --merge is one landing: the last run per combined
+    # tree counts once.
+    last: dict[str, dict[str, Any]] = {}
+    for r in runs:
+        last[str(r.get("combined_tree") or r.get("id"))] = r
+    multi = [r for r in last.values() if len(r.get("candidates", [])) >= 2]
     culprits: dict[str, int] = {}
     for r in runs:
         kind = (r.get("culprit") or {}).get("kind")

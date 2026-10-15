@@ -29,6 +29,7 @@ from susanoo.config import ConfigError
 
 _HEADING = re.compile(r"^#{1,6}\s")
 _SECTION = re.compile(r"^##\s")
+_MARKER = re.compile(r"^(<{7}|\|{7}|={7}|>{7})(\s|$)")
 
 
 @dataclass(frozen=True)
@@ -178,7 +179,7 @@ def resolve_text(text: str, path: str, rules: list[KeepBothRule], *, base_side: 
         if item.base is None:
             result.reason = "no base part in the conflict (needs merge.conflictStyle zdiff3)"
             return result
-        if any(line.strip() for line in item.base):
+        if item.base:  # even a blank line: a side removed or changed it
             result.reason = "a side changed or removed existing lines"
             return result
         added = [line for line in (*item.ours, *item.theirs) if line.strip()]
@@ -194,8 +195,15 @@ def resolve_text(text: str, path: str, rules: list[KeepBothRule], *, base_side: 
         first, second = (item.ours, item.theirs) if base_side == "ours" else (item.theirs, item.ours)
         combined = _ensure_newline(first, newline) + _ensure_newline(second, newline)
         if rule.sort:
-            combined = sorted(dict.fromkeys(combined))
+            # Sorted rows, blank lines after them, so a table is never split.
+            rows = [line for line in combined if line.strip()]
+            combined = sorted(dict.fromkeys(rows)) + [line for line in combined if not line.strip()]
         out.extend(combined)
+    text = "".join(out)
+    if any(_MARKER.match(line) for line in _split(text)):
+        # A content line that looks like a conflict marker would have ended a hunk early.
+        result.reason = "conflict marker lines remain"
+        return result
     result.resolved = True
-    result.text = "".join(out)
+    result.text = text
     return result

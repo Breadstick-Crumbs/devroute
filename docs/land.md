@@ -12,7 +12,7 @@ susanoo land 52 --no-push     # test only
 susanoo land --stats          # what the recorded runs show
 ```
 
-Candidates are pull request numbers (`52` or `#52`) or branch names, landed in the order given. The base is the pull requests' base branch (or `--base`, default `main`) on `--remote` (default `origin`).
+Candidates are pull request numbers (`52`; `#52` works too, but quote it in a shell, where `#` starts a comment) or branch names, landed in the order given. The base is the pull requests' base branch (or `--base`, default `main`) on `--remote` (default `origin`).
 
 ## What a run does
 
@@ -23,8 +23,8 @@ Candidates are pull request numbers (`52` or `#52`) or branch names, landed in t
    - **broken alone**: it fails on the base by itself;
    - **interaction**: it passes alone but fails with the candidates before it, a semantic conflict;
    - **base broken**: the base itself fails.
-5. **Update and push.** The base is merged into the candidate (a merge commit; never a rebase or a force push), its tree is compared byte for byte with the tested tree, and it is pushed. Without `--merge`, only the first candidate is updated, because the later ones need the earlier merges on the base first. Your local branches are never moved; the run tells you when one is behind.
-6. **Merge, only with `--merge`.** For each pull request in order: check that the base is exactly where it should be, update and push the branch, then `gh pr merge <n> --merge --match-head-commit <pushed sha> --subject "Merge: <title> (#n)"`, with the pull request's first prose paragraph as the body and no attribution lines. After each merge, the base must have exactly the tested tree. A moved base or head stops the run.
+5. **Update and push.** The base is merged into the candidate (a merge commit; never a rebase or a force push), its tree is compared byte for byte with the tested tree, and it is pushed. Without `--merge`, only the first candidate is updated, because the later ones need the earlier merges on the base first. A branch with no remote copy is pushed to the remote (`--no-push` keeps it local). Your local branches are never moved; the run tells you when one is behind.
+6. **Merge, only with `--merge`.** With two or more pull requests, every state the base passes through on the way (the base plus the first *k*) is checked first, so a stop halfway never leaves the base on an untested tree; a state that passed before is not rerun. Then, for each pull request in order: check that the base is exactly where it should be, update and push the branch, wait until the pull request shows the pushed head, check the base again, and run `gh pr merge <n> --merge --match-head-commit <pushed sha> --subject "Merge: <title> (#n)"`, with the pull request's first prose paragraph as the body and no attribution lines. After each merge, the base must have exactly the tested tree. A moved base stops the run before the merge; one that moves in the last instant is caught right after it, and the run stops. `--merge` refuses a branch whose local commits its pull request does not show yet: push the branch first.
 7. **Clean up** the scratch worktree, in every case. A worktree left by a killed run is removed by a later run after 12 hours.
 8. **Record** the run (below).
 
@@ -82,4 +82,4 @@ Every run appends one line to `<git common dir>/susanoo/records/land.jsonl`, sha
 
 ## Not supported yet
 
-Pull requests from forks, forges other than GitHub, testing each intermediate state before merging (only the full combination is checked; intermediate states of the base exist only while one `--merge` run is merging), and batching with bisection.
+Pull requests from forks, forges other than GitHub, and batching with bisection. A candidate whose `.gitattributes` sets a `merge=` driver is refused, because it changes how git resolves conflicts.

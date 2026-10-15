@@ -171,7 +171,8 @@ def _land_merge_ask() -> Decision:
 
 
 def _lands_with_merge(command: str) -> bool:
-    """`susanoo land ... --merge`, in any spelling the other susanoo gates recognize."""
+    """`susanoo land ... --merge`, also quoted (`susanoo "land"`) or split over lines."""
+    command = re.sub(r"[\\`]\r?\n", " ", command).replace('"', "").replace("'", "")
     match = _LAND.search(command)
     return match is not None and _MERGE_FLAG.search(command, match.end()) is not None
 

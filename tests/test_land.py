@@ -16,7 +16,6 @@ import pytest
 from susanoo.cli import main
 from susanoo.enforcement.gates import pre_tool_use
 from susanoo.land import runner as land_runner
-from susanoo.land.gitops import LandError
 from susanoo.land.keepboth import parse_rules, resolve_text
 from susanoo.land.records import land_records_path, read_records, stats
 from susanoo.land.runner import _merge_body, _merge_subject
@@ -368,6 +367,7 @@ def test_other_conflicts_stop_before_any_check(repo: Path):
         }
     ]
     assert "calc.py: needs a manual merge" in out
+    assert "needs a manual merge: calc.py (two)" in out.strip().splitlines()[-1]
     assert git(repo, "ls-remote", "origin", "one").split()[0] == git(repo, "rev-parse", "one")
     assert _scratch_left(repo) == []
 
@@ -468,7 +468,7 @@ class FakeGitHub:
         body = args[args.index("--body") + 1]
         pr = self._view(number)
         if pr["headRefOid"] != sha:
-            raise LandError("head moved")
+            return subprocess.CompletedProcess(args, 1, "", "Head branch was modified")
         tmp = self.work.parent / f"gh-merge-{number}"
         git(self.work.parent, "clone", "-q", "-b", "main", str(self.origin), str(tmp))
         git(tmp, "fetch", "-q", "origin", pr["headRefName"])
@@ -511,7 +511,7 @@ def test_merge_lands_each_pull_request_on_exactly_the_tested_tree(repo: Path, gi
     code, out, ready = land(repo, "1", "#2")
     assert code == 0 and ready["result"] == "ready", out
     assert github.merges == []  # nothing merges without --merge
-    assert "susanoo land 1 #2 --merge" in out
+    assert "susanoo land 1 2 --merge" in out
 
     code, out, record = land(repo, "1", "#2", "--merge")
     assert code == 0, out
@@ -525,6 +525,9 @@ def test_merge_lands_each_pull_request_on_exactly_the_tested_tree(repo: Path, gi
     assert git(repo, "merge-base", "--is-ancestor", second["tip"], second["pushed"]) == ""
     assert "Generated with" not in git(repo, "log", "-1", "--format=%B", "origin/main")
     assert "status: land merged: #1 #2" in out
+    # The state between the two merges was checked too, before anything merged.
+    assert {c["tree"] for c in record["checks"]} == {"prefix:1"}
+    assert record["passed_trees"] == [record["combined_tree"], record["prefix_trees"][0]]
 
 
 def test_merge_stops_when_the_base_moved(repo: Path, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch):
@@ -573,9 +576,12 @@ def test_records_are_shared_by_worktrees_and_summarized(repo: Path):
 
 
 def test_stats_verdicts():
+    counter = iter(range(1000))
+
     def run(kind: str | None = None, resolved: bool = False) -> dict[str, Any]:
         return {
             "kind": "land",
+            "combined_tree": f"tree-{next(counter)}",
             "candidates": [{}, {}],
             "result": "ready",
             "duration_s": 30.0,
@@ -588,3 +594,165 @@ def test_stats_verdicts():
     assert stats([run("interaction")] + [run() for _ in range(19)])["verdict"] == "go"
     assert stats([run(resolved=True) for _ in range(5)] + [run() for _ in range(15)])["verdict"] == "go"
     assert stats([run() for _ in range(3)])["verdict"].startswith("undecided")
+    # A "ready" run and its --merge rerun of the same combined tree are one landing.
+    again = run()
+    assert stats([again, dict(again)])["multi_candidate_runs"] == 1
+
+
+def test_tools_come_from_any_checkout_environment_before_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from susanoo.land.checks import LandSettings, Runner
+
+    scratch, main_checkout, on_path = tmp_path / "scratch", tmp_path / "main", tmp_path / "path"
+    sub, name = ("Scripts", "landtool.bat") if sys.platform == "win32" else ("bin", "landtool")
+    for folder in (main_checkout / ".venv" / sub, on_path, scratch):
+        folder.mkdir(parents=True)
+    for folder in (main_checkout / ".venv" / sub, on_path):
+        tool = folder / name
+        tool.write_text("@echo off\n" if sys.platform == "win32" else "#!/bin/sh\n")
+        tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(on_path))
+    runner = Runner(LandSettings([], [], [], {}, 60), [scratch, main_checkout])
+    found = Path(runner.resolve(["landtool", "{tree}/x"], scratch)[0])
+    assert found.parent == main_checkout / ".venv" / sub
+    assert runner.resolve(["landtool", "{tree}/x"], scratch)[1] == f"{scratch}/x"
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups: configuration from the base, compares, flaky checks, a broken base
+# ---------------------------------------------------------------------------
+
+
+def test_keep_both_refuses_blank_base_lines_and_marker_like_content():
+    blank_base = _conflict("- a\n", "- b\n", base="\n")
+    assert "changed or removed" in resolve_text(blank_base, "CHANGELOG.md", RULES, base_side="ours").reason
+    tricky = _conflict("- a\n", "- b\n").replace("- b\n", "- b\n>>>>>>> fake\n", 1)
+    assert not resolve_text(tricky, "CHANGELOG.md", RULES, base_side="ours").resolved
+
+
+def test_sorted_rows_keep_blank_lines_after_the_table():
+    text = "| ADR | D |\n|---|---|\n<<<<<<< HEAD\n| [0003](c) | c |\n\n||||||| base\n=======\n| [0002](b) | b |\n>>>>>>> x\n"
+    rules = parse_rules([{"path": "x.md", "sort": True}])
+    result = resolve_text(text, "x.md", rules, base_side="ours")
+    assert result.resolved
+    assert (result.text or "").endswith("| [0002](b) | b |\n| [0003](c) | c |\n\n")
+
+
+def test_cache_key_covers_commands_and_version():
+    from susanoo.land.checks import Check, LandSettings
+
+    one = LandSettings([Check("t", ["pytest"], "land")], [], [], {}, 60)
+    two = LandSettings([Check("t", ["pytest", "-x"], "land")], [], [], {}, 60)
+    assert one.key({}) != two.key({})
+    assert one.key({}) == LandSettings([Check("t", ["pytest"], "land")], [], [], {}, 60).key({})
+
+
+@pytest.mark.parametrize(
+    ("tool", "command"),
+    [
+        ("PowerShell", "susanoo land 52 --merge"),
+        ("Bash", 'susanoo "land" 52 "--merge"'),
+        ("Bash", "susanoo.exe land 52 \\n  --merge"),
+        ("PowerShell", "susanoo land 52 `\n  --merge"),
+    ],
+)
+def test_land_merge_gate_sees_quoted_and_split_commands(
+    tool: str, command: str, config: dict[str, Any], tmp_path: Path
+):
+    event = {"tool_name": tool, "tool_input": {"command": command}}
+    assert pre_tool_use(event, None, tmp_path, config).permission == "ask"
+
+
+def test_a_candidate_cannot_change_its_own_checks(repo: Path):
+    weak = 'schema_version = 1\n\n[land]\nuse_verification = false\n\n[[land.checks]]\nid = "check"\n'
+    weak += f'command = [\'{sys.executable}\', "-c", "pass"]\n'
+    branch(repo, "sneaky", {".susanoo/config.toml": weak, "use_bad.py": "raise SystemExit('boom')\n"})
+    code, out, record = land(repo, "sneaky", "--no-push")
+    assert code == 1 and record["culprit"]["kind"] == "alone"
+    assert record["checks"][0]["command"][-1] == "check.py"  # the base's command, not the branch's
+
+
+def _add_metric(repo: Path) -> None:
+    (repo / "metric.py").write_text(
+        'import json, pathlib\nprint(json.dumps({"stats": {"score": float(pathlib.Path("score.txt").read_text())}}))\n'
+    )
+    (repo / "score.txt").write_text("0.9\n")
+    config = (repo / ".susanoo" / "config.toml").read_text()
+    config += (
+        f'\n[[land.compare]]\nid = "metric"\npaths = ["score.txt"]\ncommand = [\'{sys.executable}\', "metric.py"]\n'
+        'no_drop = ["stats.score"]\n'
+    )
+    (repo / ".susanoo" / "config.toml").write_text(config)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "metric")
+    git(repo, "push", "-q", "origin", "main")
+
+
+def test_compare_fails_when_a_watched_number_drops(repo: Path):
+    _add_metric(repo)
+    branch(repo, "unrelated", {"a.txt": "a\n"})
+    branch(repo, "worse", {"score.txt": "0.8\n"})
+    code, out, record = land(repo, "unrelated", "--no-push")
+    assert code == 0 and "metric" not in {c["id"] for c in record["checks"]}  # paths not touched
+    code, out, record = land(repo, "worse", "--no-push")
+    assert code == 1
+    metric = next(c for c in record["checks"] if c["id"] == "metric" and c["tree"] == "combined")
+    assert metric["status"] == "failed" and "stats.score dropped from 0.9 to 0.8" in metric["note"]
+
+
+def test_a_check_that_passes_on_rerun_is_recorded_as_flaky(repo: Path, tmp_path: Path):
+    marker = (tmp_path / "flaky-ran").as_posix()
+    flaky = (
+        f"import pathlib\np = pathlib.Path({marker!r})\n"
+        "if not p.exists():\n    p.write_text('x')\n    raise SystemExit('first run fails')\n"
+    )
+    branch(repo, "flaky", {"use_flaky.py": flaky})
+    code, out, record = land(repo, "flaky", "--no-push")
+    assert code == 0, out
+    assert record["flaky"] == ["check"] and record["checks_passed"] is True
+
+
+def test_a_broken_base_is_not_blamed_on_the_candidate(repo: Path):
+    branch(repo, "fine", {"a.txt": "a\n"})
+    (repo / "use_broken.py").write_text("raise SystemExit('main is broken')\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "break main")
+    git(repo, "push", "-q", "origin", "main")
+    code, out, record = land(repo, "fine", "--no-push")
+    assert code == 1
+    assert record["culprit"]["kind"] == "base" and record["culprit"]["candidate"] is None
+    assert "fix the base first" in out
+
+
+def test_merge_refuses_commits_the_pull_request_does_not_show(repo: Path, github: FakeGitHub):
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    git(repo, "checkout", "-q", "feat-a")
+    (repo / "a.txt").write_text("unpushed\n")
+    git(repo, "commit", "-qam", "unpushed")
+    git(repo, "checkout", "-q", "main")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and "push it first" in out and github.merges == []
+
+
+def test_merge_checks_the_intermediate_state_even_after_a_cached_pass(repo: Path, github: FakeGitHub):
+    # #1 lowers the score and #2 raises it again: the combination passes, the state between fails.
+    _add_metric(repo)
+    branch(repo, "worse", {"score.txt": "0.8\n"})
+    branch(repo, "fix", {"score.txt": "0.95\n"}, start="worse")
+    github.open(1, "worse", "Lower the score")
+    github.open(2, "fix", "Raise the score")
+    code, out, _ready = land(repo, "1", "2")
+    assert code == 0, out
+    code, out, record = land(repo, "1", "2", "--merge")
+    assert code == 1 and github.merges == []
+    assert "fails its checks on the way; nothing was merged" in out
+    metric = next(c for c in record["checks"] if c["id"] == "metric")
+    assert metric["tree"] == "prefix:1" and metric["status"] == "failed"
+
+
+def test_candidates_adding_merge_drivers_are_refused(repo: Path):
+    branch(repo, "union", {".gitattributes": "*.py merge=union\n"})
+    code, out, record = land(repo, "union", "--no-push")
+    assert code == 1 and "merge= attribute" in out and record["checks"] == []

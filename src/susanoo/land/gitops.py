@@ -19,7 +19,17 @@ GIT_TIMEOUT = 600
 MIN_GIT = (2, 35)  # merge.conflictStyle = zdiff3
 
 # Applied to every git call: long paths on Windows, no recorded resolutions, quiet detached HEADs.
-_BASE_OPTIONS = ("-c", "core.longpaths=true", "-c", "rerere.enabled=false", "-c", "advice.detachedHead=false")
+# No fsmonitor daemon either: on Windows it holds a scratch worktree's folder and blocks its removal.
+_BASE_OPTIONS = (
+    "-c",
+    "core.longpaths=true",
+    "-c",
+    "rerere.enabled=false",
+    "-c",
+    "advice.detachedHead=false",
+    "-c",
+    "core.fsmonitor=false",
+)
 
 
 class LandError(Exception):
@@ -51,7 +61,17 @@ class Git:
 
     def run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         # Bandit B603: argv list, no shell.
-        proc = subprocess.run(  # nosec B603
+        try:
+            proc = self._call(args)
+        except subprocess.TimeoutExpired as exc:
+            raise LandError(f"git {' '.join(args[:3])} did not finish within {GIT_TIMEOUT} s") from exc
+        if check and proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout).strip().splitlines()
+            raise LandError(f"git {' '.join(args[:3])} failed: {detail[-1] if detail else proc.returncode}")
+        return proc
+
+    def _call(self, args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(  # nosec B603
             self.argv(*args),
             cwd=self.cwd,
             stdin=subprocess.DEVNULL,
@@ -63,10 +83,6 @@ class Git:
             check=False,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_EDITOR": "true", "GIT_MERGE_AUTOEDIT": "no"},
         )
-        if check and proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout).strip().splitlines()
-            raise LandError(f"git {' '.join(args[:3])} failed: {detail[-1] if detail else proc.returncode}")
-        return proc
 
     def out(self, *args: str) -> str:
         return self.run(*args).stdout.strip()
@@ -167,7 +183,18 @@ def gh_available() -> bool:
 
 def gh(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     # Bandit B603: argv list, no shell.
-    proc = subprocess.run(  # nosec B603
+    try:
+        proc = _gh_call(root, args)
+    except subprocess.TimeoutExpired as exc:
+        raise LandError(f"gh {' '.join(args[:3])} did not finish within {GIT_TIMEOUT} s") from exc
+    if check and proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout).strip().splitlines()
+        raise LandError(f"gh {' '.join(args[:3])} failed: {detail[-1] if detail else proc.returncode}")
+    return proc
+
+
+def _gh_call(root: Path, args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # nosec B603
         [_tool("gh"), *args],
         cwd=root,
         stdin=subprocess.DEVNULL,
@@ -179,10 +206,6 @@ def gh(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProces
         check=False,
         env={**os.environ, "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1"},
     )
-    if check and proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout).strip().splitlines()
-        raise LandError(f"gh {' '.join(args[:3])} failed: {detail[-1] if detail else proc.returncode}")
-    return proc
 
 
 def gh_json(root: Path, *args: str) -> Any:

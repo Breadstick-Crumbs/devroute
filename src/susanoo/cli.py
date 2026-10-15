@@ -1103,7 +1103,13 @@ def cmd_land(ctx: Context, stdin: TextIO) -> int:
         reuse=not args.no_cache,
         keep_scratch=args.keep_scratch,
     )
-    say = (lambda _line: None) if args.json else ctx.emit
+
+    def say(line: str) -> None:
+        # Flushed per line: a run takes minutes, and its output is often piped to a file.
+        if not args.json:
+            ctx.emit(line)
+            ctx.out.flush()
+
     record, code = land(ctx.root, options, say)
     if args.json:
         ctx.emit_json(record)
