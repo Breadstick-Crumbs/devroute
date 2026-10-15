@@ -1,0 +1,5 @@
+<system-reminder>
+The user started your suggested background task task_8cf2f6d6 ("Sync storefront cart badge after widget add-to-cart") in a separate local session. It is running independently. You will be notified here when it ends.
+</system-reminder>
+
+delete the widget type foundation branch. also make plans for the next phase
