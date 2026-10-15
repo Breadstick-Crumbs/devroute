@@ -14,10 +14,13 @@ from typing import Any
 import pytest
 
 from susanoo.cli import main
+from susanoo.config import ConfigError
 from susanoo.enforcement.gates import pre_tool_use
 from susanoo.land import runner as land_runner
+from susanoo.land.checks import load_settings
 from susanoo.land.keepboth import parse_rules, resolve_text
 from susanoo.land.records import land_records_path, read_records, stats
+from susanoo.land.reviews import ReviewTarget, deciding_review, record_review, review_status
 from susanoo.land.runner import _merge_body, _merge_subject
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
@@ -255,6 +258,13 @@ def land(work: Path, *args: str) -> tuple[int, str, dict[str, Any]]:
     code = main(["land", *args, "--path", str(work)], stdout=out, stderr=err)
     records = read_records(Path(git(work, "rev-parse", "--path-format=absolute", "--git-common-dir")))
     return code, out.getvalue() + err.getvalue(), records[-1] if records else {}
+
+
+def reviewed(work: Path, ref: str, status: str = "passed", tool: str = "code-review") -> str:
+    """Record a review of ``ref``'s commit, as `susanoo review record` would; returns the commit."""
+    tip = git(work, "rev-parse", ref)
+    record_review(work, ReviewTarget(ref, ref, None, tip), tool=tool, status=status)
+    return tip
 
 
 @pytest.fixture(autouse=True)
@@ -507,6 +517,8 @@ def test_merge_lands_each_pull_request_on_exactly_the_tested_tree(repo: Path, gi
     branch(repo, "feat-b", {"b.txt": "b\n", "CHANGELOG.md": changelog_with("Feature B.")})
     github.open(1, "feat-a", "Add feature A")
     github.open(2, "feat-b", "Add feature B")
+    reviewed(repo, "feat-a")
+    reviewed(repo, "feat-b")
 
     code, out, ready = land(repo, "1", "#2")
     assert code == 0 and ready["result"] == "ready", out
@@ -533,6 +545,7 @@ def test_merge_lands_each_pull_request_on_exactly_the_tested_tree(repo: Path, gi
 def test_merge_stops_when_the_base_moved(repo: Path, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch):
     branch(repo, "feat-a", {"a.txt": "a\n"})
     github.open(1, "feat-a", "Add feature A")
+    reviewed(repo, "feat-a")
     real_fetch_sha = land_runner.Lander._land
 
     def move_base_then_land(self: land_runner.Lander) -> str:
@@ -743,6 +756,8 @@ def test_merge_checks_the_intermediate_state_even_after_a_cached_pass(repo: Path
     branch(repo, "fix", {"score.txt": "0.95\n"}, start="worse")
     github.open(1, "worse", "Lower the score")
     github.open(2, "fix", "Raise the score")
+    reviewed(repo, "worse")
+    reviewed(repo, "fix")
     code, out, _ready = land(repo, "1", "2")
     assert code == 0, out
     code, out, record = land(repo, "1", "2", "--merge")
@@ -756,3 +771,235 @@ def test_candidates_adding_merge_drivers_are_refused(repo: Path):
     branch(repo, "union", {".gitattributes": "*.py merge=union\n"})
     code, out, record = land(repo, "union", "--no-push")
     assert code == 1 and "merge= attribute" in out and record["checks"] == []
+
+
+# ---------------------------------------------------------------------------
+# The review gate (ADR 0015)
+# ---------------------------------------------------------------------------
+
+
+def test_merge_refuses_a_tip_without_a_passing_code_review(repo: Path, github: FakeGitHub):
+    tip_a = branch(repo, "feat-a", {"a.txt": "a\n"})
+    branch(repo, "feat-b", {"b.txt": "b\n"})
+    github.open(1, "feat-a", "Add feature A")
+    github.open(2, "feat-b", "Add feature B")
+    reviewed(repo, "feat-a")
+    reviewed(repo, "feat-b", tool="security-review")  # not a code-review
+    code, out, record = land(repo, "1", "2", "--merge")
+    assert code == 1 and github.merges == []
+    assert "no passing code-review recorded for #2" in out and "nothing was merged" in out
+    assert record["checks"] == []  # refused before any check ran
+    assert record["review_required"] is True
+    assert [c["review"] for c in record["candidates"]] == [
+        {"code-review": "passed", "security-review": "missing"},
+        {"code-review": "missing", "security-review": "passed"},
+    ]
+    assert record["candidates"][0]["tip"] == tip_a
+
+
+def test_a_failed_or_older_review_does_not_count(repo: Path, github: FakeGitHub):
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    reviewed(repo, "feat-a")
+    reviewed(repo, "feat-a", status="failed")  # the newest review of the tip decides
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and github.merges == [] and "(failed)" in out
+    assert record["candidates"][0]["review"]["code-review"] == "failed"
+    # A later commit needs its own review: a passing review of the older tip does not carry over.
+    reviewed(repo, "feat-a")
+    git(repo, "checkout", "-q", "feat-a")
+    (repo / "a.txt").write_text("a2\n")
+    git(repo, "commit", "-qam", "more")
+    git(repo, "push", "-q", "origin", "feat-a")
+    git(repo, "checkout", "-q", "main")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and github.merges == [] and "(missing)" in out
+    reviewed(repo, "feat-a")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 0 and record["result"] == "merged", out
+
+
+def test_without_merge_a_missing_review_is_reported_and_the_checks_run(repo: Path, github: FakeGitHub):
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    code, out, record = land(repo, "1")
+    assert code == 0 and record["result"] == "ready", out
+    assert record["checks_passed"] is True
+    assert record["candidates"][0]["review"]["code-review"] == "missing"
+    assert any("no passing code-review recorded for #1" in w for w in record["warnings"])
+    assert "susanoo review record 1 --tip" in out
+    assert "needs a passing code-review of #1, then the user's --merge" in out
+
+
+def test_a_review_failed_during_the_run_stops_the_merge(
+    repo: Path, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+):
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    reviewed(repo, "feat-a")
+    real_land = land_runner.Lander._land
+
+    def fail_review_then_land(self: land_runner.Lander) -> str:
+        reviewed(repo, "feat-a", status="failed")
+        return real_land(self)
+
+    monkeypatch.setattr(land_runner.Lander, "_land", fail_review_then_land)
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and github.merges == [] and "#1 was not merged" in out
+    assert record["candidates"][0]["review"]["code-review"] == "failed"
+
+
+def test_require_review_off_comes_from_the_base_only(repo: Path, github: FakeGitHub):
+    # A candidate cannot switch the gate off for itself: configuration comes from the base.
+    config = (repo / ".susanoo" / "config.toml").read_text()
+    off = config.replace("use_verification = false\n", "use_verification = false\nrequire_review = false\n")
+    assert off != config
+    branch(repo, "sneaky", {".susanoo/config.toml": off})
+    github.open(1, "sneaky", "Turn the review gate off")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and github.merges == [] and "no passing code-review" in out
+    # Off on the base: the run still records the review status, but does not require it.
+    (repo / ".susanoo" / "config.toml").write_text(off)
+    git(repo, "commit", "-qam", "no review gate")
+    git(repo, "push", "-q", "origin", "main")
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(2, "feat-a", "Add feature A")
+    code, out, record = land(repo, "2", "--merge")
+    assert code == 0 and record["result"] == "merged", out
+    assert record["review_required"] is False
+    assert record["candidates"][0]["review"]["code-review"] == "missing"
+
+
+def _move_main(repo: Path, name: str = "late.txt") -> None:
+    (repo / name).write_text("late\n")
+    git(repo, "add", name)
+    git(repo, "commit", "-qm", f"add {name}")
+    git(repo, "push", "-q", "origin", "main")
+
+
+def test_a_review_covers_the_base_merge_land_pushed(repo: Path, github: FakeGitHub):
+    # `land` merges the moved base into the branch and pushes it; `land --merge` then tests that
+    # merge commit, and the review of the commit before it still covers it.
+    tip = branch(repo, "feat-a", {"a.txt": "a\n", "CHANGELOG.md": changelog_with("Feature A.")})
+    (repo / "CHANGELOG.md").write_text(changelog_with("On main."))
+    git(repo, "commit", "-qam", "changelog on main")
+    _move_main(repo)
+    github.open(1, "feat-a", "Add feature A")
+    reviewed(repo, "feat-a")
+    code, out, ready = land(repo, "1")
+    assert code == 0 and ready["candidates"][0]["pushed"] != tip, out
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 0 and record["result"] == "merged", out
+    cand = record["candidates"][0]
+    assert cand["tip"] == ready["candidates"][0]["pushed"] and cand["reviewed_commit"] == tip
+    assert cand["review"]["code-review"] == "passed"
+
+
+def test_the_record_names_the_commit_whose_review_decided(repo: Path, github: FakeGitHub):
+    # P, then two merges of main on top (M1, M2); only M1 was reviewed.
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    merges = []
+    for name in ("one.txt", "two.txt"):
+        _move_main(repo, name)
+        git(repo, "checkout", "-q", "feat-a")
+        git(repo, "merge", "-q", "--no-ff", "--no-edit", "main")
+        git(repo, "push", "-q", "origin", "feat-a")
+        git(repo, "checkout", "-q", "main")
+        merges.append(git(repo, "rev-parse", "feat-a"))
+        if name == "one.txt":
+            reviewed(repo, "feat-a")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 0 and record["result"] == "merged", out
+    assert record["candidates"][0]["tip"] == merges[1]
+    assert record["candidates"][0]["reviewed_commit"] == merges[0]
+    assert f"(of {merges[0][:7]}," in out
+
+
+def test_a_merge_that_adds_changes_needs_its_own_review(repo: Path, github: FakeGitHub):
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    reviewed(repo, "feat-a")
+    _move_main(repo)
+    git(repo, "checkout", "-q", "feat-a")
+    git(repo, "merge", "-q", "--no-ff", "--no-commit", "main")
+    (repo / "extra.txt").write_text("not reviewed\n")
+    git(repo, "add", "extra.txt")
+    git(repo, "commit", "-qm", "merge main, and more")
+    git(repo, "push", "-q", "origin", "feat-a")
+    git(repo, "checkout", "-q", "main")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and github.merges == [] and "(missing)" in out
+    assert record["candidates"][0]["reviewed_commit"] is None
+
+
+def test_the_user_configuration_cannot_switch_the_review_gate_off(
+    repo: Path, github: FakeGitHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "susanoo-home"
+    home.mkdir()
+    (home / "config.toml").write_text("schema_version = 1\n\n[land]\nrequire_review = false\n")
+    monkeypatch.setenv("SUSANOO_HOME", str(home))
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 1 and github.merges == [] and "no passing code-review" in out
+    assert record["review_required"] is True
+
+
+def test_a_review_failed_before_the_second_merge_stops_it(
+    repo: Path, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+):
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    branch(repo, "feat-b", {"b.txt": "b\n"})
+    github.open(1, "feat-a", "Add feature A")
+    github.open(2, "feat-b", "Add feature B")
+    reviewed(repo, "feat-a")
+    tip_b = reviewed(repo, "feat-b")
+    real_merge_pr = land_runner.Lander._merge_pr
+
+    def fail_b_after_the_first(
+        self: land_runner.Lander, cand: Any, updated: str, i: int, expected: str
+    ) -> str:
+        merged = real_merge_pr(self, cand, updated, i, expected)
+        if i == 0:
+            record_review(
+                repo, ReviewTarget("feat-b", "feat-b", None, tip_b), tool="code-review", status="failed"
+            )
+        return merged
+
+    monkeypatch.setattr(land_runner.Lander, "_merge_pr", fail_b_after_the_first)
+    code, out, record = land(repo, "1", "2", "--merge")
+    assert code == 1 and [m[0] for m in github.merges] == ["Merge: add feature A (#1)"]
+    assert "#2 was not merged" in out
+    git(repo, "fetch", "-q", "origin")
+    # The base stays on the tested state after the first merge, and #2 was not pushed.
+    assert git(repo, "rev-parse", "origin/main^{tree}") == record["prefix_trees"][0]
+    assert git(repo, "rev-parse", "origin/feat-b") == tip_b
+
+
+def test_the_newest_review_across_the_chain_decides():
+    passed_a = {"kind": "review", "tip": "a" * 40, "tool": "code-review", "status": "passed"}
+    failed_b = {"kind": "review", "tip": "b" * 40, "tool": "code-review", "status": "failed"}
+    assert review_status([passed_a, failed_b], ["b" * 40, "a" * 40])["code-review"] == "failed"
+    assert review_status([failed_b, passed_a], ["b" * 40, "a" * 40])["code-review"] == "passed"
+    assert review_status([passed_a, failed_b], ["c" * 40, "a" * 40])["code-review"] == "passed"
+    assert review_status([passed_a, failed_b], ["c" * 40])["code-review"] == "missing"
+    assert deciding_review([passed_a, failed_b], ["c" * 40, "A" * 40], "code-review") == passed_a
+
+
+def test_the_review_steps_and_control_exist_in_the_data():
+    from susanoo.config import load_toml_data
+    from susanoo.enforcement.state import REVIEW_STEPS, SECURITY_REVIEW_CONTROL
+
+    data = load_toml_data("defaults.toml")
+    assert set(REVIEW_STEPS) <= {v["id"] for v in data["verification"]}
+    assert SECURITY_REVIEW_CONTROL in {c["id"] for c in data["controls"]}
+    assert all(set(tools) <= {"code-review", "security-review"} for tools in REVIEW_STEPS.values())
+
+
+def test_require_review_must_be_a_boolean():
+    assert load_settings({"land": {}}, [], 60).require_review is True
+    assert load_settings({"land": {"require_review": False}}, [], 60).require_review is False
+    with pytest.raises(ConfigError, match="require_review"):
+        load_settings({"land": {"require_review": "no"}}, [], 60)
