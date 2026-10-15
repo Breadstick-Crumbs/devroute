@@ -6,12 +6,16 @@ Recommendations are text for a human to review. Nothing here changes configurati
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from math import isfinite
 from statistics import mean
 from typing import Any
 
 OUTCOME_STATUSES = ("completed", "partial", "failed", "abandoned")
 # An outcome's separate token counts (``token_counts``), named as the Claude API reports usage.
 TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+# Where an outcome's time went (``time_minutes``): the model writing, tools running, tool calls
+# waiting for your approval (and then running), and the session waiting for the next message.
+TIME_PARTS = ("model", "tools", "approvals", "waiting")
 
 
 @dataclass
@@ -34,6 +38,11 @@ class ProfileSummary:
     with_token_counts: int = 0  # outcomes with separate token counts
     token_count_totals: dict[str, int] = field(default_factory=dict)
     tool_calls: dict[str, int] = field(default_factory=dict)
+    with_time: int = 0  # outcomes with a time split
+    time_totals: dict[str, float] = field(default_factory=dict)  # minutes per part of TIME_PARTS
+    tool_time: dict[str, float] = field(default_factory=dict)  # minutes per tool name
+    user_prompts: int = 0  # prompts you typed during those outcomes
+    approvals: int = 0  # permission prompts you answered during those outcomes
     executed_checks: int = 0
     executed_failures: int = 0
     reported_checks: int = 0
@@ -149,6 +158,7 @@ def summarize(
         if isinstance(outcome.get("captured"), dict):
             summary.captured += 1
         _add_usage(summary, outcome.get("token_counts"), outcome.get("tool_calls"))
+        _add_time(summary, outcome)
         if isinstance(outcome.get("cost_usd"), int | float):
             summary.total_cost_usd = round((summary.total_cost_usd or 0.0) + float(outcome["cost_usd"]), 4)
 
@@ -181,6 +191,36 @@ def _add_usage(summary: ProfileSummary, counts: object, calls: object) -> None:
     for name, count in calls.items() if isinstance(calls, dict) else []:
         if isinstance(name, str) and isinstance(count, int) and not isinstance(count, bool) and count > 0:
             summary.tool_calls[name] = summary.tool_calls.get(name, 0) + count
+
+
+def _count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _minutes(value: object) -> float | None:
+    """A finite, non-negative number of minutes (hand-edited records can hold NaN), else None."""
+    if not isinstance(value, int | float) or isinstance(value, bool) or not isfinite(value) or value < 0:
+        return None
+    return float(value)
+
+
+def _add_time(summary: ProfileSummary, outcome: dict[str, Any]) -> None:
+    split = outcome.get("time_minutes")
+    if not isinstance(split, dict):
+        return
+    valid = {part: _minutes(split.get(part)) for part in TIME_PARTS}
+    if any(value is None for value in valid.values()):
+        return
+    summary.with_time += 1
+    for part, value in valid.items():
+        summary.time_totals[part] = round(summary.time_totals.get(part, 0.0) + (value or 0.0), 1)
+    tools = outcome.get("tool_minutes")
+    for name, value in tools.items() if isinstance(tools, dict) else []:
+        minutes = _minutes(value)
+        if isinstance(name, str) and minutes:
+            summary.tool_time[name] = round(summary.tool_time.get(name, 0.0) + minutes, 1)
+    summary.user_prompts += _count(outcome.get("user_prompts")) or 0
+    summary.approvals += _count(outcome.get("approvals")) or 0
 
 
 def _insights(

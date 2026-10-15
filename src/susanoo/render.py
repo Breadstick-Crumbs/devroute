@@ -8,7 +8,7 @@ from typing import Any
 from susanoo.analyzer import Assessment
 from susanoo.architecture import architecture_label, architecture_line
 from susanoo.discovery.models import Inventory, Status
-from susanoo.evaluation.report import TOKEN_FIELDS, Report
+from susanoo.evaluation.report import TIME_PARTS, TOKEN_FIELDS, Report
 from susanoo.evaluation.suite import SuiteResult
 from susanoo.pipeline import TaskPlan
 from susanoo.research import ResearchReport
@@ -353,6 +353,49 @@ def _token_usage(report: Report) -> list[str]:
     return lines
 
 
+def _time_split(report: Report) -> list[str]:
+    """Per-profile mean minutes and share of each part of a task's time, prompts, and approvals."""
+    timed = [s for s in report.profiles if s.with_time]
+    if not timed:
+        return []
+    lines = [
+        "",
+        "## Where the time went",
+        "",
+        "| Profile | Outcomes | Model | Tools | Approvals | Waiting | Your prompts | Approvals given |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for s in timed:
+        total = sum(s.time_totals.values())
+        cells = [
+            f"{s.time_totals.get(p, 0.0) / s.with_time:.1f}"
+            + (f" ({s.time_totals.get(p, 0.0) / total:.0%})" if total else "")
+            for p in TIME_PARTS
+        ]
+        lines.append(
+            f"| {s.profile.upper()} | {s.with_time} | {' | '.join(cells)} | "
+            f"{s.user_prompts / s.with_time:.1f} | {s.approvals / s.with_time:.1f} |"
+        )
+    lines += [
+        "",
+        "Mean minutes per outcome (share of the total). Each gap between two transcript lines counts "
+        "toward what ended it: Model (Claude writing), Tools (commands, tests, subagents), Approvals "
+        "(tool calls that waited for your permission, including their run time), Waiting (the turn "
+        "had ended and the session waited for the next message). Your prompts and Approvals given are "
+        "means per outcome; prompts you typed after the route started are often corrections or "
+        "redirects, but also answers to questions.",
+    ]
+    tools = [s for s in timed if s.tool_time]
+    if tools:
+        lines += ["", "Tool time by tool (total minutes, Tools and Approvals):"]
+        for s in tools:
+            top = sorted(s.tool_time.items(), key=lambda item: (-item[1], item[0]))[:8]
+            lines.append(
+                f"- {s.profile.upper()}: " + ", ".join(f"{name} {minutes:g}" for name, minutes in top)
+            )
+    return lines
+
+
 def render_report(
     routes: list[dict[str, Any]], report: Report, outcomes: dict[str, dict[str, Any]], last: int
 ) -> str:
@@ -405,6 +448,7 @@ def render_report(
     ]
     if costs:
         lines += ["", f"Total cost where recorded: {', '.join(costs)}."]
+    lines += _time_split(report)
     lines += _token_usage(report)
     lines += ["", "## Recommendations for review", ""]
     if report.insights:

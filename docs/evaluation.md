@@ -70,7 +70,7 @@ Each recommendation names the configuration to review. **Susanoo never applies c
 | Record | Fields |
 |---|---|
 | `routes.jsonl` | id, timestamp, version, task or task hash, profile, recommended, overridden, composite scores, dimension levels, signals, areas, controls, gaps, planned verification |
-| `outcomes.jsonl` | record id, status, source (human/agent/susanoo), duration, interventions, tokens, cost, regressions, agents, tools, notes; with transcript capture also `token_counts` (fresh input, cache writes, cache reads, output), `tool_calls` (calls per tool name), and `captured` (which fields came from the transcript, message count, time window) |
+| `outcomes.jsonl` | record id, status, source (human/agent/susanoo), duration, interventions, tokens, cost, regressions, agents, tools, notes; with transcript capture also `token_counts` (fresh input, cache writes, cache reads, output), `tool_calls` (calls per tool name), `time_minutes` (model, tools, approvals, waiting), `tool_minutes` (tool time per tool name), `user_prompts`, `approvals`, and `captured` (which fields came from the transcript, message count, time window) |
 | `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail |
 | `research.jsonl` | capability, decision, candidates, validation steps, limitations |
 
