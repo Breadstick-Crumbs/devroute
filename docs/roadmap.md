@@ -37,7 +37,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 |---|---|
 | Task decomposition: split DEEP tasks into independently verifiable work units with explicit interfaces | 🔜 |
 | Delegation plans: which units suit parallel subagents or worktrees, and which share files and must stay serial | 🔜 |
-| Parallel sessions: one lead session per repository runs a worker session per change, and a read-only `susanoo board` shows each worktree's state and file overlaps | 🔜 (design proposed: [ADR 0015](decisions/0015-lead-session-and-board.md)) |
+| Parallel sessions: a lead-session skill on the app's own session features, plus evidence and reviews bound to a commit and a read-only `susanoo board` | 🔜 (design proposed: [ADR 0015](decisions/0015-lead-session-and-board.md)) |
 | Strategy selection within profiles (test-first, spike-then-build, migration-first) based on signals | 🔜 |
 | Stronger verification: coverage-delta checks, changed-files-to-tests mapping, migration dry runs | 🔜 |
 | Optional hooks that block completion claims when required evidence is missing | ✅ (v0.2, `--enforce`) |
