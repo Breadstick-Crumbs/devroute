@@ -47,7 +47,7 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 | UI work ([ADR 0010](decisions/0010-taste-skill-and-screenshot-helper.md)): `taste-ui` skill installed by `susanoo init`, personal taste profile, `susanoo taste shoot / capture` | ✅ (unreleased) |
 | UI work: UI domain (website, ecommerce, dashboard, mobile, component library) with short checklists in the brief, and the website performance budget | ✅ (unreleased) |
 | UI work: read-only discovery of design context (`DESIGN.md`, tokens, Storybook, Figma MCP by name) | ✅ (unreleased) |
-| UI work: visual redesigns and presentational payment-page changes routed without architectural or payment weight, eval-gated | 🔜 |
+| UI work: visual redesigns routed without architectural weight, eval-gated (payment-page styling deliberately keeps its payment controls) | ✅ (unreleased) |
 | Architecture context ([ADR 0011](decisions/0011-architecture-context.md)): STANDARD and DEEP briefs name architecture documents, decision records, `AGENTS.md`/`CLAUDE.md` architecture sections, and boundary rules; import-linter, dependency-cruiser, and eslint-plugin-boundaries run as a recommended check | ✅ (unreleased) |
 | Architecture context: run ArchUnit rules (needs a Maven or Gradle test runner) | 🔜 |
 | UI work: measure, then reduce, gate friction during bursts of small UI tweaks | 🔬 |

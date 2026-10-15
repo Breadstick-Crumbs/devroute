@@ -15,7 +15,7 @@ Output:
 
 Build a multi-warehouse inventory platform with user authentication, Stripe billing, and an admin dashboard
 
-Detected signals: large-scope build, authentication / authorization, payments / billing, user interface
+Detected signals: large-scope build, new functionality, authentication / authorization, payments / billing, user interface
 
 ## Assessment
 
@@ -29,7 +29,7 @@ Heuristic estimate from the task text and project files; not a validated measure
 
 | Dimension | Level | Why |
 |---|---|---|
-| implementation_complexity | 3 high | large-scope build ('build a multi-warehouse inventory platform') -> 3 |
+| implementation_complexity | 3 high | large-scope build ('build a multi-warehouse inventory platform') -> 3; new functionality ('build a') -> 2 |
 | architectural_complexity | 3 high | large-scope build ('build a multi-warehouse inventory platform') -> 3 |
 | affected_components | 3 high | authentication / authorization ('authentication') -> 1; user interface ('dashboard', 'admin dashboard') -> 1; 3 distinct feature areas: a... |
 | technical_uncertainty | 2 moderate | large-scope build ('build a multi-warehouse inventory platform') -> 2 |
@@ -113,6 +113,10 @@ Dashboard or data-heavy app:
 - Filter and sort state stays visible.
 
 Sources: Practitioner guidance (for example Stephanie Walter on complex data tables, UX Studio on dashboards), not peer-reviewed research; WCAG for color.
+
+## Architecture
+
+Architecture context: None found. Follow the structure of the code you change; if the change adds a layer, a module boundary, or a new dependency direction, say so in the plan.
 
 ## Proposed steps
 

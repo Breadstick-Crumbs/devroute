@@ -70,6 +70,10 @@ Missing capabilities:
 
 Susanoo never installs tools itself; adopting any of these needs your approval.
 
+## Architecture
+
+Architecture context: None found. Follow the structure of the code you change; if the change adds a layer, a module boundary, or a new dependency direction, say so in the plan.
+
 ## Proposed steps
 
 1. **Investigate** - Read the relevant code, tests, and conventions. Identify every component the change touches. Navigation: Claude Code Grep / Glob / Read.
