@@ -38,3 +38,42 @@ schema_version = 1
 # [[signals]]
 # id = "notifications"
 # enabled = false
+
+# `susanoo land` (ADR 0014): what lands on main runs what CI runs. Scratch trees test their own
+# code (PYTHONPATH) with the main checkout's .venv.
+[land]
+env = { PYTHONPATH = "{tree}/src" }
+
+[[land.checks]]
+id = "unit_tests"
+command = ["pytest", "-n", "auto", "-q"]
+
+[[land.checks]]
+id = "integration_tests"
+command = ["pytest", "-n", "auto", "-q"]
+
+[[land.checks]]
+id = "type_check"
+command = ["mypy"]
+
+[[land.checks]]
+id = "format_check"
+command = ["ruff", "format", "--check", "."]
+
+[[land.checks]]
+id = "security_lint"
+command = ["bandit", "-q", "-r", "src", "-c", "pyproject.toml"]
+
+[[land.compare]]
+id = "routing_eval"
+paths = ["src/susanoo/data/"]
+command = ["python", "-m", "susanoo", "eval", "--json"]
+no_drop = ["profile_agreement"]
+no_rise = ["risk_floor_violations"]
+
+[[land.compare]]
+id = "ui_eval"
+paths = ["src/susanoo/data/"]
+command = ["python", "-m", "susanoo", "eval", "--suite", "src/susanoo/data/suites/ui-v1.toml", "--json"]
+no_drop = ["profile_agreement"]
+no_rise = ["risk_floor_violations"]

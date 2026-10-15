@@ -17,3 +17,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0011](0011-architecture-context.md) | STANDARD and DEEP briefs name the project's architecture documents, decision records, and boundary rules; its boundary tools become a recommended check |
 | [0012](0012-delegation-plans.md) | Task decomposition and delegation plans: Claude drafts a tool-neutral JSON plan; Susanoo checks it and gives each unit a merge verdict from its own copy of the plan; Claude Code and Scion are optional executors (proposed) |
 | [0013](0013-leases-and-landing-queue.md) | Leases, interface-change notices, and an evidence-gated local landing queue: the queue comes first and its records decide whether leases and notices are built (proposed) |
+| [0014](0014-susanoo-land.md) | `susanoo land` tests agent branches on one combined tree, finds the branch that breaks it, and merges pull requests only with the user's `--merge` |
