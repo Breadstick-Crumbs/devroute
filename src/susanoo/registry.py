@@ -21,6 +21,19 @@ class CapabilitySpec:
 
 
 @dataclass(frozen=True)
+class ConfiguredRun:
+    """Run commands for projects whose own config already says what the tool checks.
+
+    ``when`` lists ``file:section[:key]`` sources in the tool's own lookup order (``tool.mypy`` is a
+    TOML table path). The first of those files the tool would read decides: it applies when that file
+    has the section, and the key if one is named.
+    """
+
+    when: tuple[str, ...]
+    run: dict[str, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
 class ToolSpec:
     id: str
     name: str
@@ -36,6 +49,10 @@ class ToolSpec:
     # The tool is only detected when one of these project files or globs exists (screenshot
     # baselines for visual regression); the other detection keys still decide its status.
     requires_files: tuple[str, ...] = ()
+    # The tool is only detected when one of these Python packages is installed in the environment
+    # of its executable, or declared by the project when that environment cannot be inspected
+    # (pytest-xdist for `pytest -n auto`).
+    requires_python_packages: tuple[str, ...] = ()
     pyproject_tools: tuple[str, ...] = ()
     mcp_patterns: tuple[str, ...] = ()
     env: tuple[str, ...] = ()
@@ -44,7 +61,12 @@ class ToolSpec:
     package_managers: tuple[str, ...] = ()
     # Words in the task that make this tool the better pick ("postgres" -> psql).
     task_keywords: tuple[str, ...] = ()
+    # Tools this one is a better form of: where it is detected, it ranks before them and is
+    # never suggested where it is not (parallel pytest over pytest).
+    supersedes: tuple[str, ...] = ()
     run: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Replace `run` when the project's config names the targets: `mypy .` overrides `files`.
+    configured_run: tuple[ConfiguredRun, ...] = ()
     reliability: int = 2
     context_cost: int = 2
     setup_cost: int = 2
@@ -106,12 +128,14 @@ _TUPLE_FIELDS = (
     "make_targets",
     "files",
     "requires_files",
+    "requires_python_packages",
     "pyproject_tools",
     "mcp_patterns",
     "env",
     "version_args",
     "package_managers",
     "task_keywords",
+    "supersedes",
 )
 _INT_FIELDS = ("reliability", "context_cost", "setup_cost", "security_exposure")
 
@@ -136,19 +160,47 @@ def _tool_from_dict(entry: dict[str, Any], origin: str = "packaged") -> ToolSpec
         if not isinstance(value, int) or not 1 <= value <= 3:
             raise ConfigError(f"tool '{tid}': '{key}' must be an integer from 1 to 3")
         kwargs[key] = value
-    run = entry.get("run", {})
-    if not isinstance(run, dict):
-        raise ConfigError(f"tool '{tid}': 'run' must be a table of capability = [argv]")
-    for capability, argv in run.items():
-        if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
-            raise ConfigError(f"tool '{tid}': run.{capability} must be a non-empty list of strings")
-    kwargs["run"] = {cap: tuple(argv) for cap, argv in run.items()}
+    kwargs["run"] = _run_table(tid, "run", entry.get("run", {}))
+    configured = entry.get("configured_run", [])
+    if not isinstance(configured, list) or not all(isinstance(c, dict) for c in configured):
+        raise ConfigError(f"tool '{tid}': 'configured_run' must be a list of tables")
+    kwargs["configured_run"] = tuple(_configured_run(tid, c) for c in configured)
     kwargs["install"] = str(entry.get("install", ""))
     kwargs["notes"] = str(entry.get("notes", ""))
     kwargs["origin"] = origin
     if origin != "packaged":
         kwargs["version_args"] = ()
     return ToolSpec(**kwargs)
+
+
+def _run_table(tid: str, name: str, run: Any) -> dict[str, tuple[str, ...]]:
+    if not isinstance(run, dict):
+        raise ConfigError(f"tool '{tid}': '{name}' must be a table of capability = [argv]")
+    for capability, argv in run.items():
+        if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
+            raise ConfigError(f"tool '{tid}': {name}.{capability} must be a non-empty list of strings")
+    return {cap: tuple(argv) for cap, argv in run.items()}
+
+
+def _is_config_source(source: object) -> bool:
+    if not isinstance(source, str) or not 2 <= len(source.split(":")) <= 3:
+        return False
+    name, section = source.split(":")[:2]
+    # Discovery reads only files in the project root, never a path a project entry names.
+    return bool(section) and bool(name) and name not in (".", "..") and not set(name) & {"/", "\\"}
+
+
+def _configured_run(tid: str, entry: dict[str, Any]) -> ConfiguredRun:
+    when = entry.get("when")
+    if not isinstance(when, list) or not when or not all(_is_config_source(w) for w in when):
+        raise ConfigError(
+            f"tool '{tid}': configured_run.when must be a list of 'file:section[:key]' "
+            "with a file in the project root"
+        )
+    run = _run_table(tid, "configured_run.run", entry.get("run"))
+    if not run:
+        raise ConfigError(f"tool '{tid}': configured_run.run must not be empty")
+    return ConfiguredRun(when=tuple(when), run=run)
 
 
 def _environment_from_dict(entry: dict[str, Any]) -> EnvironmentSpec:
@@ -201,6 +253,7 @@ def load_registry(root: Path | None = None) -> Registry:
     # Packaged only: a run prefix decides what `verify --execute` runs, so a repository
     # cannot supply its own.
     environments = tuple(_environment_from_dict(e) for e in packaged.get("environments", []))
+    disabled: set[str] = set()
     if root is not None:
         extra = state_dir(root) / "tools.toml"
         if extra.is_file():
@@ -210,9 +263,20 @@ def load_registry(root: Path | None = None) -> Registry:
             for entry in entries:
                 if entry.get("enabled") is False:
                     tool_entries.pop(entry.get("id", ""), None)
+                    disabled.add(str(entry.get("id", "")))
                 else:
                     tool_entries[entry.get("id", "")] = (entry, "project")
     tools = {tid: _tool_from_dict(entry, origin) for tid, (entry, origin) in tool_entries.items()}
+    dropped: set[str] = set()
+    for tool in tools.values():
+        for other in tool.supersedes:
+            if other in disabled:
+                dropped.add(tool.id)  # A better form of a tool the project turned off is off too.
+            elif other not in tools:
+                raise ConfigError(f"tool '{tool.id}' supersedes unknown tool '{other}'")
+            elif tool.origin == "packaged" and tools[other].origin != "packaged":
+                dropped.add(tool.id)  # The project's own command for that tool wins.
+    tools = {tid: tool for tid, tool in tools.items() if tid not in dropped}
 
     capabilities: dict[str, CapabilitySpec] = {}
     for entry in load_toml_data("capabilities.toml").get("capabilities", []):

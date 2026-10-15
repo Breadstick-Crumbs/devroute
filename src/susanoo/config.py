@@ -27,6 +27,8 @@ PROFILE_ORDER: tuple[str, ...] = ("fast", "standard", "deep")
 REQUIREMENT_LEVELS: tuple[str, ...] = ("recommended", "required")
 
 # Arrays of tables merged by their `id` key instead of being replaced wholesale.
+# One day: longer is a hung check; `inf` would overflow the platform's timer.
+MAX_TIMEOUT_SECONDS = 86400
 _ID_MERGED_ARRAYS = frozenset({"signals", "controls", "verification"})
 
 
@@ -170,6 +172,14 @@ def validate(config: Config) -> None:
     _require(
         isinstance(config.get("enforcement", {}).get("hands_off", True), bool),
         "[enforcement] hands_off must be true or false",
+    )
+    timeout = config.get("verify", {}).get("timeout_seconds", 900)
+    # bool is an int subclass: `true` must not mean one second.
+    _require(
+        isinstance(timeout, int | float)
+        and not isinstance(timeout, bool)
+        and 0 < timeout <= MAX_TIMEOUT_SECONDS,
+        f"[verify] timeout_seconds must be a number of seconds greater than 0 and at most {MAX_TIMEOUT_SECONDS}",
     )
     managers = sorted(str(pm.get("id")) for pm in load_toml_data("tools.toml").get("package_managers", []))
     _require(

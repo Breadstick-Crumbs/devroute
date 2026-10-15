@@ -94,7 +94,9 @@ capabilities = ["visual_check"]
 env = ["CLAUDECODE"]   # set in every Claude Code session
 ```
 
-Detection keys are those listed at the top of [`tools.toml`](../src/susanoo/data/tools.toml); any one that matches counts, except `requires_files`, which must also match (screenshot baselines for visual regression).
+Detection keys are those listed at the top of [`tools.toml`](../src/susanoo/data/tools.toml); any one that matches counts, except `requires_files` and `requires_python_packages`, which must also match (screenshot baselines for visual regression; pytest-xdist for parallel pytest). A required Python package counts when it is installed in the project's own environment; when it is declared and installed beside an executable found on PATH; or, when the checks run in an environment outside the project (Poetry, Pipenv, uv) or no executable is found, when it is declared. An environment that cannot be told apart (a pyenv shim, a copied launcher, several Python versions sharing one prefix) counts as not having it. `supersedes` names tools an entry is a better form of: where both are usable it ranks first, and where it is not detected it is never suggested. Disabling the superseded tool (`enabled = false`) disables the entry too, and a project's own entry for the superseded tool wins over a packaged one that supersedes it. The packaged `pytest-xdist` entry uses both, so `susanoo verify --execute` runs `python -m pytest -n auto -q` where pytest-xdist is there and plain `python -m pytest -q` elsewhere; `enabled = false` for `pytest-xdist` turns parallel runs off for a suite that cannot run in parallel, and a project's own `pytest` entry keeps its command.
+
+A tool whose command depends on the project's own configuration lists `[[tools.configured_run]]` tables after its other keys: `when` names `file:section[:key]` sources in the tool's lookup order (`pyproject.toml:tool.mypy:files`), and `run` replaces those capabilities' commands when the first of those files the tool would read sets that key; the first matching table wins. A tool-specific file (`mypy.ini`) decides once it exists and parses; a shared one (`pyproject.toml`, `setup.cfg`, `tox.ini`) only once it has the section. Susanoo only checks that the key is set and never puts its value into a command; the file must be in the project root.
 
 Project tool entries are repository-controlled. Susanoo ignores their `version_args`, so `--verify` never runs them. Their `run` commands do execute under `susanoo verify --execute`, just like the project's own test scripts.
 
@@ -191,6 +193,9 @@ What `susanoo land` runs on the combined tree of the branches it lands ([ADR 001
 
 ### `[selection]`
 `code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers. `task_keyword_bonus` (default 3): added to a tool whose `task_keywords` appear in the task ("postgres" picks psql over sqlite3); smaller than the gap between an installed and a missing tool. `default_package_manager` (default `npm`; also `pnpm`, `yarn`, `bun`): the JavaScript package manager for install hints when the project names none (package.json `packageManager`) and has no lockfile. Package-script commands always use the manager discovery checked for (npm without a lockfile), so a ready check never runs a binary that was not found.
+
+### `[verify]`
+`timeout_seconds` (default 900, at most 86400): how long each command `susanoo verify --execute` runs may take before it is stopped and recorded as a timeout; `--timeout` overrides it for one run. The timeout evidence says how to raise it. Raise it for a long suite, or when several suites run at once on one machine: load alone tripled one full run of Susanoo's own suite (220 s to 664 s).
 
 ## Checking the effect of a change
 

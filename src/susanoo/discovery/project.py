@@ -6,6 +6,7 @@ reported as warnings rather than raised.
 
 from __future__ import annotations
 
+import configparser
 import json
 import os
 import re
@@ -136,6 +137,8 @@ class ProjectFacts:
     is_git_repo: bool = False
     git_remotes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Tool config files parsed on demand (see configured_source), by root-relative name.
+    config_files: dict[str, dict[str, Any] | None] = field(default_factory=dict)
 
     def has_file(self, pattern: str) -> bool:
         """True if a root-relative path or glob exists (globs are not recursive)."""
@@ -336,6 +339,68 @@ def remote_host(url: str) -> str | None:
 def is_github_remote(url: str) -> bool:
     host = remote_host(url)
     return host is not None and (host == "github.com" or host.endswith(".github.com"))
+
+
+# Config files several tools share: a tool reads one only when it has that tool's section.
+SHARED_CONFIG_FILES = frozenset({"pyproject.toml", "setup.cfg", "tox.ini"})
+
+
+def _config_sections(facts: ProjectFacts, name: str) -> dict[str, Any] | None:
+    """A TOML or INI config file as nested tables, or ``None`` when it is missing or unreadable."""
+    if name not in facts.config_files:
+        facts.config_files[name] = _parse_config(facts, name)
+    return facts.config_files[name]
+
+
+def _parse_config(facts: ProjectFacts, name: str) -> dict[str, Any] | None:
+    path = facts.root / name
+    text = _read_text(path, facts) if path.is_file() else None
+    if text is None:
+        return None
+    if name.endswith(".toml"):
+        try:
+            return tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            if name != "pyproject.toml":  # _parse_pyproject already reports it.
+                facts.warnings.append(f"{name}: invalid TOML ({exc})")
+            return None
+    parser = configparser.RawConfigParser()
+    try:
+        parser.read_string(text, source=name)
+    except configparser.Error as exc:
+        # The class name only: configparser messages quote the file's lines.
+        facts.warnings.append(f"{name}: cannot parse ({type(exc).__name__})")
+        return None
+    return {section: dict(parser[section]) for section in parser.sections()}
+
+
+def split_source(source: str) -> tuple[str, str, str]:
+    """``file:section[:key]`` as ``(file, section, key)``; ``key`` is empty when not named."""
+    name, section, key = [*source.split(":", 2), ""][:3]
+    return name, section, key
+
+
+def configured_source(facts: ProjectFacts, sources: tuple[str, ...]) -> str | None:
+    """The first ``file:section[:key]`` source the tool would read, when it sets the key.
+
+    Sources are in the tool's own lookup order: a tool-specific file decides once it exists and
+    parses, a shared file only once it has the section. Values are only tested for being set,
+    never used.
+    """
+    for source in sources:
+        name, section, key = split_source(source)
+        data = _config_sections(facts, name)
+        if data is None:
+            continue
+        table: Any = data
+        for part in section.split(".") if name.endswith(".toml") else [section]:
+            table = _table(table).get(part)
+        if not isinstance(table, dict):
+            if name in SHARED_CONFIG_FILES:
+                continue
+            return None
+        return source if not key or table.get(key) not in (None, "", []) else None
+    return None
 
 
 def scan_project(root: Path) -> ProjectFacts:
