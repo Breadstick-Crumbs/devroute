@@ -15,7 +15,7 @@ Output:
 
 Build a multi-warehouse inventory platform with user authentication, Stripe billing, and an admin dashboard
 
-Detected signals: large-scope build, authentication / authorization, payments / billing, user interface
+Detected signals: large-scope build, new functionality, authentication / authorization, payments / billing, user interface
 
 ## Assessment
 
@@ -29,7 +29,7 @@ Heuristic estimate from the task text and project files; not a validated measure
 
 | Dimension | Level | Why |
 |---|---|---|
-| implementation_complexity | 3 high | large-scope build ('build a multi-warehouse inventory platform') -> 3 |
+| implementation_complexity | 3 high | large-scope build ('build a multi-warehouse inventory platform') -> 3; new functionality ('build a') -> 2 |
 | architectural_complexity | 3 high | large-scope build ('build a multi-warehouse inventory platform') -> 3 |
 | affected_components | 3 high | authentication / authorization ('authentication') -> 1; user interface ('dashboard', 'admin dashboard') -> 1; 3 distinct feature areas: a... |
 | technical_uncertainty | 2 moderate | large-scope build ('build a multi-warehouse inventory platform') -> 2 |
@@ -65,11 +65,11 @@ These apply regardless of the selected profile.
 Available tools:
 
 - Code review [required]: Claude Code subagents (native, verified)
-- Integration testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
+- Integration testing [required]: pytest (cli, installed (unverified)) - `python -m pytest -q`
 - Security analysis [required]: Bandit (cli, installed (unverified)) - `bandit -r . -q -x ./.venv,./venv,./node_modules,./tests,./build,./dist`
 - Linting / static analysis [required]: Ruff (cli, installed (unverified)) - `ruff check .`
 - Type checking [required]: mypy (cli, installed (unverified)) - `mypy .`
-- Unit testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
+- Unit testing [required]: pytest (cli, installed (unverified)) - `python -m pytest -q`
 - Version control [required]: git (cli, installed (unverified))
 - Code navigation [recommended]: Claude Code Grep / Glob / Read (native, verified)
 
@@ -114,6 +114,10 @@ Dashboard or data-heavy app:
 
 Sources: Practitioner guidance (for example Stephanie Walter on complex data tables, UX Studio on dashboards), not peer-reviewed research; WCAG for color.
 
+## Architecture
+
+Architecture context: None found. Follow the structure of the code you change; if the change adds a layer, a module boundary, or a new dependency direction, say so in the plan.
+
 ## Proposed steps
 
 1. **Requirements and architecture analysis** **[checkpoint]** - Establish requirements, constraints, and the architecture. Surface open questions instead of guessing. Navigation: Claude Code Grep / Glob / Read.
@@ -127,10 +131,10 @@ Sources: Practitioner guidance (for example Stephanie Walter on complex data tab
 
 ## Required verification
 
-- [required] Unit tests: `pytest -q`
+- [required] Unit tests: `python -m pytest -q`
 - [required] Linting / static analysis: `ruff check .`
 - [required] Type checking: `mypy .`
-- [required] Integration tests: `pytest -q`
+- [required] Integration tests: `python -m pytest -q`
 - [required] Visual check: no usable tool - gap
   Render the change and look at it at 375, 768, and 1280 CSS px (common widths, not a standard), compared with the request or a reference. Record it: `susanoo evidence latest --step visual_check --status passed --note "<widths checked, screenshot paths>"`, or `--status skipped --note "<why>"` when nothing visible changed.
 - [required] Accessibility scan: no usable tool - gap

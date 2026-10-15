@@ -55,7 +55,7 @@ Why: complexity, risk, and uncertainty are all low
 
 Available tools:
 
-- Unit testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
+- Unit testing [required]: pytest (cli, installed (unverified)) - `python -m pytest -q`
 - Linting / static analysis [recommended]: Ruff (cli, installed (unverified)) - `ruff check .`
 - Version control [recommended]: git (cli, installed (unverified))
 
@@ -70,7 +70,7 @@ Missing capabilities: none for this task.
 
 ## Required verification
 
-- [required] Unit tests: `pytest -q`
+- [required] Unit tests: `python -m pytest -q`
 - [recommended] Linting / static analysis: `ruff check .`
 
 Only checks that actually ran count as evidence. Run `susanoo verify --execute` to execute and record the ready checks.

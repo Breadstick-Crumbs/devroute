@@ -144,9 +144,10 @@ def test_suite_controls_are_checked(tmp_path: Path, config, profiles):
 
 
 def test_bundled_ui_suite_keeps_safety_floors(config, profiles):
-    # ADR 0008: the UI suite's agreement is tracked as the UI routing work lands, but its
-    # safety labels (min_risk, controls) must hold from the start.
+    # ADR 0008: the UI suite must keep its safety labels (min_risk, controls) and, since the
+    # routing fixes (slice 4), at least 90% agreement, as CI checks.
     path = Path(__file__).resolve().parents[1] / "src" / "susanoo" / "data" / "suites" / "ui-v1.toml"
     result = run_suite(config, profiles, path)
-    assert result.total >= 15
+    assert result.total >= 44
     assert result.risk_floor_violations == 0
+    assert result.profile_agreement >= 0.9  # slice 4 brought the UI routing fixes

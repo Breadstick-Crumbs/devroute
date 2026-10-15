@@ -56,9 +56,9 @@ Why: complexity is moderate; risk is moderate
 
 Available tools:
 
-- Integration testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
+- Integration testing [required]: pytest (cli, installed (unverified)) - `python -m pytest -q`
 - Linting / static analysis [required]: Ruff (cli, installed (unverified)) - `ruff check .`
-- Unit testing [required]: pytest (cli, installed (unverified)) - `pytest -q`
+- Unit testing [required]: pytest (cli, installed (unverified)) - `python -m pytest -q`
 - Version control [required]: git (cli, installed (unverified))
 - Code navigation [recommended]: Claude Code Grep / Glob / Read (native, verified)
 - Code review [recommended]: Claude Code subagents (native, verified)
@@ -69,6 +69,10 @@ Missing capabilities:
 - Dependency audit [recommended, non-blocking]: consider pip-audit (cli), install: pip install pip-audit
 
 Susanoo never installs tools itself; adopting any of these needs your approval.
+
+## Architecture
+
+Architecture context: None found. Follow the structure of the code you change; if the change adds a layer, a module boundary, or a new dependency direction, say so in the plan.
 
 ## Proposed steps
 
@@ -83,9 +87,9 @@ Susanoo never installs tools itself; adopting any of these needs your approval.
 
 ## Required verification
 
-- [required] Unit tests: `pytest -q`
+- [required] Unit tests: `python -m pytest -q`
 - [required] Linting / static analysis: `ruff check .`
-- [required] Integration tests: `pytest -q`
+- [required] Integration tests: `python -m pytest -q`
 - [recommended] Type checking: `mypy .`
 - [recommended] Dependency vulnerability audit: no usable tool - gap
 - [recommended] Independent code review: Claude Code subagents (performed by the agent or a person)
