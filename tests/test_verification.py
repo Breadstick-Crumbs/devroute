@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -334,3 +335,130 @@ def test_dependency_change_recommends_an_audit(config):
     assert any("dependency-change" in r for r in steps["dependency_audit"].reasons)
     plain = {s.rule["id"] for s in select_steps(assess("Add a settings page", config), "fast", [], config)}
     assert "dependency_audit" not in plain
+
+
+_PYTEST_XDIST = Finding(
+    "tool:pytest-xdist",
+    "tool",
+    "pytest (parallel, pytest-xdist)",
+    Status.INSTALLED_UNVERIFIED,
+    ["unit_testing", "integration_testing"],
+    tool_kind="cli",
+)
+
+
+def test_unit_tests_run_in_parallel_when_pytest_xdist_is_there(config, profiles, registry):
+    plan = plan_for(
+        "Fix the crash when saving settings", config, profiles, registry, [_PYTEST, _PYTEST_XDIST]
+    )
+    unit = plan.get("unit_tests")
+    assert unit is not None and unit.mode == "ready"
+    assert unit.command == ["python", "-m", "pytest", "-n", "auto", "-q"]
+
+    # Through an external environment too, and plain pytest stays the fallback.
+    findings = [_PYTEST, _PYTEST_XDIST, _environment(Status.INSTALLED_UNVERIFIED)]
+    inv = Inventory(".", "", False, {"python": 3}, findings)
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
+    assert rec.selected is not None and rec.selected.command == [
+        "poetry",
+        "run",
+        "python",
+        "-m",
+        "pytest",
+        "-n",
+        "auto",
+        "-q",
+    ]
+    assert [c.id for c in rec.alternatives][:1] == ["pytest"]
+
+
+def test_pytest_xdist_is_never_suggested_where_it_is_missing(config, profiles, registry):
+    unit = plan_for("Fix the crash when saving settings", config, profiles, registry, [_PYTEST]).get(
+        "unit_tests"
+    )
+    assert unit is not None and unit.command == ["python", "-m", "pytest", "-q"]
+    inv = Inventory(".", "", False, {"python": 3}, [])
+    assert "pytest-xdist" not in [c.id for c in candidates_for("unit_testing", inv, registry)]
+
+
+def test_unknown_superseded_tool_is_rejected(tmp_path: Path):
+    from susanoo.config import ConfigError
+    from susanoo.registry import load_registry
+
+    write(
+        tmp_path,
+        ".susanoo/tools.toml",
+        '[[tools]]\nid = "fast-tests"\nkind = "cli"\ncapabilities = ["unit_testing"]\nsupersedes = ["nope"]\n',
+    )
+    with pytest.raises(ConfigError, match="supersedes unknown tool 'nope'"):
+        load_registry(tmp_path)
+
+
+def test_timeout_evidence_says_how_to_raise_the_limit(tmp_path: Path):
+    plan = VerificationPlan("fast", [_step("slow", [sys.executable, "-c", "import time; time.sleep(5)"])])
+    [result] = execute_plan(plan, tmp_path, timeout=0.5)
+    assert result.status == "timeout"
+    assert "0.5 s" in result.note
+    assert "--timeout" in result.note and "[verify] timeout_seconds" in result.note
+
+
+def test_verify_timeout_comes_from_configuration(python_project: Path, monkeypatch: pytest.MonkeyPatch):
+    import io
+
+    from susanoo import cli
+
+    seen: list[float] = []
+
+    def fake_execute(plan, root, *, timeout, only=None, required_only=False):
+        seen.append(timeout)
+        return []
+
+    monkeypatch.setattr(cli, "execute_plan", fake_execute)
+
+    def verify(*extra: str) -> None:
+        args = ["verify", "Fix the crash", "--execute", "--no-record", *extra, "--path", str(python_project)]
+        assert cli.main(args, stdin=io.StringIO(), stdout=io.StringIO(), stderr=io.StringIO()) == 0
+
+    verify()
+    write(python_project, ".susanoo/config.toml", "[verify]\ntimeout_seconds = 1800\n")
+    verify()
+    verify("--timeout", "60")
+    assert seen == [900, 1800, 60]
+
+
+@pytest.mark.parametrize("value", [0, -5, "long", True])
+def test_verify_timeout_must_be_a_positive_number(value: object, config):
+    from susanoo.config import ConfigError, merge, validate
+
+    with pytest.raises(ConfigError, match=r"\[verify\] timeout_seconds"):
+        validate(merge(config, {"verify": {"timeout_seconds": value}}))
+
+
+@pytest.mark.skipif(importlib.util.find_spec("xdist") is None, reason="pytest-xdist is not installed")
+def test_project_that_declares_pytest_xdist_runs_its_tests_in_parallel(
+    tmp_path: Path, home: Path, monkeypatch: pytest.MonkeyPatch, config
+):
+    # The interpreter running this suite has pytest and pytest-xdist; the project declares both.
+    root = tmp_path / "project"
+    write(
+        root,
+        "pyproject.toml",
+        '[project]\nname = "calc"\nversion = "1.0"\n'
+        '[project.optional-dependencies]\ndev = ["pytest", "pytest-xdist"]\n',
+    )
+    write(root, "calc.py", "def add(a, b):\n    return a + b\n")
+    write(
+        root, "tests/test_calc.py", "from calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n"
+    )
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setattr(executables, "_cache", None)
+    for name in ("PYTHONPATH", "PYTEST_ADDOPTS", "PYTEST_XDIST_AUTO_NUM_WORKERS"):
+        monkeypatch.delenv(name, raising=False)
+
+    plan = plan_task("Fix the crash when saving settings", root, config, home=home).verification
+    unit = plan.get("unit_tests")
+    assert unit is not None and unit.command == ["python", "-m", "pytest", "-n", "auto", "-q"]
+    monkeypatch.setenv("PYTEST_XDIST_AUTO_NUM_WORKERS", "2")
+    [evidence] = execute_plan(plan, root, timeout=120, only={"unit_tests"})
+    assert evidence.status == "passed", evidence.output_tail
+    assert "bringing up nodes" in evidence.output_tail  # pytest-xdist started its workers

@@ -762,8 +762,9 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
         return EXIT_OK
 
     only = set(args.step) if args.step else None
+    timeout = args.timeout if args.timeout is not None else float(ctx.config["verify"]["timeout_seconds"])
     results = execute_plan(
-        plan.verification, ctx.root, timeout=args.timeout, only=only, required_only=args.required_only
+        plan.verification, ctx.root, timeout=timeout, only=only, required_only=args.required_only
     )
     record_id = record.get("id") if record else None
     if record_id and not args.no_record and is_initialized(ctx.root):
@@ -1177,7 +1178,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true", help="run the ready steps and record evidence")
     p.add_argument("--step", action="append", help="only this step id (repeatable)")
     p.add_argument("--required-only", action="store_true", help="only required steps")
-    p.add_argument("--timeout", type=float, default=900, help="per-command timeout in seconds (default 900)")
+    p.add_argument(
+        "--timeout",
+        type=float,
+        help="per-command timeout in seconds (default: [verify] timeout_seconds in the configuration, 900)",
+    )
     p.add_argument("--no-record", action="store_true", help="do not store evidence")
     p.set_defaults(func=cmd_verify)
 

@@ -171,6 +171,12 @@ def validate(config: Config) -> None:
         isinstance(config.get("enforcement", {}).get("hands_off", True), bool),
         "[enforcement] hands_off must be true or false",
     )
+    timeout = config.get("verify", {}).get("timeout_seconds", 900)
+    # bool is an int subclass: `true` must not mean one second.
+    _require(
+        isinstance(timeout, int | float) and not isinstance(timeout, bool) and timeout > 0,
+        "[verify] timeout_seconds must be a number of seconds greater than 0",
+    )
     managers = sorted(str(pm.get("id")) for pm in load_toml_data("tools.toml").get("package_managers", []))
     _require(
         config.get("selection", {}).get("default_package_manager", "npm") in managers,

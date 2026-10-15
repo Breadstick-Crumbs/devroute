@@ -501,3 +501,76 @@ def test_package_script_is_runnable_through_the_detected_manager(tmp_path: Path,
     )
     assert only_npm is not None and not only_npm.status.usable
     assert with_pnpm is not None and with_pnpm.status.usable
+
+
+def _site_packages(env: Path, *dist_infos: str) -> None:
+    """An environment's site-packages with the given ``.dist-info`` folders (POSIX layout)."""
+    for name in dist_infos:
+        (env / "lib" / "python3.12" / "site-packages" / name).mkdir(parents=True)
+    (env / "lib" / "python3.12" / "site-packages").mkdir(parents=True, exist_ok=True)
+
+
+def test_pytest_xdist_is_detected_only_where_it_is_installed(tmp_path: Path, registry):
+    spec = registry.tools["pytest-xdist"]
+    root = tmp_path / "project"
+    write(root, "pyproject.toml", '[project]\nname = "p"\nversion = "1"\n')
+    pytest_in_venv = str(root / ".venv" / "bin" / "pytest")
+    in_venv = lambda name: pytest_in_venv if name == "pytest" else None  # noqa: E731
+
+    # Installed in the project's environment, even when not declared.
+    _site_packages(root / ".venv", "pytest_xdist-3.6.1.dist-info", "pytest-8.3.4.dist-info")
+    finding = detect_tool(spec, scan_project(root), {}, False, which=in_venv)
+    assert finding is not None and finding.status is Status.INSTALLED_UNVERIFIED
+    assert any("pytest-xdist installed" in e for e in finding.evidence)
+
+    # Declared but missing from the environment that runs pytest: `-n auto` would be rejected.
+    write(
+        root,
+        "pyproject.toml",
+        '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\ndev = ["pytest-xdist"]\n',
+    )
+    (root / ".venv" / "lib" / "python3.12" / "site-packages" / "pytest_xdist-3.6.1.dist-info").rmdir()
+    assert detect_tool(spec, scan_project(root), {}, False, which=in_venv) is None
+
+    # Plain pytest is unaffected.
+    assert detect_tool(registry.tools["pytest"], scan_project(root), {}, False, which=in_venv) is not None
+
+
+def test_pytest_xdist_on_path_needs_a_declaration(tmp_path: Path, registry):
+    spec = registry.tools["pytest-xdist"]
+    root, system = tmp_path / "project", tmp_path / "system"
+    write(root, "pyproject.toml", '[project]\nname = "p"\nversion = "1"\n')
+    _site_packages(system, "pytest_xdist-3.6.1.dist-info")
+    on_path = lambda name: str(system / "bin" / name) if name == "pytest" else None  # noqa: E731
+    # Another environment's plugins are not the project's: they may be missing where tests run.
+    assert detect_tool(spec, scan_project(root), {}, False, which=on_path) is None
+
+    write(root, "requirements-dev.txt", "pytest\npytest-xdist>=3\n")
+    finding = detect_tool(spec, scan_project(root), {}, False, which=on_path)
+    assert finding is not None and finding.status is Status.INSTALLED_UNVERIFIED
+
+    # Declared, but the pytest on PATH lacks it.
+    (system / "lib" / "python3.12" / "site-packages" / "pytest_xdist-3.6.1.dist-info").rmdir()
+    assert detect_tool(spec, scan_project(root), {}, False, which=on_path) is None
+
+
+def test_pytest_xdist_in_an_external_environment_counts_when_declared(tmp_path: Path, registry):
+    # Poetry/uv keep the environment outside the project: nothing to inspect, so the declaration decides.
+    spec = registry.tools["pytest-xdist"]
+    root = tmp_path / "project"
+    write(root, "Pipfile", '[dev-packages]\npytest = "*"\npytest-xdist = "*"\n')
+    finding = detect_tool(spec, scan_project(root), {}, False, which=no_binaries)
+    assert finding is not None and finding.detail["python_declared"]
+    write(root, "Pipfile", '[dev-packages]\npytest = "*"\n')
+    assert detect_tool(spec, scan_project(root), {}, False, which=no_binaries) is None
+
+
+def test_windows_environment_layout_is_inspected(tmp_path: Path):
+    from susanoo.discovery.executables import python_package_installed
+
+    env = tmp_path / "Python311"
+    (env / "Lib" / "site-packages" / "pytest_xdist-3.6.1.dist-info").mkdir(parents=True)
+    script = str(env / "Scripts" / "pytest.exe")
+    assert python_package_installed("pytest-xdist", script) is True
+    assert python_package_installed("pytest-cov", script) is False
+    assert python_package_installed("pytest-xdist", str(tmp_path / "nowhere" / "bin" / "pytest")) is None

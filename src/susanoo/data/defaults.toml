@@ -101,6 +101,12 @@ task_keyword_bonus = 3.0
 # commands keep using the manager discovery checked for (npm without a lockfile).
 default_package_manager = "npm"
 
+[verify]
+# Seconds each command run by `susanoo verify --execute` may take before it is stopped and recorded
+# as a timeout (`--timeout` overrides it for one run). Raise it for a long suite, or on a machine
+# that runs several suites at once: load alone can make a run take three times as long.
+timeout_seconds = 900
+
 [auto]
 # Automatic routing (`susanoo init --global`, or `--auto` with the settings scope): every prompt
 # is classified, and only clear coding tasks are routed. Questions and ambiguous prompts get a

@@ -36,6 +36,10 @@ class ToolSpec:
     # The tool is only detected when one of these project files or globs exists (screenshot
     # baselines for visual regression); the other detection keys still decide its status.
     requires_files: tuple[str, ...] = ()
+    # The tool is only detected when one of these Python packages is installed in the environment
+    # of its executable, or declared by the project when that environment cannot be inspected
+    # (pytest-xdist for `pytest -n auto`).
+    requires_python_packages: tuple[str, ...] = ()
     pyproject_tools: tuple[str, ...] = ()
     mcp_patterns: tuple[str, ...] = ()
     env: tuple[str, ...] = ()
@@ -44,6 +48,9 @@ class ToolSpec:
     package_managers: tuple[str, ...] = ()
     # Words in the task that make this tool the better pick ("postgres" -> psql).
     task_keywords: tuple[str, ...] = ()
+    # Tools this one is a better form of: where it is detected, it ranks before them and is
+    # never suggested where it is not (parallel pytest over pytest).
+    supersedes: tuple[str, ...] = ()
     run: dict[str, tuple[str, ...]] = field(default_factory=dict)
     reliability: int = 2
     context_cost: int = 2
@@ -106,12 +113,14 @@ _TUPLE_FIELDS = (
     "make_targets",
     "files",
     "requires_files",
+    "requires_python_packages",
     "pyproject_tools",
     "mcp_patterns",
     "env",
     "version_args",
     "package_managers",
     "task_keywords",
+    "supersedes",
 )
 _INT_FIELDS = ("reliability", "context_cost", "setup_cost", "security_exposure")
 
@@ -213,6 +222,10 @@ def load_registry(root: Path | None = None) -> Registry:
                 else:
                     tool_entries[entry.get("id", "")] = (entry, "project")
     tools = {tid: _tool_from_dict(entry, origin) for tid, (entry, origin) in tool_entries.items()}
+    for tool in tools.values():
+        for other in tool.supersedes:
+            if other not in tools:
+                raise ConfigError(f"tool '{tool.id}' supersedes unknown tool '{other}'")
 
     capabilities: dict[str, CapabilitySpec] = {}
     for entry in load_toml_data("capabilities.toml").get("capabilities", []):

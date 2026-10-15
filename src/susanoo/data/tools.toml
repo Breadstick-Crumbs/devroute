@@ -12,12 +12,19 @@
 #   files            project files or globs whose presence indicates configuration
 #   requires_files   the tool is only detected when one of these files or globs exists (AND, not OR);
 #                    a trailing / matches folders only
+#   requires_python_packages
+#                    the tool is only detected when one of these packages is installed in the
+#                    environment of its executable (a project environment decides by itself; one on
+#                    PATH also needs the project to declare it), or declared when no executable is
+#                    found (Poetry/uv environments outside the project)
 #   pyproject_tools  [tool.<name>] sections in pyproject.toml
 #   mcp_patterns     substrings matched against configured MCP server names
 #   env              environment variables that indicate availability
 # Selection keys (optional):
 #   package_managers  JavaScript package managers the tool needs (npm-only `npm audit` etc.)
 #   task_keywords     words in the task that make the tool the better pick ("postgres" -> psql)
+#   supersedes        tool ids this is a better form of: where detected, it ranks before them; where
+#                     not, it is never suggested
 # `{js_add_dev}` / `{js_create}` in `install` and `{js_run}` in `run` follow the project's package manager
 # ([[package_managers]] at the end of this file).
 # run: capability -> argv used by `susanoo verify --execute` (argv lists, never a shell)
@@ -132,6 +139,26 @@ context_cost = 1
 setup_cost = 1
 security_exposure = 1
 install = "pip install pytest"
+
+[[tools]]
+id = "pytest-xdist"
+name = "pytest in parallel (pytest-xdist)"
+kind = "cli"
+capabilities = ["unit_testing", "integration_testing"]
+languages = ["python"]
+binaries = ["pytest"]
+python_packages = ["pytest-xdist"]
+requires_python_packages = ["pytest-xdist"]
+supersedes = ["pytest"]
+# A large suite run serially can outlast the verify timeout. `-n auto` is only used where
+# pytest-xdist is installed, so the option is never rejected; plain pytest stays the fallback.
+run = { unit_testing = ["python", "-m", "pytest", "-n", "auto", "-q"], integration_testing = ["python", "-m", "pytest", "-n", "auto", "-q"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install pytest-xdist"
+notes = "Runs the test suite on one worker per CPU. A suite that cannot run in parallel turns it off with `enabled = false` for `pytest-xdist` in .susanoo/tools.toml."
 
 [[tools]]
 id = "npm-test-script"

@@ -15,6 +15,7 @@ from susanoo.discovery.executables import (
     PROJECT_ENV_DIRS,
     describe_location,
     has_project_python_env,
+    python_package_installed,
     resolve_executable,
 )
 from susanoo.discovery.models import Finding, Inventory, Status
@@ -77,6 +78,11 @@ def detect_tool(
         return which(name) if which is not None else resolve_executable(name, facts.root)
 
     evidence: list[str] = [f"found: {', '.join(required_files[:3])}"] if required_files else []
+    if tool.requires_python_packages:
+        found_package = _required_python_package(tool, facts, lookup)
+        if found_package is None:
+            return None
+        evidence.append(found_package)
     runnable = False
     configured = False
     verified = False
@@ -164,6 +170,33 @@ def detect_tool(
         tool_kind=tool.kind,
         detail={"registry_id": tool.id, "python_declared": bool(declared_py)},
     )
+
+
+def _required_python_package(
+    tool: ToolSpec, facts: ProjectFacts, lookup: Callable[[str], str | None]
+) -> str | None:
+    """Evidence that one of ``tool.requires_python_packages`` is where the tool runs, or ``None``.
+
+    The project's own environment decides by what is installed in it. A tool found elsewhere (on
+    PATH) may not be the one the checks run with, so the project must also declare the package;
+    when no executable is found (Poetry and uv keep environments outside the project), the
+    declaration decides.
+    """
+    executable = next((path for name in tool.binaries if (path := lookup(name))), None)
+    declared = [p for p in tool.requires_python_packages if normalize_package(p) in facts.python_packages]
+    if executable is None:
+        return f"declared in Python dependencies: {', '.join(declared)}" if declared else None
+    in_project = _inside(executable, facts.root)
+    if not (in_project or declared):
+        return None
+    where = describe_location(executable, facts.root)
+    for package in declared or tool.requires_python_packages:
+        installed = python_package_installed(package, executable)
+        if installed:
+            return f"{package} installed {where}"
+        if installed is None and declared:
+            return f"declared in Python dependencies: {', '.join(declared)}"
+    return None
 
 
 def detect_environment(

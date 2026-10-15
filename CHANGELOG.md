@@ -5,6 +5,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
+- `susanoo verify --execute` runs pytest in parallel (`python -m pytest -n auto -q`) where pytest-xdist is there: installed in the project's own environment, declared and installed beside the `pytest` found on PATH, or declared when the environment lives outside the project (Poetry, uv). Elsewhere it still runs `python -m pytest -q`, so `-n` is never passed to a pytest without the plugin. A serial run of a large suite could outlast the timeout, and the evidence gate then blocked correct work. Set `enabled = false` for `pytest-xdist` in `.susanoo/tools.toml` for a suite that cannot run in parallel. Registry entries can use the new detection key `requires_python_packages` and the new `supersedes` key.
+- The verify timeout can be set with `[verify] timeout_seconds` in the configuration (default 900; `--timeout` still overrides it), and timeout evidence now says how long the check ran and how to raise the limit.
 - The automatic-routing brief says "Do not wait for approval" instead of "Work autonomously", and asks Claude to ask you instead of guessing when an ambiguity would change what it builds. When the assessment has low confidence, it tells Claude to ask one to three focused questions about scope before editing. Neither appears once you asked for autonomy in the task ("work autonomously", "don't ask", also mid-task, after a raise, or when Claude routes the task anew). Hands-off still adds no approvals or confirmations (ADR 0009).
 - A bare "don't ask" at the end of a clause ("fix it, don't ask") now counts as asking for autonomy; before, only "don't ask me" did. "Don't ask for the password twice" still does not.
 

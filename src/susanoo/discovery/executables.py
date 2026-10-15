@@ -10,6 +10,8 @@ import sys
 import time
 from pathlib import Path
 
+from susanoo.discovery.project import normalize_package
+
 PROJECT_ENV_DIRS = (".venv", "venv", "env")
 
 # Optional on-disk cache of PATH lookups, used by automatic routing: on Windows one lookup tests
@@ -142,6 +144,41 @@ def _script_interpreter(script: Path) -> str | None:
             if found:
                 return found
     return None
+
+
+def _site_packages(executable: str) -> list[Path]:
+    """The package folders of the environment a console script was installed into: ``Scripts`` or
+    ``bin`` sits beside ``Lib/site-packages`` (Windows) or ``lib/python3.X/site-packages``."""
+    try:
+        prefix = Path(executable).resolve().parent.parent
+    except OSError:
+        return []
+    folders = [prefix / "Lib" / "site-packages", prefix / "site-packages"]
+    for pattern in ("lib/python3*/site-packages", "lib/python3*/dist-packages"):
+        folders += sorted(prefix.glob(pattern))
+    return [folder for folder in folders if folder.is_dir()]
+
+
+def python_package_installed(package: str, executable: str) -> bool | None:
+    """Whether ``package`` is installed in the environment of ``executable``, judged by its
+    ``.dist-info`` or ``.egg-info`` folder; ``None`` when that environment cannot be found.
+    Lists folders only; nothing is imported or run."""
+    folders = _site_packages(executable)
+    if not folders:
+        return None
+    wanted = normalize_package(package)
+    for folder in folders:
+        try:
+            entries = list(folder.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if (
+                entry.suffix in (".dist-info", ".egg-info")
+                and normalize_package(entry.stem.split("-")[0]) == wanted
+            ):
+                return True
+    return False
 
 
 def describe_location(path: str, root: Path | None) -> str:
