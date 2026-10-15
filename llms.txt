@@ -22,6 +22,7 @@ Key facts:
 - [Configuration](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/configuration.md): signals, thresholds, controls, negation rules
 - [Architecture](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/architecture/overview.md): components and data flow
 - [Evaluation](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/evaluation.md): routing suite and what its numbers mean
+- [Landing branches](https://github.com/Breadstick-Crumbs/susanoo/blob/main/docs/land.md): `susanoo land`, one tested combined tree for several agent branches, merge only with the user's `--merge`
 
 ## Optional
 
