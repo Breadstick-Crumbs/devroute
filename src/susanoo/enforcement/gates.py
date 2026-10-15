@@ -6,6 +6,7 @@ Code applies through hooks:
 
 - plan-approval gate: no file edits in STANDARD/DEEP until the user approves the plan;
 - approval integrity: ``susanoo approve`` always requires an explicit user prompt;
+- merge integrity: ``susanoo land ... --merge`` always asks, so each merge has the user's say-so;
 - irreversible-action gate: risky shell commands ask for confirmation while the
   ``irreversible-action-gate`` control is active;
 - hands-off (the default): only the evidence gate applies; Claude Code's own permission
@@ -38,6 +39,8 @@ def _susanoo_command(subcommand: str) -> re.Pattern[str]:
 _APPROVE = _susanoo_command("approve")
 _OUTCOME = _susanoo_command("outcome")
 _ROUTE = _susanoo_command("route")
+_LAND = _susanoo_command("land")
+_MERGE_FLAG = re.compile(r"(?<![\w-])--merge\b(?!-)", re.IGNORECASE)
 _ACCEPT_MISSING = re.compile(r"--accept-missing-evidence\b", re.IGNORECASE)
 _QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 _GIT_BASH_DRIVE = re.compile(r"^/([a-zA-Z])/")
@@ -159,6 +162,21 @@ def summary(state: RouteState, hands_off: bool = False) -> str:
     return " ".join(parts)
 
 
+def _land_merge_ask() -> Decision:
+    return Decision(
+        permission="ask",
+        reason="This merges pull requests into the base branch (susanoo land --merge). Each merge needs "
+        "your say-so: allow it only if you want exactly these pull requests merged now.",
+    )
+
+
+def _lands_with_merge(command: str) -> bool:
+    """`susanoo land ... --merge`, also quoted (`susanoo "land"`) or split over lines."""
+    command = re.sub(r"[\\`]\r?\n", " ", command).replace('"', "").replace("'", "")
+    match = _LAND.search(command)
+    return match is not None and _MERGE_FLAG.search(command, match.end()) is not None
+
+
 def pre_tool_use(event: dict[str, Any], state: RouteState | None, root: Path, config: Config) -> Decision:
     cfg = config.get("enforcement", {})
     tool = str(event.get("tool_name", ""))
@@ -169,6 +187,8 @@ def pre_tool_use(event: dict[str, Any], state: RouteState | None, root: Path, co
         # "completed" without evidence would defeat the evidence gate, so that is refused outright
         # instead of asked about.
         command = str(tool_input.get("command", "")) if tool in ("Bash", "PowerShell") else ""
+        if _lands_with_merge(command):
+            return _land_merge_ask()
         if _APPROVE.search(command):
             # Nothing needs approval here, so this costs no prompt in practice; but an approval
             # Claude recorded itself would still count if the user later sets hands_off = false.
@@ -187,6 +207,8 @@ def pre_tool_use(event: dict[str, Any], state: RouteState | None, root: Path, co
 
     if tool in ("Bash", "PowerShell"):
         command = str(tool_input.get("command", ""))
+        if _lands_with_merge(command):
+            return _land_merge_ask()
         if _APPROVE.search(command):
             return Decision(
                 permission="ask",

@@ -40,7 +40,7 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     - ``manual`` and ``unavailable`` steps need any recorded evidence, so the agent must at least
       report what was done or explicitly record that the step was skipped and why.
 
-    Runs in another checkout of the repository (a git worktree, ADR 0016) carry ``checkout``.
+    Runs in another checkout of the repository (a git worktree, ADR 0017) carry ``checkout``.
     The latest run counts per checkout, and a step passes only when it passes in every checkout
     that ran it, so a pass in one checkout never clears a failure in another.
     """
@@ -108,7 +108,7 @@ def active_route(store: RecordStore, session_id: str | None) -> RouteState | Non
 def find_active_route(root: Path, session_id: str | None) -> tuple[RecordStore, RouteState] | None:
     """The session's newest open route in ``root``'s records or another checkout of its repository.
 
-    Each checkout keeps its own records and its own gates (ADR 0016): the route is often recorded
+    Each checkout keeps its own records and its own gates (ADR 0017): the route is often recorded
     in the main checkout while the work happens in a git worktree. Every checkout's active route
     of ``session_id`` counts, and the newest wins (this checkout's on a tie). Routes of other
     sessions are never active. Returns the store that holds the route: whatever replaces it
