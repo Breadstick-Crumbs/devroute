@@ -49,7 +49,7 @@ from susanoo.adapters.claude_code.settings_hooks import (
 )
 from susanoo.adapters.claude_code.usage import fill_outcome
 from susanoo.analyzer import Floor, assess
-from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
+from susanoo.config import MAX_TIMEOUT_SECONDS, PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
 from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.auto import (
@@ -781,6 +781,16 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
     return EXIT_FAIL if failed else EXIT_OK
 
 
+def _timeout_seconds(value: str) -> float:
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = float("nan")
+    if not 0 < seconds <= MAX_TIMEOUT_SECONDS:  # also rejects nan and inf
+        raise argparse.ArgumentTypeError(f"expected seconds greater than 0 and at most {MAX_TIMEOUT_SECONDS}")
+    return seconds
+
+
 def _session() -> str | None:
     """The Claude Code session running this command, if any (scopes `latest`)."""
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
@@ -1180,7 +1190,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--required-only", action="store_true", help="only required steps")
     p.add_argument(
         "--timeout",
-        type=float,
+        type=_timeout_seconds,
         help="per-command timeout in seconds (default: [verify] timeout_seconds in the configuration, 900)",
     )
     p.add_argument("--no-record", action="store_true", help="do not store evidence")

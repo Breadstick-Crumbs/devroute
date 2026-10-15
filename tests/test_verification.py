@@ -424,9 +424,12 @@ def test_verify_timeout_comes_from_configuration(python_project: Path, monkeypat
     verify()
     verify("--timeout", "60")
     assert seen == [900, 1800, 60]
+    for bad in ("inf", "0", "nan"):
+        with pytest.raises(SystemExit):
+            verify("--timeout", bad)
 
 
-@pytest.mark.parametrize("value", [0, -5, "long", True])
+@pytest.mark.parametrize("value", [0, -5, "long", True, float("inf"), float("nan"), 10**20])
 def test_verify_timeout_must_be_a_positive_number(value: object, config):
     from susanoo.config import ConfigError, merge, validate
 
@@ -462,3 +465,48 @@ def test_project_that_declares_pytest_xdist_runs_its_tests_in_parallel(
     [evidence] = execute_plan(plan, root, timeout=120, only={"unit_tests"})
     assert evidence.status == "passed", evidence.output_tail
     assert "bringing up nodes" in evidence.output_tail  # pytest-xdist started its workers
+
+
+def test_disabling_pytest_also_disables_parallel_pytest(tmp_path: Path):
+    from susanoo.registry import load_registry
+
+    write(tmp_path, ".susanoo/tools.toml", '[[tools]]\nid = "pytest"\nenabled = false\n')
+    tools = load_registry(tmp_path).tools
+    # `-n auto` would otherwise still run pytest in a project that turned pytest off.
+    assert "pytest" not in tools and "pytest-xdist" not in tools
+
+
+def test_project_pytest_command_is_not_replaced_by_parallel_pytest(tmp_path: Path, config, profiles):
+    from susanoo.registry import load_registry
+
+    write(
+        tmp_path,
+        ".susanoo/tools.toml",
+        '[[tools]]\nid = "pytest"\nkind = "cli"\ncapabilities = ["unit_testing"]\nlanguages = ["python"]\n'
+        'binaries = ["pytest"]\nrun = { unit_testing = ["python", "-m", "pytest", "-q", "tests/unit"] }\n',
+    )
+    registry = load_registry(tmp_path)
+    assert "pytest-xdist" not in registry.tools
+    unit = plan_for(
+        "Fix the crash when saving settings", config, profiles, registry, [_PYTEST, _PYTEST_XDIST]
+    ).get("unit_tests")
+    assert unit is not None and unit.command == ["python", "-m", "pytest", "-q", "tests/unit"]
+
+
+def test_parallel_pytest_keeps_its_place_when_only_pytest_was_version_checked(registry):
+    # `--verify-tools` probes pytest's version; pytest-xdist has no probe of its own.
+    verified = Finding(
+        "tool:pytest", "tool", "pytest", Status.AVAILABLE_VERIFIED, ["unit_testing"], tool_kind="cli"
+    )
+    inv = Inventory(".", "", False, {"python": 3}, [verified, _PYTEST_XDIST])
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
+    assert rec.selected is not None and rec.selected.id == "pytest-xdist"
+    assert "which it supersedes" in rec.rationale
+
+    # Not usable (declared only, no environment manager): plain pytest stays selected.
+    declared = Finding(
+        "tool:pytest-xdist", "tool", "x", Status.CONFIGURED_INACCESSIBLE, ["unit_testing"], tool_kind="cli"
+    )
+    inv = Inventory(".", "", False, {"python": 3}, [_PYTEST, declared])
+    [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
+    assert rec.selected is not None and rec.selected.id == "pytest"

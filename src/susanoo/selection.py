@@ -326,7 +326,7 @@ def candidates_for(
         _adjust_for_task(candidates, registry, context)
     superseded = _superseded(candidates, registry)
     # A tool whose command had to be withheld ranks after runnable ones (e.g. `make test`), and a
-    # superseded tool after the equally scored tool that supersedes it.
+    # superseded tool after the tool that supersedes it.
     return sorted(candidates, key=lambda c: (bool(c.command_withheld), -c.score, c.id in superseded, c.name))
 
 
@@ -337,9 +337,13 @@ def _superseded(candidates: list[Candidate], registry: Registry) -> set[str]:
         spec = registry.tools.get(c.id)
         for other_id in spec.supersedes if spec is not None else ():
             other = by_id.get(other_id)
-            if other is not None and c.score >= other.score and not c.command_withheld:
-                superseded.add(other_id)
-                c.adjustments.append(f"preferred over {other.name}, which it supersedes")
+            if other is None or c.command_withheld or not c.status.usable or not other.status.usable:
+                continue
+            # Both work; a version probe of only the superseded one (`--verify-tools`) must not
+            # turn the order around.
+            c.score = max(c.score, other.score)
+            superseded.add(other_id)
+            c.adjustments.append(f"preferred over {other.name}, which it supersedes")
     return superseded
 
 

@@ -146,39 +146,48 @@ def _script_interpreter(script: Path) -> str | None:
     return None
 
 
-def _site_packages(executable: str) -> list[Path]:
-    """The package folders of the environment a console script was installed into: ``Scripts`` or
-    ``bin`` sits beside ``Lib/site-packages`` (Windows) or ``lib/python3.X/site-packages``."""
+def _site_packages(executable: str) -> Path | None:
+    """The package folder of the environment a console script was installed into (``Scripts`` or
+    ``bin`` sits beside ``Lib/site-packages`` or ``lib/python3.X/site-packages``), or ``None``
+    when there is none or it is ambiguous."""
     try:
         prefix = Path(executable).resolve().parent.parent
     except OSError:
-        return []
-    folders = [prefix / "Lib" / "site-packages", prefix / "site-packages"]
+        return None
+    folders = [
+        prefix / "Lib" / "site-packages",
+        prefix / "site-packages",
+        prefix / "lib/python/site-packages",
+    ]
     for pattern in ("lib/python3*/site-packages", "lib/python3*/dist-packages"):
         folders += sorted(prefix.glob(pattern))
-    return [folder for folder in folders if folder.is_dir()]
+    folders = [folder for folder in folders if folder.is_dir()]
+    if len(folders) > 1:
+        # Python versions sharing a prefix (~/.local, /usr/local, Homebrew): the environment is the
+        # one that has the executable's own distribution, if exactly one does.
+        folders = [f for f in folders if _has_distribution(f, Path(executable).stem)]
+    return folders[0] if len(folders) == 1 else None
+
+
+def _has_distribution(folder: Path, package: str) -> bool:
+    wanted = normalize_package(package)
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return False
+    return any(
+        entry.suffix in (".dist-info", ".egg-info") and normalize_package(entry.stem.split("-")[0]) == wanted
+        for entry in entries
+    )
 
 
 def python_package_installed(package: str, executable: str) -> bool | None:
     """Whether ``package`` is installed in the environment of ``executable``, judged by its
-    ``.dist-info`` or ``.egg-info`` folder; ``None`` when that environment cannot be found.
+    ``.dist-info`` or ``.egg-info`` folder; ``None`` when that environment cannot be found (shims,
+    launchers copied out of their environment, several Python versions in one prefix).
     Lists folders only; nothing is imported or run."""
-    folders = _site_packages(executable)
-    if not folders:
-        return None
-    wanted = normalize_package(package)
-    for folder in folders:
-        try:
-            entries = list(folder.iterdir())
-        except OSError:
-            continue
-        for entry in entries:
-            if (
-                entry.suffix in (".dist-info", ".egg-info")
-                and normalize_package(entry.stem.split("-")[0]) == wanted
-            ):
-                return True
-    return False
+    folder = _site_packages(executable)
+    return None if folder is None else _has_distribution(folder, package)
 
 
 def describe_location(path: str, root: Path | None) -> str:

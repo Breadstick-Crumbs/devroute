@@ -210,6 +210,7 @@ def load_registry(root: Path | None = None) -> Registry:
     # Packaged only: a run prefix decides what `verify --execute` runs, so a repository
     # cannot supply its own.
     environments = tuple(_environment_from_dict(e) for e in packaged.get("environments", []))
+    disabled: set[str] = set()
     if root is not None:
         extra = state_dir(root) / "tools.toml"
         if extra.is_file():
@@ -219,13 +220,20 @@ def load_registry(root: Path | None = None) -> Registry:
             for entry in entries:
                 if entry.get("enabled") is False:
                     tool_entries.pop(entry.get("id", ""), None)
+                    disabled.add(str(entry.get("id", "")))
                 else:
                     tool_entries[entry.get("id", "")] = (entry, "project")
     tools = {tid: _tool_from_dict(entry, origin) for tid, (entry, origin) in tool_entries.items()}
+    dropped: set[str] = set()
     for tool in tools.values():
         for other in tool.supersedes:
-            if other not in tools:
+            if other in disabled:
+                dropped.add(tool.id)  # A better form of a tool the project turned off is off too.
+            elif other not in tools:
                 raise ConfigError(f"tool '{tool.id}' supersedes unknown tool '{other}'")
+            elif tool.origin == "packaged" and tools[other].origin != "packaged":
+                dropped.add(tool.id)  # The project's own command for that tool wins.
+    tools = {tid: tool for tid, tool in tools.items() if tid not in dropped}
 
     capabilities: dict[str, CapabilitySpec] = {}
     for entry in load_toml_data("capabilities.toml").get("capabilities", []):

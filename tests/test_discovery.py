@@ -574,3 +574,49 @@ def test_windows_environment_layout_is_inspected(tmp_path: Path):
     assert python_package_installed("pytest-xdist", script) is True
     assert python_package_installed("pytest-cov", script) is False
     assert python_package_installed("pytest-xdist", str(tmp_path / "nowhere" / "bin" / "pytest")) is None
+
+
+def test_pytest_xdist_needs_an_environment_it_can_inspect(tmp_path: Path, registry):
+    # A pyenv/asdf shim or a launcher copied out of its environment: the folder beside it has no
+    # site-packages, so whether pytest there has the plugin is unknown and `-n` is not risked.
+    spec = registry.tools["pytest-xdist"]
+    root = tmp_path / "project"
+    write(root, "requirements-dev.txt", "pytest\npytest-xdist\n")
+    shim = lambda name: str(tmp_path / ".pyenv" / "shims" / name) if name == "pytest" else None  # noqa: E731
+    assert detect_tool(spec, scan_project(root), {}, False, which=shim) is None
+
+
+def test_pytest_xdist_of_another_python_version_does_not_count(tmp_path: Path, registry):
+    from susanoo.discovery.executables import python_package_installed
+
+    prefix = tmp_path / "homebrew"
+    (prefix / "lib" / "python3.11" / "site-packages" / "pytest_xdist-3.6.1.dist-info").mkdir(parents=True)
+    (prefix / "lib" / "python3.11" / "site-packages" / "pytest-8.3.4.dist-info").mkdir()
+    (prefix / "lib" / "python3.12" / "site-packages" / "pytest-8.3.4.dist-info").mkdir(parents=True)
+    # pytest is in both versions: which one /bin/pytest runs is unknown.
+    assert python_package_installed("pytest-xdist", str(prefix / "bin" / "pytest")) is None
+    # pytest only in 3.12: that is its environment, and it lacks the plugin.
+    (prefix / "lib" / "python3.11" / "site-packages" / "pytest-8.3.4.dist-info").rmdir()
+    assert python_package_installed("pytest-xdist", str(prefix / "bin" / "pytest")) is False
+
+
+def test_debian_dist_packages_layout_is_inspected(tmp_path: Path):
+    from susanoo.discovery.executables import python_package_installed
+
+    (tmp_path / "usr" / "lib" / "python3" / "dist-packages" / "pytest_xdist-3.5.0.egg-info").mkdir(
+        parents=True
+    )
+    # Debian: apt packages live in the unversioned /usr/lib/python3/dist-packages.
+    assert python_package_installed("pytest-xdist", str(tmp_path / "usr" / "bin" / "pytest")) is True
+
+
+def test_external_environment_decides_by_declaration_even_with_pytest_on_path(tmp_path: Path, registry):
+    # Poetry runs the checks in its own environment, not in the one the PATH pytest belongs to.
+    spec = registry.tools["pytest-xdist"]
+    root, system = tmp_path / "project", tmp_path / "system"
+    write(root, "pyproject.toml", '[tool.poetry.group.dev.dependencies]\npytest = "*"\npytest-xdist = "*"\n')
+    _site_packages(system, "pytest-8.3.4.dist-info")
+    on_path = lambda name: str(system / "bin" / name) if name == "pytest" else None  # noqa: E731
+    assert detect_tool(spec, scan_project(root), {}, False, which=on_path) is None
+    finding = detect_tool(spec, scan_project(root), {}, False, which=on_path, external_environment=True)
+    assert finding is not None and any("declared" in e for e in finding.evidence)
