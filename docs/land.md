@@ -84,6 +84,23 @@ Every run appends one line to `<git common dir>/susanoo/records/land.jsonl`, sha
 
 `susanoo review record <pr-or-branch> --tip <sha> --status passed|failed --tool code-review|security-review [--note ...]` records the result of a `/code-review` or `/security-review` against the commit it saw ([ADR 0015](decisions/0015-lead-session-and-board.md)). It refuses when `--tip` (a full commit id or at least 7 hex digits) is not the current tip: a pull request's head on GitHub (through `gh`), or for a branch its local or remote copy, whichever contains the other, as `land` picks it. When the remote cannot be reached, it refuses rather than trust the local copy. Records go to `<git common dir>/susanoo/records/reviews.jsonl`, next to `land.jsonl` and shared by all worktrees. `susanoo review list [<pr-or-branch>] [--json]` shows them. `land --merge` does not check them yet; that gate is the next slice of ADR 0015.
 
+## The board
+
+`susanoo board [--base <branch>] [--json]` shows one line per worktree branch, for the session that lands them ([ADR 0015](decisions/0015-lead-session-and-board.md)):
+
+```text
+a-fix   verified@a1b2c3d   review:passed  land:ready   security; overlap: src/app.py (b-feat)
+b-feat  stale (2 commits)  review:-       land:-       overlap: src/app.py (a-fix); append-only: CHANGELOG.md (c-docs)
+c-docs  unverified         review:-       land:failed  append-only: CHANGELOG.md (b-feat); ADR 0016 also taken by main
+```
+
+- **Checks:** from the worktree's newest route and its evidence `head` and `dirty`: `verified@<sha>` when every required step holds for the branch tip, `failed` when a step's newest run failed, `stale (n commits)` when every step passed on a clean tree of a commit the tip has since built on, else `unverified`. A worktree without routes of its own uses the newest route in another checkout whose checks ran there (ADR 0017).
+- **Review:** the newest `/code-review` (and `/security-review`, when there is one) recorded for exactly the tip, or `-`.
+- **Land:** the newest `land` run that had this branch at its tip, or pushed a commit built on it.
+- **Marks:** `security` when the route has a security control; `locked` for a locked worktree; `overlap` with the paths another branch also changes (committed since the merge-base with `origin/<base>`, plus uncommitted files); `append-only` instead for paths `[[land.keep_both]]` may resolve; `ADR <n> also taken by ...` when a branch adds a decision record whose number another branch adds too, or the base already has.
+
+`--base` defaults to `origin`'s default branch as last fetched, else `main`; the base branch's own checkout is not listed. Detached, prunable, and `land`'s scratch worktrees are skipped and named below the table. The board only reads: it fetches nothing, runs no checks, writes no file, index, or record, and runs git without optional locks or fsmonitor and without variables that point git elsewhere. Text from records is cut to one line. `--json` gives the same data, with each branch's changed paths.
+
 ## Not supported yet
 
 Pull requests from forks, forges other than GitHub, and batching with bisection. A candidate whose `.gitattributes` sets a `merge=` driver is refused, because it changes how git resolves conflicts.
