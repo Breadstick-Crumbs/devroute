@@ -1231,7 +1231,7 @@ def cmd_review(ctx: Context, stdin: TextIO) -> int:
 def cmd_board(ctx: Context, stdin: TextIO) -> int:
     """Per worktree branch: checks and review for its current commit, land status, shared files."""
     try:
-        data = build_board(ctx.root, ctx.args.base)
+        data = build_board(ctx.root, ctx.args.base, Path(ctx.args.config) if ctx.args.config else None)
     except BoardError as exc:
         raise CLIError(str(exc)) from exc
     if ctx.args.json:

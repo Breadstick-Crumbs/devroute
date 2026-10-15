@@ -65,7 +65,8 @@ def _git(root: Path, *args: str) -> str | None:
     if git is None:
         return None
     env = git_environment()
-    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"})
+    # No lazy fetch: a partial clone would otherwise download missing objects (git 2.44+).
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1"})
     try:
         proc = subprocess.run(  # nosec B603 - argv list, no shell
             [git, "--no-optional-locks", "-c", "core.fsmonitor=false", *args],

@@ -218,12 +218,15 @@ def test_board_writes_nothing(repo: Path, board_repo: dict[str, Path], monkeypat
     root = repo.parent
 
     def snapshot() -> dict[str, tuple[int, int]]:
+        # Every file and folder of the repository, its worktrees, and Susanoo's global state
+        # (where global-mode records would go).
         found: dict[str, tuple[int, int]] = {}
-        for dirpath, _dirs, files in os.walk(root):
-            for name in files:
-                path = Path(dirpath) / name
-                stat = path.stat()
-                found[str(path)] = (stat.st_size, stat.st_mtime_ns)
+        for top in (root, Path(os.environ["SUSANOO_HOME"])):
+            for dirpath, dirs, files in os.walk(top):
+                for name in [*dirs, *files]:
+                    path = Path(dirpath) / name
+                    stat = path.stat()
+                    found[str(path)] = (stat.st_size if name in files else -1, stat.st_mtime_ns)
         return found
 
     statuses = {name: git(path, "status", "--porcelain") for name, path in board_repo.items()}
@@ -428,3 +431,147 @@ def test_list_worktrees_reads_porcelain(repo: Path):
     assert listed is not None
     assert [(w.branch, w.detached) for w in listed] == [("main", False), ("a", False)]
     assert all(w.head and len(w.head) == 40 for w in listed)
+
+
+@needs_git
+def test_land_and_review_need_this_branch_at_this_tip(repo: Path):
+    a = worktree(repo, "a")
+    old = commit_file(a, "a.py")
+    tip = commit_file(a, "b.py")
+    store = common(repo)
+    append_record(
+        store, {"kind": "review", "tip": old, "tool": "code-review", "status": "passed"}, REVIEWS_FILE
+    )
+    append_record(
+        store, {"kind": "land", "id": "l-old", "result": "ready", "candidates": [{"branch": "a", "tip": old}]}
+    )
+    row = build_board(repo)["rows"][0]
+    assert row["review"] == {} and row["land"] is None
+    assert tip == row["tip"]
+
+
+@needs_git
+def test_land_result_is_per_candidate(repo: Path):
+    a, b = worktree(repo, "a"), worktree(repo, "b")
+    tip_a, tip_b = commit_file(a, "a.py"), commit_file(b, "b.py")
+    append_record(
+        common(repo),
+        {
+            "kind": "land",
+            "id": "l-1",
+            "result": "failed",
+            "culprit": {"kind": "alone", "candidate": "b"},
+            "candidates": [
+                {"label": "a", "branch": "a", "tip": tip_a},
+                {"label": "b", "branch": "b", "tip": tip_b},
+            ],
+        },
+    )
+    data = build_board(repo)
+    assert row_of(data, "a")["land"]["result"] == "failed (by b)"
+    assert row_of(data, "b")["land"]["result"] == "failed"
+    append_record(
+        common(repo),
+        {
+            "kind": "land",
+            "id": "l-2",
+            "result": "error",  # the base moved after a was merged
+            "candidates": [{"label": "a", "branch": "a", "tip": tip_a, "merged": "c" * 40}],
+        },
+    )
+    assert row_of(build_board(repo), "a")["land"]["result"] == "merged"
+
+
+@needs_git
+def test_a_reused_branch_name_does_not_inherit_an_old_run(repo: Path):
+    a = worktree(repo, "a")
+    old_tip = commit_file(a, "a.py")
+    git(repo, "checkout", "-q", "--detach", old_tip)
+    pushed = commit_file(repo, "merged-base.py")
+    git(repo, "checkout", "-q", "main")
+    append_record(
+        common(repo),
+        {
+            "kind": "land",
+            "id": "l-1",
+            "result": "merged",
+            "candidates": [{"branch": "a", "tip": "d" * 40, "pushed": pushed}],
+        },
+    )
+    git(a, "checkout", "-q", "--detach")
+    git(repo, "branch", "-D", "a")
+    git(a, "checkout", "-q", "-b", "a", "main")  # the same name again, no commits of its own yet
+    assert build_board(repo)["rows"][0]["land"] is None
+
+
+@needs_git
+def test_local_base_ahead_of_origin_is_used(repo: Path):
+    commit_file(repo, "main-only.py")  # on main, not pushed: origin/main is behind
+    a = worktree(repo, "a")
+    commit_file(a, "a.py")
+    b = worktree(repo, "b")
+    commit_file(b, "b.py")
+    data = build_board(repo)
+    assert data["base_ref"] == "refs/heads/main"
+    assert row_of(data, "a")["changed"] == ["a.py"] and row_of(data, "a")["overlaps"] == []
+    assert any("origin/main is missing or behind it" in w for w in data["warnings"])
+
+
+@needs_git
+def test_unborn_worktree_is_skipped(repo: Path, tmp_path: Path):
+    proc = subprocess.run(  # nosec B603
+        ["git", "worktree", "add", "-q", "--orphan", "-b", "orph", str(tmp_path / "orph")],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        pytest.skip("git worktree add --orphan needs git 2.42")
+    data = build_board(repo)
+    assert data["rows"] == []
+    assert {"orph": "no commit"}.items() <= {s["branch"]: s["reason"] for s in data["skipped"]}.items()
+
+
+@needs_git
+def test_stacked_branches_and_uncommitted_records_and_renames(repo: Path):
+    a = worktree(repo, "a")
+    commit_file(a, "docs/decisions/0006-shared.md")
+    git(repo, "worktree", "add", "-q", "-b", "b", str(repo.parent / "wt-b"), "a")  # b is built on a
+    b = repo.parent / "wt-b"
+    (b / ".susanoo").mkdir()
+    commit_file(b, "b.py")
+    c = worktree(repo, "c")
+    (c / "docs" / "decisions" / "0006-from-c.md").write_text("# 6\n", encoding="utf-8")  # untracked
+    git(c, "mv", "CHANGELOG.md", "HISTORY.md")
+    data = build_board(repo)
+    assert row_of(data, "b")["records"] == [
+        {"number": "0006", "file": "docs/decisions/0006-shared.md", "also": ["c"]}
+    ]
+    assert row_of(data, "c")["records"][0]["also"] == ["a", "b"]
+    changed = row_of(data, "c")["changed"]
+    assert "CHANGELOG.md" in changed and "HISTORY.md" in changed
+    assert "uncommitted (3)" in render_board(data)
+
+
+@needs_git
+def test_a_malformed_record_spoils_only_its_row(repo: Path):
+    a, b = worktree(repo, "a"), worktree(repo, "b")
+    commit_file(a, "a.py")
+    commit_file(b, "b.py")
+    RecordStore(a).append("routes", {"id": "su-bad", "verification": None, "controls": None})
+    data = build_board(repo)
+    bad, good = row_of(data, "a"), row_of(data, "b")
+    assert bad["checks"]["state"] == "unverified" and "TypeError" in bad["error"]
+    assert good["changed"] == ["b.py"] and "error" not in good
+    assert "records unreadable: TypeError" in render_board(data)
+
+
+@needs_git
+def test_paths_in_text_are_one_line(repo: Path):
+    a = worktree(repo, "a")
+    commit_file(a, "x\u202eevil.py")  # a bidi override in a file name
+    b = worktree(repo, "b")
+    commit_file(b, "x\u202eevil.py")
+    text = render_board(build_board(repo))
+    assert "\u202e" not in text and "overlap: x evil.py (b)" in text

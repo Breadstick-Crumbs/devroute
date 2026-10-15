@@ -18,6 +18,7 @@ import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,12 @@ def _canonical(path: Path) -> str:
         return os.path.normcase(str(path.absolute()))
 
 
+@lru_cache(maxsize=1024)
+def _canonical_text(text: str) -> str:
+    """``_canonical`` of a path from a record: many evidence records name the same checkout."""
+    return _canonical(Path(text))
+
+
 def list_worktrees(root: Path) -> list[Worktree] | None:
     """The repository's worktrees, main one first; None when git cannot list them."""
     text, sep = read_git(root, "worktree", "list", "--porcelain", "-z"), "\0"
@@ -114,8 +121,8 @@ def _skip_reason(wt: Worktree, base: str) -> str | None:
         return "prunable: its folder is gone"
     if wt.detached or not wt.branch:
         return "detached HEAD"
-    if not wt.head or not _SHA.fullmatch(wt.head):
-        return "no commit"
+    if not wt.head or not _SHA.fullmatch(wt.head) or not wt.head.strip("0"):
+        return "no commit"  # an unborn (orphan) branch is listed with an all-zero HEAD
     if wt.branch == base:
         return "the base branch"
     return None
@@ -131,11 +138,17 @@ def _default_base(root: Path) -> str:
 
 
 def _base_ref(root: Path, base: str) -> str | None:
-    """``origin/<base>`` as last fetched, else the local ``<base>``; no fetch."""
-    for ref in (f"refs/remotes/{REMOTE}/{base}", f"refs/heads/{base}"):
-        if read_git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
-            return ref
-    return None
+    """``origin/<base>`` as last fetched, or the local ``<base>`` when only it exists or it is
+    ahead (commits not pushed or fetched yet would otherwise show as every branch's changes)."""
+    remote, local = f"refs/remotes/{REMOTE}/{base}", f"refs/heads/{base}"
+    have = [
+        ref
+        for ref in (remote, local)
+        if read_git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    ]
+    if len(have) == 2 and _is_ancestor(root, remote, local) and not _is_ancestor(root, local, remote):
+        return local
+    return have[0] if have else None
 
 
 def _nul_list(raw: str | None) -> list[str]:
@@ -217,7 +230,7 @@ def _route_for(
         ran_here = {
             item.get("record_id")
             for item in evidence
-            if item.get("checkout") and _canonical(Path(str(item.get("checkout")))) == key
+            if item.get("checkout") and _canonical_text(str(item.get("checkout"))) == key
         }
         for route in routes:
             stamp = str(route.get("created_at", ""))
@@ -272,18 +285,37 @@ def _checks(
     return {**state, "state": "stale", "head": oldest, "commits": behind[oldest]}
 
 
-def _land(root: Path, lands: list[dict[str, Any]], branch: str, tip: str) -> dict[str, Any] | None:
-    """The newest `land` run of this branch at its tip, or one that pushed a commit built on it."""
+def _land_result(record: dict[str, Any], cand: dict[str, Any]) -> str:
+    """The run's result for this candidate: merged when it was, and who broke a failed run."""
+    if cand.get("merged"):
+        return "merged"
+    result = one_line(record.get("result") or "?")
+    culprit = record.get("culprit")
+    blamed = culprit.get("candidate") if isinstance(culprit, dict) else None
+    if result == "failed" and blamed and blamed != cand.get("label"):
+        return f"failed (by {one_line(blamed, 30)})"
+    return result
+
+
+def _land(
+    root: Path, lands: list[dict[str, Any]], branch: str, tip: str, own_commits: bool
+) -> dict[str, Any] | None:
+    """The newest `land` run of this branch at its tip, or one that pushed a commit built on it.
+
+    The second needs commits of the branch's own: a fresh branch at an older base commit is an
+    ancestor of every commit a run pushed for an earlier branch of the same name.
+    """
     for record in reversed(lands):
-        for cand in record.get("candidates") or []:
+        candidates = record.get("candidates")
+        for cand in candidates if isinstance(candidates, list) else []:
             if not isinstance(cand, dict) or cand.get("branch") != branch:
                 continue
             pushed = str(cand.get("pushed") or "").lower()
-            if str(cand.get("tip") or "").lower() == tip or (
-                _SHA.fullmatch(pushed) and _is_ancestor(root, tip, pushed)
+            if tip in (str(cand.get("tip") or "").lower(), pushed) or (
+                own_commits and _SHA.fullmatch(pushed) and _is_ancestor(root, tip, pushed)
             ):
                 return {
-                    "result": one_line(record.get("result") or "?"),
+                    "result": _land_result(record, cand),
                     "id": one_line(record.get("id")),
                     "started_at": one_line(record.get("started_at")),
                 }
@@ -344,7 +376,8 @@ def _mark_records(root: Path, rows: list[dict[str, Any]], base: str, base_ref: s
         ]
         for branch, path in holders:
             name = path.rpartition("/")[2]
-            also = sorted({b for b, _ in holders if b != branch})
+            # The same file in two branches is one branch built on the other, not a second claim.
+            also = sorted({b for b, other in holders if b != branch and other != path})
             if any(f != name for f in base_files):
                 also.append(base)
             if also:
@@ -371,8 +404,8 @@ def _row(
     added: list[str] = []
     uncommitted = _uncommitted(wt.path)
     merge_base = read_git(root, "merge-base", base_ref, tip) if base_ref else None
-    if merge_base and merge_base.strip() and uncommitted is not None:
-        fork = merge_base.strip()
+    fork = merge_base.strip() if merge_base else ""
+    if fork and uncommitted is not None:
         fields = _nul_list(read_git(root, "diff", "--name-status", "--no-renames", "-z", fork, tip))
         pairs = list(zip(fields[::2], fields[1::2], strict=False))  # (status letter, path)
         committed = [path for _, path in pairs]
@@ -386,8 +419,8 @@ def _row(
         "locked": wt.locked,
         "checks": _checks(root, route, evidence, tip),
         "review": {tool: one_line(r.get("status")) for tool, r in found.items() if r},
-        "land": _land(root, lands, branch, tip),
-        "security": bool(route) and any("security" in str(c) for c in (route or {}).get("controls", [])),
+        "land": _land(root, lands, branch, tip, own_commits=fork != tip),
+        "security": any("security" in str(c) for c in (route or {}).get("controls") or []),
         "uncommitted": len(uncommitted[0]) if uncommitted is not None else None,
         "changed": changed,
         "overlaps": [],
@@ -397,7 +430,38 @@ def _row(
     }
 
 
-def build_board(root: Path, base: str | None = None) -> dict[str, Any]:
+def _safe_row(
+    root: Path,
+    wt: Worktree,
+    base_ref: str | None,
+    stores: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]],
+    reviews: list[dict[str, Any]],
+    lands: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """``_row``, or an unverified row naming the problem when a hand-edited record is malformed."""
+    try:
+        return _row(root, wt, base_ref, stores, reviews, lands)
+    except (TypeError, AttributeError, ValueError, KeyError) as exc:
+        return {
+            "branch": str(wt.branch),
+            "path": str(wt.path),
+            "tip": str(wt.head),
+            "locked": wt.locked,
+            "checks": {"state": "unverified", "route": None, "steps": [], "head": None, "commits": None},
+            "review": {},
+            "land": None,
+            "security": False,
+            "uncommitted": None,
+            "changed": None,
+            "overlaps": [],
+            "append_only": [],
+            "records": [],
+            "error": one_line(f"{type(exc).__name__}: {exc}", 120),
+            "_added": [],
+        }
+
+
+def build_board(root: Path, base: str | None = None, config_file: Path | None = None) -> dict[str, Any]:
     """Everything `susanoo board` shows, as data. Reads only."""
     common = read_git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
     listed = list_worktrees(root) if common and common.strip() else None
@@ -413,9 +477,9 @@ def build_board(root: Path, base: str | None = None) -> dict[str, Any]:
             f"no {REMOTE}/{base_name} or local {base_name}: changed files and overlaps are not shown"
         )
     elif base_ref.startswith("refs/heads/"):
-        warnings.append(f"no {REMOTE}/{base_name}; compared with the local {base_name}")
+        warnings.append(f"compared with the local {base_name}: {REMOTE}/{base_name} is missing or behind it")
     try:
-        rules = parse_rules(load_config(root).get("land", {}).get("keep_both"))
+        rules = parse_rules(load_config(root, config_file).get("land", {}).get("keep_both"))
     except ConfigError as exc:
         rules = []
         warnings.append(
@@ -438,7 +502,7 @@ def build_board(root: Path, base: str | None = None) -> dict[str, Any]:
     kept.sort(key=lambda wt: str(wt.branch))
     # Each git call costs a process start; branches are read side by side, in listing order.
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        rows = list(pool.map(lambda wt: _row(root, wt, base_ref, stores, reviews, lands), kept))
+        rows = list(pool.map(lambda wt: _safe_row(root, wt, base_ref, stores, reviews, lands), kept))
     _mark_shared(rows, rules)
     _mark_records(root, rows, base_name, base_ref)
     return {"base": base_name, "base_ref": base_ref, "rows": rows, "skipped": skipped, "warnings": warnings}
@@ -471,8 +535,12 @@ def _review_text(review: dict[str, str]) -> str:
 
 def _marks_text(row: dict[str, Any]) -> str:
     marks: list[str] = []
+    if row.get("error"):
+        marks.append(f"records unreadable: {row['error']}")
     if row["locked"]:
         marks.append("locked")
+    if row["uncommitted"]:
+        marks.append(f"uncommitted ({row['uncommitted']})")
     if row["security"]:
         marks.append("security")
     for item in row["overlaps"]:
