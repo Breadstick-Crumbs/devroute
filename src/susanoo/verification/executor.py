@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from susanoo.discovery.executables import resolve_executable
+from susanoo.discovery.executables import resolve_executable, resolve_module_interpreter
 from susanoo.verification.planner import VerificationPlan, VerificationStep
 
 OUTPUT_TAIL_CHARS = 2000
@@ -84,8 +84,15 @@ def _now() -> str:
 
 
 def run_command(argv: list[str], cwd: Path, timeout: float) -> tuple[str, int | None, float, str]:
-    """Run ``argv`` in ``cwd``; return (status, exit_code, duration_seconds, output_tail)."""
-    executable = resolve_executable(argv[0], cwd)
+    """Run ``argv`` in ``cwd``; return (status, exit_code, duration_seconds, output_tail).
+
+    ``python -m <tool>`` runs under the interpreter that has ``<tool>`` (see
+    ``resolve_module_interpreter``), not whichever ``python`` comes first.
+    """
+    if argv[:2] == ["python", "-m"] and len(argv) > 2:
+        executable = resolve_module_interpreter(argv[2], cwd)
+    else:
+        executable = resolve_executable(argv[0], cwd)
     if executable is None:
         return "error", None, 0.0, f"executable not found on PATH: {argv[0]}"
     started = time.monotonic()

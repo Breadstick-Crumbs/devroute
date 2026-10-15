@@ -143,9 +143,9 @@ $ susanoo route --path examples/sample-app "Add a low-stock alert that emails th
 Why: complexity is moderate; risk is moderate
 
 ## Required verification
-- [required] Unit tests: `pytest -q`
+- [required] Unit tests: `python -m pytest -q`
 - [required] Linting / static analysis: `ruff check .`
-- [required] Integration tests: `pytest -q`
+- [required] Integration tests: `python -m pytest -q`
 - [recommended] Type checking: `mypy .`
 - [recommended] Dependency vulnerability audit: no usable tool - gap
 - [recommended] Independent code review: Claude Code subagents (performed by the agent or a person)

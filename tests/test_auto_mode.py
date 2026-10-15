@@ -235,7 +235,7 @@ def test_autonomy_request_routes_hands_off(tmp_path: Path):
 
 def test_low_confidence_prompt_gets_questions_through_the_hook(tmp_path: Path):
     root = _auto_project(tmp_path)
-    context = _prompt(root, "can you build the feature")
+    context = _prompt(root, "can you improve the thing")
     assert "Low confidence in this route:" in context and "focused questions" in context
 
 

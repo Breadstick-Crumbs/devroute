@@ -128,6 +128,8 @@ class Assessment:
     requirements: list[CapabilityRequirement]
     context_notes: list[str] = field(default_factory=list)
     negated: list[str] = field(default_factory=list)  # phrases ignored as "do not change"
+    # Signals ignored because the whole task only changes how something looks ("payments ('checkout')").
+    presentational: list[str] = field(default_factory=list)
     # Levels before project context (after any floor): what a later floor is built from.
     base_levels: dict[str, int] = field(default_factory=dict)
 

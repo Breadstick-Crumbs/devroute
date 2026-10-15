@@ -123,6 +123,142 @@ def _mask(text: str, spans: Iterable[tuple[int, int]]) -> str:
     return "".join(chars)
 
 
+# One clause only: a comma, semicolon, colon, question mark, or line break ends presentational.
+_CLAUSE_BREAK = re.compile(r"[,;:?\n]|\.\s")
+_HEX_COLOR = re.compile(r"#[0-9a-f]{3,8}")
+
+
+def _keep_matches(task: str, patterns: Iterable[str]) -> bool:
+    """Whether a `keep` pattern matches, also with hyphens read as spaces ("Stripe-hosted")."""
+    variants = (task, task.replace("-", " "))
+    return any(re.search(rf"(?<!\w)(?:{p})(?!\w)", v, re.IGNORECASE) for p in patterns for v in variants)
+
+
+def _words(task: str, phrases: Iterable[str]) -> list[str]:
+    text = " " + " ".join(task.lower().split()) + " "
+    for phrase in sorted(phrases, key=len, reverse=True):
+        text = text.replace(f" {phrase} ", " " + phrase.replace(" ", "_") + " ")
+    return text.split()
+
+
+def _visual_only(words: list[str], verbs: set[str], config: dict[str, Any], require_appearance: bool) -> bool:
+    """Read the task word by word (linear, no backtracking) against a structural grammar:
+
+        verb [det] [look-word... on|of|in|for [det]] object [tail...]
+        object = payment-page words and at most one `page_names` word, then one or two UI nouns
+        tail   = a look word, a hex color, "to" + a look value ("to green"), or
+                 on|for|in|across|at [det] + platform or look words ("on small screens")
+
+    Nothing may follow the object that turns it into something else ("to a modal", "into web
+    views", "text fields", "link to ..."), and platform words appear only after a preposition.
+    """
+    if words and words[0] == "please":
+        words = words[1:]
+    if not words or words[0] not in verbs:
+        return False
+    v = {
+        key: {str(w).lower() for w in config.get(key, [])}
+        for key in (
+            "determiners",
+            "ui_nouns",
+            "appearance",
+            "values",
+            "platform",
+            "subjects",
+            "reject_words",
+            "page_names",
+        )
+    }
+    if any(w in v["reject_words"] for w in words):
+        return False
+    n = len(words)
+
+    def at(k: int) -> str:
+        return words[k] if k < n else ""
+
+    def is_look(word: str) -> bool:
+        return word in v["appearance"] or bool(_HEX_COLOR.fullmatch(word))
+
+    has_look = is_look(words[0])
+    i = 1 + (at(1) in v["determiners"])
+    # "tighten the padding on the payment form": look words, then a preposition, then the object.
+    j = i
+    while is_look(at(j)):
+        j += 1
+    if j > i and at(j) in ("on", "of", "in", "for", "around"):
+        has_look = True
+        i = j + 1 + (at(j + 1) in v["determiners"])
+    # The object: payment-page words and at most one page name, then one or two UI nouns.
+    free = 1
+    while at(i) and at(i) not in v["ui_nouns"]:
+        word = at(i)
+        if word in v["subjects"]:
+            i += 1
+        elif free and word in v["page_names"]:
+            free -= 1
+            i += 1
+        else:
+            return False
+    nouns = 0
+    while at(i) in v["ui_nouns"] and nouns < 2:
+        nouns += 1
+        i += 1
+    if not nouns:
+        return False
+    # The tail: only how it looks, and where.
+    while i < n:
+        word = at(i)
+        if is_look(word):
+            has_look = True
+            i += 1
+        elif word == "to" and (at(i + 1) in v["values"] or _HEX_COLOR.fullmatch(at(i + 1))):
+            has_look = True
+            i += 2
+        elif word in ("on", "for", "in", "across", "at"):
+            k = i + 1 + (at(i + 1) in v["determiners"])
+            m = k
+            while at(m) in v["platform"] or is_look(at(m)):
+                has_look = has_look or is_look(at(m))
+                m += 1
+            if m == k:
+                return False
+            i = m
+        else:
+            return False
+    return has_look or not require_appearance
+
+
+def presentational_matches(
+    text: str, matches: list[SignalMatch], config: dict[str, Any]
+) -> list[SignalMatch]:
+    """Signal matches to ignore because the whole task only changes how something looks.
+
+    Ignoring can only lower risk, so this is narrow (see `[assessment.presentational]`): a short,
+    single-clause task built only from a closed vocabulary, where every phrase the signal matched
+    is a rule verb or a payment-page word, and no `keep` word appears anywhere.
+    """
+    if not config or not matches:
+        return []
+    task = text.strip().rstrip(".!")
+    words_limit = int(config.get("max_words", 20))
+    if len(task.split()) > words_limit or _CLAUSE_BREAK.search(task):
+        return []
+    if _keep_matches(task, config.get("keep", [])):
+        return []
+    words = _words(task, config.get("phrases", []))
+    subjects = {str(w).lower() for w in config.get("subjects", [])}
+    ignored: list[SignalMatch] = []
+    for rule in config.get("rules", []):
+        verbs = {str(v).lower() for v in rule.get("verbs", [])}
+        targets = [m for m in matches if m.id in rule.get("signals", []) and m not in ignored]
+        # Every phrase the signal matched must be a verb or a payment-page word of this rule:
+        # "redesign ... with microservices" keeps the architectural signal.
+        targets = [m for m in targets if all(p in verbs or p in subjects for p in m.matches)]
+        if targets and _visual_only(words, verbs, config, bool(rule.get("require_appearance"))):
+            ignored += targets
+    return ignored
+
+
 def _caps_allowed(text: str, signal: dict[str, Any]) -> bool:
     """Whether the whole task fits one of the signal's ``caps_only_if`` shapes (if it has any)."""
     shapes = signal.get("caps_only_if")
@@ -203,6 +339,11 @@ def assess(
         spans, scanned = [], lines
         matches = match_signals(scanned, signal_defs.values())
     negated = [lines[start:end].strip() for start, end in spans]
+    # A purely visual edit ("Change the checkout button color") does not count as payment logic
+    # or as an architectural change.
+    ignored = presentational_matches(lines, matches, config["assessment"].get("presentational", {}))
+    matches = [m for m in matches if m not in ignored]
+    presentational = [f"{m.label} ({_quote(m.matches)})" for m in ignored]
 
     levels: dict[str, int] = dict.fromkeys(DIMENSIONS, 0)
     reasons: dict[str, list[str]] = {d: [] for d in DIMENSIONS}
@@ -242,8 +383,14 @@ def assess(
             continue
         if has_scope_signal:
             continue
-        blocked_by = set(signal_defs[match.id].get("caps_unless_signals", [])) & {m.id for m in matches}
-        if blocked_by or not _caps_allowed(lines, signal_defs[match.id]):
+        matched_ids = {m.id for m in matches}
+        blocked_by = set(signal_defs[match.id].get("caps_unless_signals", [])) & matched_ids
+        needed = signal_defs[match.id].get("caps_if_signals", [])
+        if (
+            blocked_by
+            or (needed and not set(needed) & matched_ids)
+            or not _caps_allowed(lines, signal_defs[match.id])
+        ):
             for dim, cap in caps.items():
                 if levels[dim] > cap:
                     reasons[dim].append(f"not capped by {match.label}: the task is more than that")
@@ -276,6 +423,7 @@ def assess(
         requirements=_requirements(matches, signal_defs),
         context_notes=context_notes,
         negated=negated,
+        presentational=presentational,
         base_levels=base_levels,
     )
 
