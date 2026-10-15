@@ -75,6 +75,9 @@ class Inventory:
     ui_domains: list[dict[str, str]] = field(default_factory=list)
     # Design documents, token files, and Storybook ({"kind", "path"}), root-relative paths only.
     design_files: list[dict[str, str]] = field(default_factory=list)
+    # Architecture documents, decision records, instruction sections, and boundary rules
+    # ({"kind", "path", ...}), root-relative paths only (ADR 0011).
+    architecture_files: list[dict[str, str]] = field(default_factory=list)
 
     def by_kind(self, kind: str) -> list[Finding]:
         return [f for f in self.findings if f.kind == kind]
@@ -103,6 +106,7 @@ class Inventory:
             "package_manager": self.package_manager,
             "ui_domains": self.ui_domains,
             "design_files": self.design_files,
+            "architecture_files": self.architecture_files,
             "findings": [f.to_dict() for f in self.findings],
             "warnings": self.warnings,
         }

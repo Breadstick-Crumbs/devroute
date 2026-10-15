@@ -62,6 +62,13 @@ description = "Detect defects and style issues without running the code."
 keywords = ["lint", "linter", "static analysis", "eslint", "ruff"]
 
 [[capabilities]]
+id = "architecture_boundaries"
+title = "Architecture boundary checks"
+description = "Check the project's own layering and module-boundary rules (import-linter, dependency-cruiser, eslint-plugin-boundaries)."
+# Tool names only: a skill that merely mentions boundaries is not a boundary check.
+keywords = ["import-linter", "dependency-cruiser", "depcruise", "archunit"]
+
+[[capabilities]]
 id = "type_checking"
 title = "Type checking"
 description = "Verify type annotations and interfaces."

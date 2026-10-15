@@ -47,6 +47,7 @@ from susanoo.adapters.claude_code.settings_hooks import (
     plan_settings,
     settings_hooks,
 )
+from susanoo.adapters.claude_code.usage import fill_outcome
 from susanoo.analyzer import Floor, assess
 from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
@@ -234,7 +235,9 @@ def _session_route(ctx: Context, task: str, session: str, message: dict[str, Any
         # The new route first, so the session never lacks an active route.
         store.append("routes", data)
         if state is not None:
-            close_superseded(store, state, f"superseded by {plan.record_id} (a new route in this session)")
+            close_superseded(
+                store, state, f"superseded by {plan.record_id} (a new route in this session)", ctx.config
+            )
         if hands_off and not skill:
             grant_autonomy(store, plan.record_id, session)
     replaced = (
@@ -316,10 +319,14 @@ def _init_global(ctx: Context) -> int:
             actions = apply_global_uninstall(actions)
     else:
         auto = not args.no_auto
-        actions = plan_global(auto=auto, with_agents=not args.no_agents, force=args.force)
+        actions = plan_global(
+            auto=auto, with_agents=not args.no_agents, force=args.force, with_taste=not args.no_taste
+        )
         _refuse_settings_conflict(next((a for a in actions if a.path == "settings.json"), None), want=True)
         if not args.dry_run:
-            actions = apply_global(actions, auto=auto, with_agents=not args.no_agents)
+            actions = apply_global(
+                actions, auto=auto, with_agents=not args.no_agents, with_taste=not args.no_taste
+            )
     if args.json:
         ctx.emit_json({"global": True, "dry_run": args.dry_run, "actions": actions_to_dicts(actions)})
         return EXIT_OK
@@ -390,7 +397,11 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
             )
         if args.dry_run:
             install = plan_install(
-                ctx.root, force=args.force, with_agents=not args.no_agents, enforce=skill_hooks
+                ctx.root,
+                force=args.force,
+                with_agents=not args.no_agents,
+                enforce=skill_hooks,
+                with_taste=not args.no_taste,
             )
         else:
             # Settings first: if they cannot be written, the skill and manifest stay as they were.
@@ -405,9 +416,20 @@ def cmd_init(ctx: Context, stdin: TextIO) -> int:
                 and (want_settings or managed),
             )
             install = plan_install(
-                ctx.root, force=args.force, with_agents=not args.no_agents, enforce=skill_hooks
+                ctx.root,
+                force=args.force,
+                with_agents=not args.no_agents,
+                enforce=skill_hooks,
+                with_taste=not args.no_taste,
             )
-            apply_install(ctx.root, install, with_agents=not args.no_agents, enforce=enforce, scope=scope)
+            apply_install(
+                ctx.root,
+                install,
+                with_agents=not args.no_agents,
+                enforce=enforce,
+                scope=scope,
+                with_taste=not args.no_taste,
+            )
         actions = install + ([settings] if settings else [])
     if args.json:
         ctx.emit_json({"root": str(ctx.root), "dry_run": args.dry_run, "actions": actions_to_dicts(actions)})
@@ -831,11 +853,16 @@ def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
         "notes": a.notes or "",
         "unmet_verification": unmet,
     }
+    fill_outcome(data, record, store, ctx.config)
     store.append("outcomes", data)
     if a.json:
         ctx.emit_json(data)
     else:
-        ctx.emit(f"Recorded outcome for {record['id']}: {a.status} (source: {a.source})")
+        captured = data.get("captured", {}).get("fields", [])
+        ctx.emit(
+            f"Recorded outcome for {record['id']}: {a.status} (source: {a.source})"
+            + (f"; captured from the session transcript: {', '.join(captured)}" if captured else "")
+        )
     return EXIT_OK
 
 
@@ -906,7 +933,7 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
             data[key] = state.route[key]
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
-    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}")
+    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", ctx.config)
     # The same task with more process: checks already run still count. A plan approval covers the
     # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
     # adds a check), so only autonomy asked for in the user's own words carries over.
@@ -981,6 +1008,34 @@ def cmd_research(ctx: Context, stdin: TextIO) -> int:
     else:
         ctx.emit(render_research(report))
     return EXIT_OK
+
+
+def cmd_taste(ctx: Context, stdin: TextIO) -> int:
+    """`susanoo taste path|shoot|capture`: the taste profile and screenshots for the taste-ui skill."""
+    from susanoo import taste
+
+    args = ctx.args
+    try:
+        location = taste.taste_location()
+        if args.action == "path":
+            if args.json:
+                ctx.emit_json(location.to_dict())
+            else:
+                state = "profile found" if location.has_profile else "no TASTE.md yet"
+                ctx.emit(
+                    f"{location.path}\n  source: {location.source}\n  {state}; {len(location.sites)} captured site(s)"
+                )
+            return EXIT_OK
+        if args.action == "shoot":
+            if len(args.targets) != 2:
+                raise CLIError("usage: susanoo taste shoot <page-url-or-html-file> <out-dir>")
+            return taste.run_script("shoot.mjs", list(args.targets))
+        if not args.targets:
+            raise CLIError("usage: susanoo taste capture <slug>=<url> [...] [--out DIR]")
+        out = Path(args.out) if args.out else location.path / "sites"
+        return taste.run_script("capture.mjs", [str(out), *taste.parse_sites(list(args.targets))])
+    except taste.TasteError as exc:
+        raise CLIError(str(exc)) from exc
 
 
 def cmd_eval(ctx: Context, stdin: TextIO) -> int:
@@ -1071,6 +1126,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="show what would change without writing")
     p.add_argument("--force", action="store_true", help="replace differing files (a backup is written first)")
     p.add_argument("--no-agents", action="store_true", help="do not install the susanoo-* subagents")
+    p.add_argument(
+        "--no-taste",
+        action="store_true",
+        help="do not install the taste-ui skill (visual direction for UI work)",
+    )
     p.add_argument(
         "--uninstall", action="store_true", help="remove files Susanoo installed (unmodified ones only)"
     )
@@ -1170,6 +1230,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", help="task context to store with the research record")
     p.add_argument("--no-record", action="store_true", help="do not write a research record")
     p.set_defaults(func=cmd_research)
+
+    p = sub.add_parser(
+        "taste", parents=[common], help="the taste profile and screenshots used by the taste-ui skill"
+    )
+    p.add_argument(
+        "action",
+        choices=["path", "shoot", "capture"],
+        help="path: where the profile is; shoot <page> <out-dir>: 375, 768 and 1280 px screenshots; "
+        "capture <slug>=<url> ...: record reference sites for a profile",
+    )
+    p.add_argument(
+        "targets", nargs="*", help="shoot: <page-url-or-html-file> <out-dir>; capture: <slug>=<url> ..."
+    )
+    p.add_argument("--out", help="capture: where to write the sites (default: <taste folder>/sites)")
+    p.set_defaults(func=cmd_taste)
 
     p = sub.add_parser("eval", parents=[common], help="evaluate routing against a labeled task suite")
     p.add_argument("--suite", help="path to a suite TOML (default: bundled routing-v1)")

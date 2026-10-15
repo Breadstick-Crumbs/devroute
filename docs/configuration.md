@@ -105,6 +105,23 @@ Project tool entries are repository-controlled. Susanoo ignores their `version_a
 store_task_text = false   # only a SHA-256 of the task is stored
 ```
 
+### Capture tokens and duration from Claude Code
+
+```toml
+[records]
+capture_usage = true   # off by default
+```
+
+When an outcome is recorded (`susanoo outcome`, or Susanoo closing a route a new task replaced), Susanoo reads the route's Claude Code session transcript (`<CLAUDE_CONFIG_DIR or ~/.claude>/projects/*/<session>.jsonl` and its subagents' transcripts) and fills the outcome's fields that were not given. Only assistant messages written between the route's creation and the outcome count, and work after the session's next route belongs to that route.
+
+- `token_counts`: fresh input, cache writes, cache reads, and output tokens, kept apart (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`), so prompt-cache use stays visible. Left out when you pass `--tokens`, so it never disagrees with `tokens`. Cache reads cost far less than fresh input, so weight them separately in any cost estimate.
+- `tokens`: the sum of the four.
+- `duration_minutes`: from the route's creation to its last assistant message.
+- `tool_calls`: calls per tool name (`Read`, `Grep`, `mcp__<server>__<tool>`), counted from tool-use blocks without reading their inputs or results.
+- `cost_usd`: only when the transcript itself records a cost (older Claude Code versions did). Susanoo does not estimate prices.
+
+`captured` lists the fields that came from the transcript. Only usage numbers, timestamps, message ids, and tool names are read, never message text or tool inputs and results. The transcript format is not a documented interface: when it is missing or changes, nothing is captured and the outcome is recorded as before. Routes made outside a Claude Code session have no session id and are never captured; work after `/clear` or in a resumed session with a new session id is not counted. Reading stops, and nothing is captured, after about 2 seconds or 64 MB, so a route left open for a very long session may get no capture; this keeps the prompt hook fast.
+
 ## Reference
 
 ### `[assessment]`
@@ -121,6 +138,18 @@ An instruction to leave a part of the code base alone is ignored when signals ar
 - Line breaks and bullets are treated as sentence ends, and a target never runs past one.
 
 Keep this narrow. Ignoring text can only lower risk.
+
+### `[assessment.presentational]`
+A visual redesign ("Redesign the pricing page layout for mobile") does not count as an architectural change ([ADR 0008](decisions/0008-ui-ux-workflow.md)). The packaged configuration has one rule, for `architecture-change`, and deliberately none for `payments`: a heuristic never removes payment controls. The brief lists what was ignored as "Ignored as a purely visual change". The task is read word by word against a closed vocabulary and a fixed structure (see the ADR):
+- `max_words` (default 20) and `reject_words` ("and", "or", "then", ...): longer tasks, tasks with one of these words, and tasks with a comma, semicolon, colon, question mark, line break, or sentence end inside are never presentational. A leading "please" and a trailing period or exclamation mark are ignored.
+- `determiners`, `ui_nouns`, `appearance`, `values` (allowed after "to": colors, sizes), `platform`, `subjects` (payment-page words, allowed only in the object before a UI noun), `page_names` (the only other words allowed in the object, at most one), `phrases` (multi-word entries read as one word): lowercase words. Hex colors count as appearance words.
+- `keep`: regexes that keep every signal when they match anywhere, also with hyphens read as spaces (payment logic, providers, data, state, flows, card or text fields, APIs, authentication, ...).
+- `rules`: each has `signals` (ids to ignore), `verbs` (the first word of the task), and optionally `require_appearance = true` (an appearance word must appear; platform words do not count). A signal is only ignored if every phrase it matched is a rule verb or a `subjects` word. `rules = []` turns it off.
+- Unknown keys are an error. Lists replace the defaults rather than adding to them, so a project that sets `keep` must repeat every default entry it wants to keep.
+
+Keep this narrow. Ignoring a signal can only lower risk. A project can add rules, including for other signals, but the packaged data deliberately never ignores `payments`.
+
+A signal can also limit its `caps` with `caps_if_signals` (caps apply only when one of these signals matched), next to `caps_unless_signals` and `caps_only_if`.
 
 ### `[complexity]`, `[risk]`, `[uncertainty]`
 - `weights` (complexity): relative weights of the complexity dimensions.
@@ -153,6 +182,9 @@ Automatic routing of prompts (`susanoo init --global`, or `--auto` with the sett
 
 ### `[ui]`
 `domain` (default `""`): the UI domain for UI tasks ([ADR 0008](decisions/0008-ui-ux-workflow.md)). Empty picks one from the task's words, then from the project's dependencies and files; `website`, `ecommerce`, `dashboard`, `mobile`, or `component-library` fixes it; `"none"` shows only the generic UI baseline. Set it in the project's `.susanoo/config.toml` or in `~/.susanoo/config.toml`. The domains, their task words, detection hints, and checklists are in [`ui_domains.toml`](../src/susanoo/data/ui_domains.toml); a `[[verification]]` rule with `ui_domains = [...]` applies only to those domains (the performance budget is `website` only). The same file's `[design_context]` lists where design documents, tokens, and Storybook are looked for and what UI briefs say about them.
+
+### Architecture context
+Where STANDARD and DEEP briefs look for architecture documents, decision records, architecture sections of agent instructions, and boundary rules, and what they say about them, is packaged data in [`architecture.toml`](../src/susanoo/data/architecture.toml) ([ADR 0011](decisions/0011-architecture-context.md)). Boundary tools Susanoo can run (import-linter, dependency-cruiser, eslint-plugin-boundaries) are registry entries with the `architecture_boundaries` capability; the `architecture_check` step that runs them is recommended in STANDARD and DEEP and left out when no such tool is configured. Register another boundary tool with a `.susanoo/tools.toml` entry that lists `architecture_boundaries` and a `run` command for it.
 
 ### `[selection]`
 `code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers. `task_keyword_bonus` (default 3): added to a tool whose `task_keywords` appear in the task ("postgres" picks psql over sqlite3); smaller than the gap between an installed and a missing tool. `default_package_manager` (default `npm`; also `pnpm`, `yarn`, `bun`): the JavaScript package manager for install hints when the project names none (package.json `packageManager`) and has no lockfile. Package-script commands always use the manager discovery checked for (npm without a lockfile), so a ready check never runs a binary that was not found.

@@ -4,18 +4,6 @@ description: Assess a software engineering task, choose a fitting workflow (FAST
 argument-hint: "[--profile fast|standard|deep] <task description>"
 disable-model-invocation: true
 allowed-tools: Bash(susanoo route *), Bash(susanoo raise *), Bash(susanoo assess *), Bash(susanoo research *), Bash(susanoo evidence *), Bash(susanoo outcome *), Bash(susanoo report *), Bash(python -m susanoo route *)
-hooks:
-  PreToolUse:
-    - matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell"
-      hooks:
-        - type: command
-          command: "susanoo hook pre-tool-use"
-          timeout: 30
-  Stop:
-    - hooks:
-        - type: command
-          command: "susanoo hook stop"
-          timeout: 30
 ---
 
 # Susanoo
@@ -59,6 +47,7 @@ Show the user a compact summary: mode and why, complexity / risk / uncertainty, 
 Follow the brief's proposed steps with Claude Code's own tools.
 
 - FAST: targeted search, smallest correct change, tests for the changed code, short report.
+- STANDARD and DEEP: before designing, read the architecture context the brief names that this change touches, and stay within it or flag the conflict.
 - STANDARD: investigate, clarify if needed, share a plan, implement incrementally with tests after each step, review the full diff, validate integration, report.
 - DEEP: requirements and architecture first; an explicit plan (plan mode works well); work on an isolated branch or worktree; delegate only independent feature areas to subagents; have the `susanoo-reviewer` subagent review the complete diff in its own context; run the full verification set.
 

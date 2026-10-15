@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
+from susanoo.architecture import detect_architecture_files
 from susanoo.discovery.executables import (
     PROJECT_ENV_DIRS,
     describe_location,
@@ -301,6 +302,7 @@ def build_inventory(
         package_manager=facts.package_manager,
         ui_domains=detect_domains(facts.npm_packages, facts.has_file),
         design_files=detect_design_files(root, facts.npm_packages),
+        architecture_files=detect_architecture_files(root),
     )
 
 

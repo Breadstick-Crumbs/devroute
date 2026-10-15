@@ -21,6 +21,9 @@ schema_version = 1
 # [records]
 # Set to false to store only a SHA-256 hash of task descriptions in local records.
 # store_task_text = true
+# Fill outcomes' tokens (fresh input, cache writes, cache reads, output), duration, and tool calls
+# from Claude Code session transcripts (usage numbers, timestamps, and tool names only).
+# capture_usage = false
 
 # Add or adjust a signal (merged by id with the defaults):
 # [[signals]]

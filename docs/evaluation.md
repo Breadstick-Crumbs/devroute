@@ -24,7 +24,7 @@ What the numbers mean:
 - **Known mismatch:** "Refactor the report builder without changing its output, and add a column to the users table" routes DEEP, although it is labeled STANDARD: "refactor" counts as an architectural change and stacks with "add". The negation itself works there (the database signal after the comma is kept). The v0.1 mismatch for test-only tasks ("Write unit tests for the invoice total calculator") was fixed in v0.5.
 - **Labeling order:** cases are committed before the heuristics they test are changed, so labels are not fitted to output. When a heuristic is adjusted after seeing a result, the change is noted in the CHANGELOG.
 
-A second suite, `src/susanoo/data/suites/ui-v1.toml`, holds 15 UI tasks for [ADR 0008](decisions/0008-ui-ux-workflow.md), each with the reason for its label. Run it from a source checkout with `susanoo eval --suite src/susanoo/data/suites/ui-v1.toml`. It was labeled before any UI heuristic changed and is kept apart from `routing-v1` so the original cases and CI's agreement threshold stay as they are. With v0.7 heuristics it agrees on 8 of 15 with 0 risk-floor violations; the tests require its risk-floor violations to stay at zero.
+A second suite, `src/susanoo/data/suites/ui-v1.toml`, holds 44 UI tasks for [ADR 0008](decisions/0008-ui-ux-workflow.md), each with the reason for its label. Run it from a source checkout with `susanoo eval --suite src/susanoo/data/suites/ui-v1.toml`. It was labeled before any UI heuristic changed and is kept apart from `routing-v1` so the original cases and CI's agreement threshold stay as they are. With v0.7 heuristics its first 15 cases agreed on 8. After the UI routing fixes it agrees on all 44 (29 more cases, mostly payment traps, were labeled before the fixes they test were run), and CI requires at least 90% agreement and 0 risk-floor violations, as for `routing-v1`.
 
 ```toml
 [[cases]]
@@ -51,6 +51,7 @@ To compare workflows (for example STANDARD vs DEEP on medium-risk tasks):
    susanoo outcome <record> --status completed --minutes 42 --interventions 1 \
      --tokens 180000 --cost 2.10 --regressions 0 --source human --notes "pair 3, arm B"
    ```
+   With `[records] capture_usage = true`, `--tokens` and `--minutes` can be left out: Susanoo fills them from the route's Claude Code session transcript, with separate fresh-input, cache-write, cache-read, and output counts and calls per tool ([configuration](configuration.md#capture-tokens-and-duration-from-claude-code)). Values you pass are kept.
 7. **Analyze.** `susanoo report --json` gives per-profile aggregates. Report sample sizes, spread, and the full protocol with any result. With fewer than about ten pairs per comparison, describe observations rather than conclusions.
 
 ## 3. Learning loop
@@ -69,7 +70,7 @@ Each recommendation names the configuration to review. **Susanoo never applies c
 | Record | Fields |
 |---|---|
 | `routes.jsonl` | id, timestamp, version, task or task hash, profile, recommended, overridden, composite scores, dimension levels, signals, areas, controls, gaps, planned verification |
-| `outcomes.jsonl` | record id, status, source (human/agent), duration, interventions, tokens, cost, regressions, agents, tools, notes |
+| `outcomes.jsonl` | record id, status, source (human/agent/susanoo), duration, interventions, tokens, cost, regressions, agents, tools, notes; with transcript capture also `token_counts` (fresh input, cache writes, cache reads, output), `tool_calls` (calls per tool name), and `captured` (which fields came from the transcript, message count, time window) |
 | `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail |
 | `research.jsonl` | capability, decision, candidates, validation steps, limitations |
 

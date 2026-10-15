@@ -11,6 +11,7 @@ from typing import Any
 from susanoo import __version__
 from susanoo.analyzer import Assessment, CapabilityRequirement, Floor, ProjectContext, assess
 from susanoo.analyzer.engine import without_vagueness
+from susanoo.architecture import describe_architecture
 from susanoo.config import Config
 from susanoo.discovery import Inventory, build_inventory, has_test_framework
 from susanoo.registry import Registry, load_registry
@@ -40,6 +41,8 @@ class TaskPlan:
     record_id: str | None = None
     hands_off: bool = False  # `[enforcement] hands_off`: checkpoints are reported, not waited at
     ui: UIContext | None = None  # UI tasks only: domain, why, and the checklists (ADR 0008)
+    # STANDARD and DEEP only: the project's architecture context, as brief items (ADR 0011).
+    architecture: list[str] | None = None
 
     def to_dict(self, include_inventory: bool = False) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -64,6 +67,7 @@ class TaskPlan:
             "not_required": self.not_required,
             "hands_off": self.hands_off,
             "ui": self.ui.to_dict() if self.ui else None,
+            "architecture": self.architecture,
             "environment": {
                 "root": self.inventory.root,
                 "languages": self.inventory.languages,
@@ -158,6 +162,7 @@ def plan_task(
         verification=verification,
         not_required=not_required,
         ui=ui,
+        architecture=describe_architecture(inventory) if decision.profile in ("standard", "deep") else None,
         hands_off=bool(config.get("enforcement", {}).get("hands_off", False)),
     )
 

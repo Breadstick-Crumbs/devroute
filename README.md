@@ -121,7 +121,7 @@ The assessment is deterministic: the same task, configuration, and environment a
 | **Tool Selection** | Picks the simplest reliable tool for each needed capability. A working tool beats a better one that isn't installed. CLIs and native tools are preferred over MCP servers, which add context and standing access. |
 | **Capability Research** | Identifies gaps, marks which ones block the task, and evaluates candidates from a curated registry with security notes and validation steps. A `susanoo-researcher` subagent handles manual web research. Nothing is ever installed automatically. |
 | **Verification Intelligence** | Selects checks by profile and risk, runs the ready ones with `susanoo verify --execute`, and stores machine-readable evidence. Results Susanoo executed itself are kept separate from results an agent reported. |
-| **Evaluation & Learning** | Local JSONL records of routes, outcomes (completion, time, interventions, tokens, cost, regressions), and evidence. Per-profile summaries. Recommendations for human review, only with enough data. A deterministic routing evaluation suite. |
+| **Evaluation & Learning** | Local JSONL records of routes, outcomes (completion, time, interventions, tokens, cost, regressions), and evidence; tokens and time can be captured from Claude Code session transcripts (opt-in). Per-profile summaries. Recommendations for human review, only with enough data. A deterministic routing evaluation suite. |
 | **Claude Code integration** | A `/susanoo` project skill and two subagents (`susanoo-reviewer`, `susanoo-researcher`), installed without touching your settings, `CLAUDE.md`, or MCP configuration (the one opt-in exception: `--enforce-scope settings` adds Susanoo's hook entries to `.claude/settings.local.json`). |
 | **Workflow enforcement (opt-in)** | `susanoo init --enforce` adds hooks that turn the critical steps into hard checks: the turn cannot end without verification evidence. With `[enforcement] hands_off = false`, file edits also wait for your plan approval, Claude cannot approve its own plan, and irreversible commands need confirmation. By default the hooks live in the skill, so only the session that ran `/susanoo` is affected and a resumed session is not enforced; `--enforce-scope settings` puts them in `.claude/settings.local.json` instead, which also covers resumed sessions and compaction. See [docs/enforcement.md](docs/enforcement.md). |
 | **Code navigation** | Size-aware choice between built-in search and code-graph tools (for example a codebase-memory MCP server or its skills and agents). In large repositories the investigation phase names the graph tool. |
@@ -143,9 +143,9 @@ $ susanoo route --path examples/sample-app "Add a low-stock alert that emails th
 Why: complexity is moderate; risk is moderate
 
 ## Required verification
-- [required] Unit tests: `pytest -q`
+- [required] Unit tests: `python -m pytest -q`
 - [required] Linting / static analysis: `ruff check .`
-- [required] Integration tests: `pytest -q`
+- [required] Integration tests: `python -m pytest -q`
 - [recommended] Type checking: `mypy .`
 - [recommended] Dependency vulnerability audit: no usable tool - gap
 - [recommended] Independent code review: Claude Code subagents (performed by the agent or a person)

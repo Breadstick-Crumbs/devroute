@@ -123,7 +123,10 @@ python_packages = ["pytest"]
 pyproject_tools = ["pytest"]
 files = ["pytest.ini", "conftest.py", "tests/conftest.py"]
 version_args = ["--version"]
-run = { unit_testing = ["pytest", "-q"], integration_testing = ["pytest", "-q"] }
+# `python -m pytest`, not the `pytest` script: the module form always puts the project root on
+# sys.path, so tests still import a package that is not installed (flat layout). `python -m <tool>`
+# runs under the interpreter that owns the `<tool>` script unless the project has its own environment.
+run = { unit_testing = ["python", "-m", "pytest", "-q"], integration_testing = ["python", "-m", "pytest", "-q"] }
 reliability = 3
 context_cost = 1
 setup_cost = 1
@@ -297,6 +300,72 @@ context_cost = 1
 setup_cost = 1
 security_exposure = 1
 install = "{js_add_dev} eslint"
+
+# Architecture boundary tools (ADR 0011): they check the layering and module-boundary rules the
+# project configured, so they count only when it configured or declared them.
+[[tools]]
+id = "import-linter"
+name = "import-linter"
+kind = "cli"
+capabilities = ["architecture_boundaries"]
+languages = ["python"]
+# No `binaries`: a `lint-imports` on PATH without the project's contracts has nothing to check.
+python_packages = ["import-linter"]
+pyproject_tools = ["importlinter"]
+files = [".importlinter"]
+run = { architecture_boundaries = ["lint-imports"] }
+reliability = 3
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "pip install import-linter"
+notes = "Checks the import contracts in [tool.importlinter], .importlinter, or setup.cfg."
+
+[[tools]]
+id = "dependency-cruiser-script"
+name = "dependency-cruiser (package.json depcruise script)"
+kind = "script"
+capabilities = ["architecture_boundaries"]
+languages = ["javascript", "typescript"]
+npm_scripts = ["depcruise"]
+run = { architecture_boundaries = ["{js_run}", "depcruise"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+notes = "Runs the project's depcruise script, which names the folders to check."
+
+[[tools]]
+id = "dependency-cruiser"
+name = "dependency-cruiser"
+kind = "cli"
+capabilities = ["architecture_boundaries"]
+languages = ["javascript", "typescript"]
+npm_packages = ["dependency-cruiser"]
+requires_files = [".dependency-cruiser.*"]
+# No run command: the folders to check are project-specific, so the agent runs it. Ranked below the
+# boundary tools that have one.
+reliability = 1
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "{js_add_dev} dependency-cruiser"
+notes = "Run `npx depcruise <source folders>` (v13 and later pick up .dependency-cruiser.* by themselves); it exits non-zero on error-level violations."
+
+[[tools]]
+id = "eslint-plugin-boundaries"
+name = "eslint-plugin-boundaries"
+kind = "cli"
+capabilities = ["architecture_boundaries"]
+languages = ["javascript", "typescript"]
+npm_packages = ["eslint-plugin-boundaries"]
+run = { architecture_boundaries = ["npx", "--no-install", "eslint", "."] }
+reliability = 2
+context_cost = 1
+setup_cost = 2
+security_exposure = 1
+install = "{js_add_dev} eslint-plugin-boundaries"
+notes = "Runs ESLint, the same command as the lint check: any lint error fails it, and the boundary rules apply only where the ESLint config enables the plugin."
 
 [[tools]]
 id = "mypy"
