@@ -24,7 +24,7 @@ Candidates are pull request numbers (`52`; `#52` works too, but quote it in a sh
    - **interaction**: it passes alone but fails with the candidates before it, a semantic conflict;
    - **base broken**: the base itself fails.
 5. **Update and push.** The base is merged into the candidate (a merge commit; never a rebase or a force push), its tree is compared byte for byte with the tested tree, and it is pushed. Without `--merge`, only the first candidate is updated, because the later ones need the earlier merges on the base first. A branch with no remote copy is pushed to the remote (`--no-push` keeps it local). Your local branches are never moved; the run tells you when one is behind.
-6. **Merge, only with `--merge`.** With two or more pull requests, every state the base passes through on the way (the base plus the first *k*) is checked first, so a stop halfway never leaves the base on an untested tree; a state that passed before is not rerun. Then, for each pull request in order: check that the base is exactly where it should be, update and push the branch, wait until the pull request shows the pushed head, check the base again, and run `gh pr merge <n> --merge --match-head-commit <pushed sha> --subject "Merge: <title> (#n)"`, with the pull request's first prose paragraph as the body and no attribution lines. After each merge, the base must have exactly the tested tree. A moved base stops the run before the merge; one that moves in the last instant is caught right after it, and the run stops. `--merge` refuses a branch whose local commits its pull request does not show yet: push the branch first.
+6. **Merge, only with `--merge`.** With two or more pull requests, every state the base passes through on the way (the base plus the first *k*) is checked first, so a stop halfway never leaves the base on an untested tree; a state that passed before is not rerun. Then, for each pull request in order: check that the base is exactly where it should be, update and push the branch, wait until the pull request shows the pushed head, check the base again, and run `gh pr merge <n> --merge --match-head-commit <pushed sha> --subject "Merge: <title> (#n)"`, with the pull request's first prose paragraph as the body and no attribution lines. After each merge, the base must have exactly the tested tree. A moved base stops the run before the merge; one that moves in the last instant is caught right after it, and the run stops. `--merge` refuses a branch whose local commits its pull request does not show yet: push the branch first. It also refuses, before any check runs, a candidate without a passing code-review recorded for the tip it tests (see "Review records").
 7. **Clean up** the scratch worktree, in every case. A worktree left by a killed run is removed by a later run after 12 hours.
 8. **Record** the run (below).
 
@@ -38,7 +38,7 @@ The checks run the candidates' code on your machine, as `susanoo verify --execut
 
 ## Merging needs you
 
-`--merge` is your flag. With Susanoo's hooks installed, Claude Code asks you before any `susanoo land ... --merge` command, in every permission mode, so an agent cannot merge on its own; the approval covers exactly the pull requests on that command line. Without `--merge`, a run prints the command to run.
+`--merge` merges only with your say-so. With Susanoo's hooks installed, Claude Code asks you before any `susanoo land ... --merge` command, in every permission mode. An agent may run it, but only through that prompt, so it cannot merge on its own ([ADR 0015](decisions/0015-lead-session-and-board.md), "Merging"); the approval covers exactly the pull requests on that command line. Without `--merge`, a run prints the command to run.
 
 A passing result is reused when the combined tree, the base, and the check commands are the same, so `susanoo land 52 53` followed by `susanoo land 52 53 --merge` runs the checks once. Failures are never reused; `--no-cache` reruns everything.
 
@@ -49,6 +49,7 @@ In the project's `.susanoo/config.toml` (as committed on the base branch):
 ```toml
 [land]
 use_verification = true                 # run the DEEP plan's ready, required steps
+require_review = true                   # --merge needs a passing code-review of each tested tip
 setup = [["npm", "ci"]]                 # run in the scratch tree after every checkout
 env = { PYTHONPATH = "{tree}/src" }     # "{tree}" is the scratch tree's path
 
@@ -82,7 +83,26 @@ Every run appends one line to `<git common dir>/susanoo/records/land.jsonl`, sha
 
 ## Review records
 
-`susanoo review record <pr-or-branch> --tip <sha> --status passed|failed --tool code-review|security-review [--note ...]` records the result of a `/code-review` or `/security-review` against the commit it saw ([ADR 0015](decisions/0015-lead-session-and-board.md)). It refuses when `--tip` (a full commit id or at least 7 hex digits) is not the current tip: a pull request's head on GitHub (through `gh`), or for a branch its local or remote copy, whichever contains the other, as `land` picks it. When the remote cannot be reached, it refuses rather than trust the local copy. Records go to `<git common dir>/susanoo/records/reviews.jsonl`, next to `land.jsonl` and shared by all worktrees. `susanoo review list [<pr-or-branch>] [--json]` shows them. `land --merge` does not check them yet; that gate is the next slice of ADR 0015.
+`susanoo review record <pr-or-branch> --tip <sha> --status passed|failed --tool code-review|security-review [--note ...]` records the result of a `/code-review` or `/security-review` against the commit it saw ([ADR 0015](decisions/0015-lead-session-and-board.md)). It refuses when `--tip` (a full commit id or at least 7 hex digits) is not the current tip: a pull request's head on GitHub (through `gh`), or for a branch its local or remote copy, whichever contains the other, as `land` picks it. When the remote cannot be reached, it refuses rather than trust the local copy. Records go to `<git common dir>/susanoo/records/reviews.jsonl`, next to `land.jsonl` and shared by all worktrees. `susanoo review list [<pr-or-branch>] [--json]` shows them.
+
+`land` looks up the review of each candidate's tested tip (the tip before the base is merged in) and records the newest status per tool (`passed`, `failed`, or `missing`) in the run's record. With `[land] require_review = true`, the default, `--merge` refuses a candidate whose newest code-review of that tip is missing or failed, before any check runs, and checks again right before each merge, so a review that fails meanwhile still stops it. A review of an older commit does not count: a new commit needs a new review. The exception is a merge of the base that adds nothing: when `land` (or you) merged the base into a reviewed commit and nothing else changed, the review still counts, so `land` followed by `land --merge` works after the first run pushed such a merge. Without `--merge`, a missing review is a warning and the run's status line says so; the checks still run. A `security-review` is recorded in the run but not required by `land`, which cannot tell reliably which routes a branch carries; asking for one when the route has a security control is left to the lead session that ADR 0015 plans (not built yet). `require_review` is read only from the defaults and the base branch's `.susanoo/config.toml`, never from a branch or your user configuration, and when it is off and a review is missing, the run warns.
+
+## The board
+
+`susanoo board [--base <branch>] [--json]` shows one line per worktree branch, for the session that lands them ([ADR 0015](decisions/0015-lead-session-and-board.md)):
+
+```text
+a-fix   verified@a1b2c3d   review:passed  land:ready   security; overlap: src/app.py (b-feat)
+b-feat  stale (2 commits)  review:-       land:-       overlap: src/app.py (a-fix); append-only: CHANGELOG.md (c-docs)
+c-docs  unverified         review:-       land:failed  append-only: CHANGELOG.md (b-feat); ADR 0016 also taken by main
+```
+
+- **Checks:** from the worktree's newest route and its evidence `head` and `dirty`: `verified@<sha>` when every required step holds for the branch tip, `failed` when a step's newest run failed, `stale (n commits)` when every step passed on a clean tree of a commit the tip has since built on, else `unverified`. A worktree without routes of its own uses the newest route in another checkout whose checks ran there (ADR 0017).
+- **Review:** the newest `/code-review` (and `/security-review`, when there is one) recorded for exactly the tip, or `-`.
+- **Land:** the newest `land` run that had this branch at its tip, or pushed a commit built on it (when the branch has commits of its own), with this branch's part in it: `merged` when it was merged, `failed (by <other>)` when another candidate broke the checks.
+- **Marks:** `security` when the route has a security control; `locked` for a locked worktree; `uncommitted (n)` for files not yet committed, which the checks column does not cover; `overlap` with the paths another branch also changes (committed since the merge-base with `origin/<base>`, plus uncommitted files); `append-only` instead for paths `[[land.keep_both]]` may resolve; `ADR <n> also taken by ...` when a branch adds a decision record whose number another branch adds under another name, or the base already has.
+
+`--base` defaults to `origin`'s default branch as last fetched, else `main`; branches are compared with `origin/<base>`, or with the local base when that is ahead of it or the only one, and the base branch's own checkout is not listed. The `[[land.keep_both]]` rules come from the configuration of the checkout the board runs in (the lead's, on the base branch) and `--config`. Detached, prunable, and `land`'s scratch worktrees are skipped and named below the table. The board only reads: it fetches nothing, runs no checks, writes no file, index, or record, and runs git without optional locks, fsmonitor, or lazy fetching in partial clones, and without variables that point git elsewhere. Git itself may still run a configured clean filter (such as Git LFS's) on a modified file during `git status`. Text from records is cut to one line. `--json` gives the same data, with each branch's changed paths.
 
 ## Not supported yet
 

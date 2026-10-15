@@ -293,6 +293,10 @@ taste_dir = ""
 [land]
 # Run the ready, required steps of the DEEP verification plan on the combined tree.
 use_verification = true
+# --merge refuses a candidate without a passing code-review recorded for the tip it tested
+# (`susanoo review record`, ADR 0015). Without --merge, a missing review is reported, not refused.
+# Read only from these defaults and the base's .susanoo/config.toml, never the user configuration.
+require_review = true
 # Commands run in the scratch tree before the checks, after every checkout (e.g. ["npm", "ci"]).
 setup = []
 # Environment for setup, checks, and compares. "{tree}" is replaced by the scratch tree's path,
