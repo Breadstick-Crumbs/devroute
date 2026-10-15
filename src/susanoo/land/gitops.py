@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from susanoo.verification.commit import git_environment
+
 GIT_TIMEOUT = 600
 MIN_GIT = (2, 35)  # merge.conflictStyle = zdiff3
 
@@ -81,7 +83,12 @@ class Git:
             errors="replace",
             timeout=GIT_TIMEOUT,
             check=False,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_EDITOR": "true", "GIT_MERGE_AUTOEDIT": "no"},
+            env={
+                **git_environment(),
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_EDITOR": "true",
+                "GIT_MERGE_AUTOEDIT": "no",
+            },
         )
 
     def out(self, *args: str) -> str:

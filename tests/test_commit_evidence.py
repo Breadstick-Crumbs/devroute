@@ -85,6 +85,36 @@ def test_tree_state_reads_head_and_dirty(tmp_path: Path, ceiling: Path):
 
 
 @needs_git
+def test_tree_state_does_not_vouch_for_files_git_status_skips(tmp_path: Path, ceiling: Path):
+    repo = make_repo(tmp_path / "repo")
+    head = git(repo, "rev-parse", "HEAD")
+    git(repo, "update-index", "--assume-unchanged", "app.py")
+    (repo / "app.py").write_text("X = 2\n", encoding="utf-8")
+    assert tree_state(repo) == TreeState(head, None)  # status says clean; it did not look
+    git(repo, "update-index", "--no-assume-unchanged", "app.py")
+    git(repo, "checkout", "--", "app.py")
+    git(repo, "update-index", "--skip-worktree", "app.py")
+    assert tree_state(repo) == TreeState(head, None)
+    git(repo, "update-index", "--no-skip-worktree", "app.py")
+    assert tree_state(repo) == TreeState(head, False)
+
+
+@needs_git
+def test_tree_state_ignores_configuration_from_the_environment(
+    tmp_path: Path, ceiling: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo = make_repo(tmp_path / "repo")
+    (repo / "new.py").write_text("Y = 2\n", encoding="utf-8")
+    exclude = tmp_path / "exclude"
+    exclude.write_text("new.py\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.excludesFile")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", str(exclude))
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", f"'core.excludesfile'='{exclude}'")
+    assert tree_state(repo).dirty is True
+
+
+@needs_git
 def test_tree_state_is_unknown_outside_a_repository_or_without_a_commit(tmp_path: Path, ceiling: Path):
     plain = tmp_path / "plain"
     plain.mkdir()
@@ -171,6 +201,11 @@ def route(root: Path, task: str = "Refactor the parser module and add unit tests
     return RecordStore(root).read("routes")[-1]
 
 
+def not_runnable(record: dict[str, Any]) -> list[str]:
+    """The route's required steps that Susanoo cannot run (they depend on the installed tools)."""
+    return [s["id"] for s in record["verification"] if s["level"] == "required" and s["mode"] != "ready"]
+
+
 @needs_git
 def test_verify_binds_executed_evidence_to_the_commit(project: Path):
     record = route(project)
@@ -180,12 +215,14 @@ def test_verify_binds_executed_evidence_to_the_commit(project: Path):
     evidence = RecordStore(project).read("evidence")
     assert evidence and all(e["head"] == head and e["dirty"] is False for e in evidence)
     assert all("checkout" not in e and "commit" not in e for e in evidence)
-    # The DEEP route also asks for an independent review, which only a report can cover.
-    assert unverified_steps(record, evidence, head) == ["independent_review"]
-    code, _, err = run(
-        project, "evidence", record["id"], "--step", "independent_review", "--status", "passed"
-    )
-    assert code == 0, err
+    # Steps Susanoo cannot run here (the independent review; checks whose tool is not installed)
+    # only a report can cover.
+    reported = not_runnable(record)
+    assert "independent_review" in reported
+    assert unverified_steps(record, evidence, head) == reported
+    for step in reported:
+        code, _, err = run(project, "evidence", record["id"], "--step", step, "--status", "passed")
+        assert code == 0, err
     evidence = RecordStore(project).read("evidence")
     assert is_verified(record, evidence, head)
     assert not is_verified(record, evidence, OTHER)
@@ -199,7 +236,7 @@ def test_verify_on_uncommitted_changes_is_dirty_and_not_verified(project: Path):
     evidence = RecordStore(project).read("evidence")
     assert {e["dirty"] for e in evidence} == {True}
     # The evidence gate still accepts the runs; they just do not hold for any commit.
-    assert evidence_status(record, evidence) == (["independent_review"], [])
+    assert evidence_status(record, evidence) == (not_runnable(record), [])
     assert "unit_tests" in unverified_steps(record, evidence, git(project, "rev-parse", "HEAD"))
 
 
@@ -233,6 +270,16 @@ def test_reported_evidence_gets_the_commit_from_susanoo(project: Path):
     for flag in ("--head", "--dirty"):
         with pytest.raises(SystemExit):
             main(["evidence", record["id"], "--step", "x", "--status", "passed", flag, OTHER])
+
+
+@needs_git
+def test_reported_evidence_on_a_dirty_tree_is_dirty(project: Path):
+    record = route(project)
+    (project / "app.py").write_text("X = 4\n", encoding="utf-8")
+    assert (
+        run(project, "evidence", record["id"], "--step", "independent_review", "--status", "passed")[0] == 0
+    )
+    assert RecordStore(project).read("evidence")[-1]["dirty"] is True
 
 
 def test_evidence_outside_git_records_unknown(
@@ -465,6 +512,61 @@ def test_review_record_follows_the_branch_as_it_moves(remote_repo: tuple[Path, P
 
 
 @needs_git
+def test_review_record_refuses_when_the_remote_cannot_be_reached(
+    remote_repo: tuple[Path, Path], tmp_path: Path
+):
+    work, _ = remote_repo
+    old = git(work, "rev-parse", "feature")
+    # Another clone pushes a newer commit; this clone has fetched it, but its local branch is older.
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "-q", str(tmp_path / "origin.git"), str(other))
+    git(other, "checkout", "-q", "feature")
+    for key, value in (("user.name", "T"), ("user.email", "t@example.com"), ("commit.gpgsign", "false")):
+        git(other, "config", key, value)
+    git(other, "commit", "-q", "--allow-empty", "-m", "newer")
+    git(other, "push", "-q", "origin", "feature")
+    git(work, "fetch", "-q", "origin")
+    newer = git(work, "rev-parse", "origin/feature")
+    assert newer != old
+    git(work, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    for tip in (old, newer):  # neither can be confirmed as the current tip
+        code, _, err = review(
+            work, "record", "feature", "--tip", tip, "--status", "passed", "--tool", "code-review"
+        )
+        assert code == 1 and "could not reach origin" in err
+    code, _, err = review(
+        work,
+        "record",
+        "feature",
+        "--tip",
+        old,
+        "--status",
+        "passed",
+        "--tool",
+        "code-review",
+        "--remote",
+        "nowhere",
+    )
+    assert code == 0, err  # no such remote: the branch is local only
+    common = Path(git(work, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    assert [r["tip"] for r in read_reviews(common)] == [old]
+
+
+@needs_git
+def test_review_record_of_a_branch_never_pushed(remote_repo: tuple[Path, Path]):
+    work, _ = remote_repo
+    git(work, "checkout", "-q", "-b", "local-only")
+    (work / "local.py").write_text("L = 1\n", encoding="utf-8")
+    git(work, "add", "-A")
+    git(work, "commit", "-qm", "local")
+    tip = git(work, "rev-parse", "HEAD")
+    code, _, err = review(
+        work, "record", "local-only", "--tip", tip, "--status", "passed", "--tool", "code-review"
+    )
+    assert code == 0, err
+
+
+@needs_git
 def test_review_record_refuses_diverged_unknown_or_odd_branches(remote_repo: tuple[Path, Path]):
     work, _ = remote_repo
     tip = git(work, "rev-parse", "feature")
@@ -536,6 +638,18 @@ def test_review_record_of_a_pull_request_uses_its_head_on_github(
     assert "#57" in out and SHA[:12] in out
     assert review(work, "list", "feature")[1].count("#57") == 1
     assert "No review records for 58" in review(work, "list", "58")[1]
+    for bad in (None, [], {"headRefOid": SHA[:12]}, {"headRefOid": "z" * 40}):
+        monkeypatch.setattr(reviews_mod, "gh_json", lambda _root, *_args, value=bad: value)
+        code, _, err = review(
+            work, "record", "57", "--tip", SHA, "--status", "passed", "--tool", "code-review"
+        )
+        assert code == 1 and "no head commit" in err
+    # Only ASCII digits name a pull request.
+    code, _, err = review(
+        work, "record", "\u00b2", "--tip", SHA, "--status", "passed", "--tool", "code-review"
+    )
+    assert code == 1 and "#" not in err
+    assert review(work, "list", "\u00b2") == (0, "No review records for \u00b2.\n", "")
     monkeypatch.setattr(reviews_mod, "gh_available", lambda: False)
     code, _, err = review(work, "record", "57", "--tip", SHA, "--status", "passed", "--tool", "code-review")
     assert code == 1 and "`gh`" in err

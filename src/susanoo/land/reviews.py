@@ -59,7 +59,7 @@ def resolve_target(root: Path, spec: str, remote: str = "origin") -> ReviewTarge
     repository(root)  # outside a repository, say so before anything else
     value = spec.strip()
     number = value[1:] if value.startswith("#") else value
-    if number.isdigit():
+    if number.isascii() and number.isdigit():
         if not gh_available():
             raise LandError(f"pull request {number} needs the GitHub CLI `gh`, which was not found")
         data = gh_json(root, "pr", "view", number, "--json", "number,headRefName,headRefOid")
@@ -76,12 +76,42 @@ def resolve_target(root: Path, spec: str, remote: str = "origin") -> ReviewTarge
         raise LandError(f"{spec!r} is not a pull request number or a valid branch name")
     if remote.startswith("-"):
         raise LandError(f"{remote!r} is not a remote name")
-    fetched = repo.run(
-        "fetch", "--no-tags", remote, f"+refs/heads/{value}:refs/remotes/{remote}/{value}", check=False
-    )
     local = repo.sha(f"refs/heads/{value}")
-    remote_tip = repo.sha(f"refs/remotes/{remote}/{value}") if fetched.returncode == 0 else None
+    remote_tip = _remote_tip(repo, value, remote)
     return ReviewTarget(value, value, None, pick_tip(repo, value, local, remote_tip, remote).lower())
+
+
+def _remote_tip(repo: Git, branch: str, remote: str) -> str | None:
+    """The branch's tip on ``remote``, fetched now; None only when the remote surely lacks it.
+
+    A repository without that remote, or a remote without the branch, has no remote copy. A remote
+    that cannot be reached is refused rather than skipped: a newer commit may be there, and an
+    older local copy must not pass for the current tip.
+    """
+    if repo.run("remote", "get-url", "--", remote, check=False).returncode != 0:
+        return None  # no such remote: a local-only branch
+    listed = repo.run(
+        "ls-remote", "--exit-code", "--heads", "--", remote, f"refs/heads/{branch}", check=False
+    )
+    if listed.returncode == 2:
+        return None  # reached, and the branch is not there (never pushed)
+    unreachable = (
+        f"could not reach {remote} to confirm the current tip of {branch}; try again when it is reachable"
+    )
+    if listed.returncode != 0:
+        raise LandError(unreachable)
+    fetched = repo.run(
+        "fetch",
+        "--no-tags",
+        "--",
+        remote,
+        f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}",
+        check=False,
+    )
+    tip = repo.sha(f"refs/remotes/{remote}/{branch}") if fetched.returncode == 0 else None
+    if tip is None:
+        raise LandError(unreachable)
+    return tip
 
 
 def check_tip(given: str, target: ReviewTarget) -> None:
@@ -136,7 +166,7 @@ def matching(reviews: list[dict[str, Any]], spec: str) -> list[dict[str, Any]]:
     """Reviews of a pull request number or a branch name, without looking either up."""
     value = spec.strip()
     number = value[1:] if value.startswith("#") else value
-    if number.isdigit():
+    if number.isascii() and number.isdigit():
         return [r for r in reviews if r.get("pr") == int(number)]
     return [r for r in reviews if r.get("branch") == value]
 

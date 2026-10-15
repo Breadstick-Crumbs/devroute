@@ -19,8 +19,9 @@ from pathlib import Path
 
 GIT_TIMEOUT_SECONDS = 60
 
-# Variables that point git at another repository, index, or object store than the folder's own:
-# a hook or wrapper may have set them, and the state must be the checkout's.
+# Variables that point git at another repository, index, or object store than the folder's own,
+# or add configuration on the command line: a hook or wrapper may have set them, and the state
+# must be the checkout's.
 _REPOSITORY_VARIABLES = (
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -29,7 +30,19 @@ _REPOSITORY_VARIABLES = (
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_NAMESPACE",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
 )
+
+
+def git_environment() -> dict[str, str]:
+    """This process's environment without variables that redirect git or add configuration."""
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k.upper() not in _REPOSITORY_VARIABLES
+        and not k.upper().startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))
+    }
 
 
 @dataclass(frozen=True)
@@ -51,7 +64,7 @@ def _git(root: Path, *args: str) -> str | None:
     git = shutil.which("git")
     if git is None:
         return None
-    env = {k: v for k, v in os.environ.items() if k not in _REPOSITORY_VARIABLES}
+    env = git_environment()
     env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"})
     try:
         proc = subprocess.run(  # nosec B603 - argv list, no shell
@@ -80,8 +93,19 @@ def tree_state(root: Path) -> TreeState:
     if not head or not all(c in "0123456789abcdef" for c in head) or len(head) not in (40, 64):
         return UNKNOWN
     # Untracked files count unless ignored: a new source file the checks ran on is not in HEAD.
-    status = _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
-    return TreeState(head, None if status is None else bool(status.strip("\0\n")))
+    status = _git(
+        root, "status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none"
+    )
+    if status is None:
+        return TreeState(head, None)
+    if status.strip("\0\n"):
+        return TreeState(head, True)
+    # `git status` does not look at files marked assume-unchanged (a lowercase tag) or
+    # skip-worktree (S, also used by sparse checkouts): a clean status cannot vouch for them.
+    files = _git(root, "ls-files", "-v", "-z")
+    if files is None or any(e[:1].islower() or e[:1] == "S" for e in files.split("\0") if e):
+        return TreeState(head, None)
+    return TreeState(head, False)
 
 
 def across(before: TreeState, after: TreeState) -> TreeState:
