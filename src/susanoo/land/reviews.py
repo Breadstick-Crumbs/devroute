@@ -181,16 +181,24 @@ def review_for(reviews: list[dict[str, Any]], tip: str, tool: str = "code-review
     return None
 
 
+def deciding_review(reviews: list[dict[str, Any]], commits: list[str], tool: str) -> dict[str, Any] | None:
+    """The newest review by ``tool`` of any of ``commits``, or None.
+
+    ``commits`` is a tip, then the commits a review of which also covers it (merges of the base
+    that add nothing): they carry the same reviewed changes, so the newest verdict on any of them
+    decides, and a later failed review always overrides an earlier pass.
+    """
+    wanted = {commit.lower() for commit in commits}
+    for review in reversed(reviews):
+        if review.get("tool") == tool and str(review.get("tip") or "").lower() in wanted:
+            return dict(review)
+    return None
+
+
 def review_status(reviews: list[dict[str, Any]], commits: list[str]) -> dict[str, str]:
-    """Per review tool, the newest review of the first of ``commits`` that has one: its status, or
-    ``missing``. ``commits`` is a tip, then the commits a review of which also covers it (merges of
-    the base that add nothing, newest first), so a review of the tip itself always decides first."""
+    """Per review tool, the status of the deciding review of ``commits``, or ``missing``."""
     status: dict[str, str] = {}
     for tool in REVIEW_TOOLS:
-        status[tool] = "missing"
-        for commit in commits:
-            found = review_for(reviews, commit, tool)
-            if found is not None:
-                status[tool] = str(found.get("status"))
-                break
+        found = deciding_review(reviews, commits, tool)
+        status[tool] = str(found.get("status")) if found else "missing"
     return status

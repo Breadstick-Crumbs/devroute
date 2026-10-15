@@ -54,7 +54,7 @@ from susanoo.land.gitops import (
 )
 from susanoo.land.keepboth import KeepBothRule, Resolution, parse_rules, resolve_text
 from susanoo.land.records import DECISION_RULE, append_record, find_pass, read_records
-from susanoo.land.reviews import read_reviews, review_for, review_status
+from susanoo.land.reviews import deciding_review, read_reviews, review_for, review_status
 
 SCRATCH_PREFIX = "susanoo-land-"
 ORPHAN_AGE_S = 12 * 3600
@@ -91,6 +91,7 @@ class Candidate:
     conflicted: bool = False
     review: dict[str, str] | None = None  # per review tool, the newest review of ``tip``
     review_chain: list[str] = field(default_factory=list)  # ``tip``, then commits whose review covers it
+    reviewed_commit: str | None = None  # the commit of the deciding code-review
 
     @property
     def reviewed(self) -> bool:
@@ -112,7 +113,7 @@ class Candidate:
             "pushed": self.pushed,
             "merged": self.merged,
             "review": self.review,
-            "reviewed_commit": self.review_chain[-1] if len(self.review_chain) > 1 else None,
+            "reviewed_commit": self.reviewed_commit if self.reviewed_commit != self.tip else None,
         }
 
 
@@ -501,9 +502,9 @@ class Lander:
         for cand in self.candidates:
             cand.review_chain = [cand.tip]
             if review_for(reviews, cand.tip, "code-review") is None:
-                cand.review_chain = self._base_merges(cand.tip)
+                cand.review_chain = self._base_merges(cand.tip, cand.label)
                 replayed = True
-            cand.review = review_status(reviews, cand.review_chain)
+            self._set_review(cand, reviews)
         if replayed:
             # The candidates are combined from the base.
             self.git.run("checkout", "--detach", "--force", self.base_sha)
@@ -511,8 +512,8 @@ class Lander:
 
         def shown(c: Candidate) -> str:
             text = f"{c.label} {(c.review or {}).get('code-review')}"
-            if len(c.review_chain) > 1:
-                text += f" (of {_short(c.review_chain[-1])}, before merges of {self.base} that add nothing)"
+            if c.reviewed_commit and c.reviewed_commit != c.tip:
+                text += f" (of {_short(c.reviewed_commit)}, before merges of {self.base} that add nothing)"
             return text
 
         self.say("code-review of the tested tips: " + ", ".join(shown(c) for c in self.candidates))
@@ -525,7 +526,13 @@ class Lander:
             raise LandError(self._review_needed(unreviewed) + "; nothing was merged")
         self._warn(self._review_needed(unreviewed) + " before --merge")
 
-    def _base_merges(self, tip: str) -> list[str]:
+    def _set_review(self, cand: Candidate, reviews: list[dict[str, Any]]) -> None:
+        chain = cand.review_chain or [cand.tip]
+        cand.review = review_status(reviews, chain)
+        deciding = deciding_review(reviews, chain, "code-review")
+        cand.reviewed_commit = str(deciding.get("tip")).lower() if deciding else None
+
+    def _base_merges(self, tip: str, label: str) -> list[str]:
         """``tip``, then the commit before each merge of the base on top of it that adds nothing.
 
         `land` without ``--merge`` merges the base into the first candidate and pushes that, so the
@@ -545,9 +552,18 @@ class Lander:
             self.git.run("checkout", "--detach", "--force", parents[0])
             self.git.run("clean", "-fdxq", check=False)
             message = "land: replay a merge of the base"
-            if not self._merge(
-                self.git, parents[1], message, "review", base_side="theirs", log="review_replays"
-            ) or self.git.tree("HEAD") != self.git.tree(chain[-1]):
+            try:
+                same = self._merge(
+                    self.git,
+                    parents[1],
+                    message,
+                    f"{label} (replaying a merge of {self.base} for its review)",
+                    base_side="theirs",
+                    log="review_replays",
+                ) and self.git.tree("HEAD") == self.git.tree(chain[-1])
+            except LandError:
+                same = False  # a merge land would not make (unrelated histories, say)
+            if not same:
                 break
             chain.append(parents[0])
         return chain
@@ -574,7 +590,7 @@ class Lander:
         """Right before a merge: a review recorded since the run started (a failed one) still counts."""
         if not self.plan.settings.require_review:
             return
-        cand.review = review_status(self._read_reviews(), cand.review_chain or [cand.tip])
+        self._set_review(cand, self._read_reviews())
         if not cand.reviewed:
             raise LandError(self._review_needed([cand]) + f"; {cand.label} was not merged")
 

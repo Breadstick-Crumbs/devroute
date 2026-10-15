@@ -20,7 +20,7 @@ from susanoo.land import runner as land_runner
 from susanoo.land.checks import load_settings
 from susanoo.land.keepboth import parse_rules, resolve_text
 from susanoo.land.records import land_records_path, read_records, stats
-from susanoo.land.reviews import ReviewTarget, record_review, review_status
+from susanoo.land.reviews import ReviewTarget, deciding_review, record_review, review_status
 from susanoo.land.runner import _merge_body, _merge_subject
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
@@ -895,6 +895,27 @@ def test_a_review_covers_the_base_merge_land_pushed(repo: Path, github: FakeGitH
     assert cand["review"]["code-review"] == "passed"
 
 
+def test_the_record_names_the_commit_whose_review_decided(repo: Path, github: FakeGitHub):
+    # P, then two merges of main on top (M1, M2); only M1 was reviewed.
+    branch(repo, "feat-a", {"a.txt": "a\n"})
+    github.open(1, "feat-a", "Add feature A")
+    merges = []
+    for name in ("one.txt", "two.txt"):
+        _move_main(repo, name)
+        git(repo, "checkout", "-q", "feat-a")
+        git(repo, "merge", "-q", "--no-ff", "--no-edit", "main")
+        git(repo, "push", "-q", "origin", "feat-a")
+        git(repo, "checkout", "-q", "main")
+        merges.append(git(repo, "rev-parse", "feat-a"))
+        if name == "one.txt":
+            reviewed(repo, "feat-a")
+    code, out, record = land(repo, "1", "--merge")
+    assert code == 0 and record["result"] == "merged", out
+    assert record["candidates"][0]["tip"] == merges[1]
+    assert record["candidates"][0]["reviewed_commit"] == merges[0]
+    assert f"(of {merges[0][:7]}," in out
+
+
 def test_a_merge_that_adds_changes_needs_its_own_review(repo: Path, github: FakeGitHub):
     branch(repo, "feat-a", {"a.txt": "a\n"})
     github.open(1, "feat-a", "Add feature A")
@@ -957,14 +978,14 @@ def test_a_review_failed_before_the_second_merge_stops_it(
     assert git(repo, "rev-parse", "origin/feat-b") == tip_b
 
 
-def test_review_status_prefers_the_tip_itself():
-    reviews = [
-        {"kind": "review", "tip": "a" * 40, "tool": "code-review", "status": "passed"},
-        {"kind": "review", "tip": "b" * 40, "tool": "code-review", "status": "failed"},
-    ]
-    assert review_status(reviews, ["b" * 40, "a" * 40])["code-review"] == "failed"
-    assert review_status(reviews, ["c" * 40, "a" * 40])["code-review"] == "passed"
-    assert review_status(reviews, ["c" * 40])["code-review"] == "missing"
+def test_the_newest_review_across_the_chain_decides():
+    passed_a = {"kind": "review", "tip": "a" * 40, "tool": "code-review", "status": "passed"}
+    failed_b = {"kind": "review", "tip": "b" * 40, "tool": "code-review", "status": "failed"}
+    assert review_status([passed_a, failed_b], ["b" * 40, "a" * 40])["code-review"] == "failed"
+    assert review_status([failed_b, passed_a], ["b" * 40, "a" * 40])["code-review"] == "passed"
+    assert review_status([passed_a, failed_b], ["c" * 40, "a" * 40])["code-review"] == "passed"
+    assert review_status([passed_a, failed_b], ["c" * 40])["code-review"] == "missing"
+    assert deciding_review([passed_a, failed_b], ["c" * 40, "A" * 40], "code-review") == passed_a
 
 
 def test_the_review_steps_and_control_exist_in_the_data():
