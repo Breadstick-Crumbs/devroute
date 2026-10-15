@@ -46,6 +46,7 @@ from susanoo.land.gitops import (
     gh_available,
     gh_json,
     git_version,
+    pick_tip,
     remove_tree,
     worktrees,
 )
@@ -391,18 +392,7 @@ class Lander:
         self.record["base"] = {"branch": self.base, "remote": remote, "sha": self.base_sha}
 
     def _pick_tip(self, cand: Candidate) -> str:
-        local, remote = cand.local, cand.remote
-        if local and remote:
-            if local == remote or self.repo.is_ancestor(local, remote):
-                return remote
-            if self.repo.is_ancestor(remote, local):
-                return local
-            raise LandError(
-                f"{cand.branch}: the local branch and {self.options.remote}/{cand.branch} have diverged"
-            )
-        if local or remote:
-            return str(local or remote)
-        raise LandError(f"no branch named {cand.branch}, locally or on {self.options.remote}")
+        return pick_tip(self.repo, cand.branch, cand.local, cand.remote, self.options.remote)
 
     def _worktrees(self) -> list[tuple[Path, str | None]]:
         if self._worktree_list is None:

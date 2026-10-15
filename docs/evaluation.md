@@ -71,7 +71,7 @@ Each recommendation names the configuration to review. **Susanoo never applies c
 |---|---|
 | `routes.jsonl` | id, timestamp, version, task or task hash, profile, recommended, overridden, composite scores, dimension levels, signals, areas, controls, gaps, planned verification |
 | `outcomes.jsonl` | record id, status, source (human/agent/susanoo), duration, interventions, tokens, cost, regressions, agents, tools, notes; with transcript capture also `token_counts` (fresh input, cache writes, cache reads, output), `tool_calls` (calls per tool name), `time_minutes` (model, tools, approvals, waiting), `tool_minutes` (tool time per tool name), `user_prompts`, `approvals`, and `captured` (which fields came from the transcript, message count, time window) |
-| `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail; for a route in another checkout of the repository (a git worktree), also the `checkout` the commands ran in and its `commit` |
+| `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail; `head` (the commit checked out where the checks ran) and `dirty` (whether tracked or untracked, non-ignored files differed from it; for executed evidence, before or after the run), both read by Susanoo with git and `null` when unknown ([ADR 0015](decisions/0015-lead-session-and-board.md)); for a route in another checkout of the repository (a git worktree), also the `checkout` the commands ran in |
 | `research.jsonl` | capability, decision, candidates, validation steps, limitations |
 
 All records stay on your machine in `.susanoo/records/`, which is git-ignored by default.

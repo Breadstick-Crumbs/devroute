@@ -71,11 +71,20 @@ from susanoo.land import LandError, LandOptions, land
 from susanoo.land.gitops import common_dir
 from susanoo.land.records import read_records
 from susanoo.land.records import stats as land_stats
+from susanoo.land.reviews import (
+    REVIEW_STATUSES,
+    REVIEW_TOOLS,
+    check_tip,
+    matching,
+    read_reviews,
+    record_review,
+    repository,
+    resolve_target,
+)
 from susanoo.paths import (
     OFF_FILE,
     find_project_root,
     global_installed,
-    head_commit,
     home_state,
     is_initialized,
     project_mode,
@@ -99,6 +108,7 @@ from susanoo.research import research
 from susanoo.router import load_profiles
 from susanoo.selection import SelectionContext
 from susanoo.verification import EVIDENCE_STATUSES, execute_plan, reported_evidence
+from susanoo.verification.commit import across, tree_state
 from susanoo.verification.executor import redact
 
 EXIT_OK = 0
@@ -770,19 +780,23 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
 
     only = set(args.step) if args.step else None
     timeout = args.timeout if args.timeout is not None else float(ctx.config["verify"]["timeout_seconds"])
+    record_id = record.get("id") if record else None
+    recorded = bool(record_id) and not args.no_record and is_initialized(store.root)
+    # The commit the checks ran on, read before and after them (ADR 0015).
+    before = tree_state(ctx.root) if recorded else None
     results = execute_plan(
         plan.verification, ctx.root, timeout=timeout, only=only, required_only=args.required_only
     )
-    record_id = record.get("id") if record else None
     # The route may live in another checkout of this repository (see find_route): the checks ran
     # here, on this checkout's code, and the evidence says so.
     origin = _origin(ctx, store)
-    recorded = bool(record_id) and not args.no_record and is_initialized(store.root)
     evidence = [e.to_dict() for e in results]
-    if recorded:
+    if recorded and before is not None:
+        bound = across(before, tree_state(ctx.root)).to_dict()
         for data in evidence:
             data["record_id"] = str(record_id)
             data.update(origin)
+            data.update(bound)
             store.append("evidence", data)
     if args.json:
         ctx.emit_json({"record_id": record_id, "evidence": evidence})
@@ -813,11 +827,8 @@ def _session() -> str | None:
 
 
 def _origin(ctx: Context, store: RecordStore) -> dict[str, str]:
-    """Where evidence for a route in another checkout came from: this checkout and its commit."""
-    if store.root == ctx.root:
-        return {}
-    commit = head_commit(ctx.root)
-    return {"checkout": str(ctx.root), **({"commit": commit} if commit else {})}
+    """Where evidence for a route in another checkout came from (its commit is ``head``)."""
+    return {} if store.root == ctx.root else {"checkout": str(ctx.root)}
 
 
 def _require_initialized(ctx: Context) -> RecordStore:
@@ -850,7 +861,8 @@ def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
     except ValueError as exc:
         raise CLIError(str(exc)) from exc
     item.record_id = str(record["id"])
-    data = {**item.to_dict(), **_origin(ctx, store)}
+    # Susanoo reads the commit itself, when the report is made; the agent cannot supply it.
+    data = {**item.to_dict(), **_origin(ctx, store), **tree_state(ctx.root).to_dict()}
     store.append("evidence", data)
     if ctx.args.json:
         ctx.emit_json(data)
@@ -1180,6 +1192,41 @@ def cmd_land(ctx: Context, stdin: TextIO) -> int:
     return code
 
 
+def cmd_review(ctx: Context, stdin: TextIO) -> int:
+    """Record a `/code-review` or `/security-review` against the commit it saw, or list records."""
+    args = ctx.args
+    if args.review_action == "record":
+        target = resolve_target(ctx.root, args.target, args.remote)
+        check_tip(args.tip, target)
+        data = record_review(
+            ctx.root, target, tool=args.tool, status=args.status, note=args.note or "", session_id=_session()
+        )
+        if args.json:
+            ctx.emit_json(data)
+        else:
+            ctx.emit(f"Recorded {args.tool} {args.status} for {target.label} at {target.tip[:12]}.")
+        return EXIT_OK
+    reviews = read_reviews(repository(ctx.root))
+    if args.target:
+        reviews = matching(reviews, args.target)
+    reviews = reviews[-args.last :] if args.last > 0 else []
+    if args.json:
+        ctx.emit_json(reviews)
+        return EXIT_OK
+    if not reviews:
+        ctx.emit("No review records" + (f" for {args.target}." if args.target else "."))
+        return EXIT_OK
+    for r in reviews:
+        label = f"#{r['pr']}" if r.get("pr") is not None else str(r.get("branch"))
+        # Records are data: one line each, whatever a hand-edited file holds.
+        note = " ".join(str(r.get("note") or "").split())[:120]
+        ctx.emit(
+            f"{r.get('recorded_at')}  {label}  {str(r.get('tip'))[:12]}  {r.get('tool')}  {r.get('status')}"
+            + (f"  {note}" if note else "")
+        )
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -1396,6 +1443,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--keep-scratch", action="store_true", help="keep the scratch worktree for inspection")
     p.add_argument("--stats", action="store_true", help="summarize recorded land runs (ADR 0014 go or no-go)")
     p.set_defaults(func=cmd_land)
+
+    p = sub.add_parser(
+        "review",
+        allow_abbrev=False,
+        help="record a /code-review or /security-review against the commit it saw, or list them",
+    )
+    actions = p.add_subparsers(dest="review_action", metavar="<action>", required=True)
+    q = actions.add_parser(
+        "record",
+        parents=[common],
+        allow_abbrev=False,
+        help="record a review; refused unless --tip is the branch's current tip",
+    )
+    q.add_argument("target", help="pull request number (52 or #52) or branch name")
+    q.add_argument("--tip", required=True, help="the commit the review saw (full id or 7+ hex digits)")
+    q.add_argument("--status", required=True, choices=REVIEW_STATUSES)
+    q.add_argument("--tool", required=True, choices=REVIEW_TOOLS, help="the review command that was run")
+    q.add_argument("--note", help="short summary of the findings")
+    q.add_argument("--remote", default="origin", help="remote holding the branch (default origin)")
+    q.set_defaults(func=cmd_review)
+    q = actions.add_parser("list", parents=[common], allow_abbrev=False, help="show recorded reviews")
+    q.add_argument("target", nargs="?", help="only this pull request number or branch name")
+    q.add_argument("--last", type=int, default=20, help="number of recent records to show (default 20)")
+    q.set_defaults(func=cmd_review)
 
     p = sub.add_parser("eval", parents=[common], help="evaluate routing against a labeled task suite")
     p.add_argument("--suite", help="path to a suite TOML (default: bundled routing-v1)")

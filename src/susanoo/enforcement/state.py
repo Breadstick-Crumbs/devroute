@@ -84,6 +84,69 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     return missing, failing
 
 
+def _demanded(route: dict[str, Any]) -> list[dict[str, Any]]:
+    """The required steps the evidence gate asks evidence for (see ``evidence_status``)."""
+    return [
+        step
+        for step in route.get("verification", [])
+        if step.get("level") == "required"
+        and not (route.get("auto") is True and step.get("mode") == "unavailable")
+    ]
+
+
+def unverified_steps(route: dict[str, Any], evidence: list[dict[str, Any]], tip: str | None) -> list[str]:
+    """Required steps of ``route`` whose checks do not hold for commit ``tip`` (ADR 0015).
+
+    A step holds when the evidence gate accepts it and its newest evidence the gate counts was
+    recorded on ``tip`` (``head``, a full commit id) with no uncommitted changes (``dirty`` false):
+    for a step Susanoo can run, a passing executed run; for a step it cannot, a reported pass or
+    explained skip, as the gate asks. Evidence without ``head`` or ``dirty``, including every
+    record written before they existed, never holds. ``tip`` None (unknown) holds nothing.
+    """
+    demanded = _demanded(route)
+    missing, failing = evidence_status(route, evidence)
+    if not tip:
+        return [str(step.get("id")) for step in demanded]
+    tip = tip.lower()
+    record_id = route.get("id")
+    newest: dict[str, dict[str, Any]] = {}
+    ready = {str(step.get("id")) for step in demanded if step.get("mode") == "ready"}
+    for item in evidence:
+        if item.get("record_id") != record_id:
+            continue
+        step_id = str(item.get("step"))
+        executed = item.get("source") == "executed" and item.get("status") != "skipped"
+        # Exactly what the gate counts: executed runs for runnable steps, reports too for others.
+        if executed or (step_id not in ready and item.get("source") == "reported"):
+            newest[step_id] = item
+    unverified: list[str] = []
+    for step in demanded:
+        step_id = str(step.get("id"))
+        found = newest.get(step_id)
+        accepted = ("passed",) if step_id in ready else ("passed", "skipped")
+        head = found.get("head") if found else None
+        holds = (
+            found is not None
+            and step_id not in missing
+            and step_id not in failing
+            and found.get("status") in accepted
+            and isinstance(head, str)
+            and head.lower() == tip
+            and found.get("dirty") is False
+        )
+        if not holds:
+            unverified.append(step_id)
+    return unverified
+
+
+def is_verified(route: dict[str, Any], evidence: list[dict[str, Any]], tip: str | None) -> bool:
+    """Whether ``route``'s checks hold for commit ``tip``: ADR 0015's "verified".
+
+    A route with no required step is never verified, because nothing bound it to a commit.
+    """
+    return bool(tip) and bool(_demanded(route)) and not unverified_steps(route, evidence, tip)
+
+
 def route_state(store: RecordStore, route: dict[str, Any]) -> RouteState:
     record_id = route.get("id")
     approved = any(a.get("record_id") == record_id for a in store.read("approvals"))

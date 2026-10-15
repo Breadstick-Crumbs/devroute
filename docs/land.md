@@ -80,6 +80,10 @@ Every run appends one line to `<git common dir>/susanoo/records/land.jsonl`, sha
 
 `susanoo land --stats` counts the runs against the rule fixed in ADR 0014: after 20 runs with two or more candidates, landing becomes a product track if at least one failure was an interaction or at least five runs resolved a conflict automatically, and a run's median time on top of its checks is under a minute. These are counts, not validated thresholds.
 
+## Review records
+
+`susanoo review record <pr-or-branch> --tip <sha> --status passed|failed --tool code-review|security-review [--note ...]` records the result of a `/code-review` or `/security-review` against the commit it saw ([ADR 0015](decisions/0015-lead-session-and-board.md)). It refuses when `--tip` (a full commit id or at least 7 hex digits) is not the current tip: a pull request's head on GitHub (through `gh`), or for a branch its local or remote copy, whichever contains the other, as `land` picks it. When the remote cannot be reached, it refuses rather than trust the local copy. Records go to `<git common dir>/susanoo/records/reviews.jsonl`, next to `land.jsonl` and shared by all worktrees. `susanoo review list [<pr-or-branch>] [--json]` shows them. `land --merge` does not check them yet; that gate is the next slice of ADR 0015.
+
 ## Not supported yet
 
 Pull requests from forks, forges other than GitHub, and batching with bisection. A candidate whose `.gitattributes` sets a `merge=` driver is refused, because it changes how git resolves conflicts.
