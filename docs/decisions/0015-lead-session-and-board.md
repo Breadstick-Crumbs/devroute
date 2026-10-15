@@ -1,6 +1,6 @@
 # 0015: A lead session per repository, and a read-only `susanoo board`
 
-**Status:** proposed (draft for review). Nothing here is implemented; every command, skill, field, and file marked *proposed* is new work. [0012](0012-delegation-plans.md) and [0013](0013-leases-and-landing-queue.md) are proposed; [0014](0014-susanoo-land.md) is accepted. Builds on 0014's `susanoo land` and amends two of its rules (see "Merging" and "Reviews"). Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0004](0004-local-jsonl-records.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md).
+**Status:** proposed (draft for review). Nothing here is implemented; every command, skill, field, and file marked *proposed* is new work. [0012](0012-delegation-plans.md) and [0013](0013-leases-and-landing-queue.md) are proposed; [0014](0014-susanoo-land.md) is accepted. Builds on 0014's `susanoo land` and amends two of its rules (see "Merging" and "Reviews"). Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0004](0004-local-jsonl-records.md), [0007](0007-hands-off-by-default.md), [0009](0009-clarifying-questions-under-hands-off.md), and [0016](0016-app-messages-are-not-the-users-message.md).
 
 ## Context
 
@@ -72,6 +72,7 @@ Option 5. The user talks to one session, the **lead**. The lead never edits trac
 
 Held in the skill, so they are data, not code.
 
+- When the lead sends a new request, not findings on the current one, route it with `susanoo route` before editing.
 - Change only what the task needs. If it needs files another worker is likely changing, tell the lead before editing them.
 - Use the ADR number the lead gave, or ask for one.
 - Append to `CHANGELOG.md` under *Unreleased* only, without adding headings or editing other entries; that is what 0014 can resolve. Edit only your own rows of `docs/roadmap.md`, as AGENTS.md already asks.
@@ -81,7 +82,9 @@ Held in the skill, so they are data, not code.
 
 ### Routing the lead
 
-Under automatic routing, every message to the lead would get a brief telling it to investigate, plan, and verify, and would leave a route in the main checkout's records that never gets an outcome, beside the worker's route for the same task. Nothing native prevents this. *Proposed:* `susanoo lead on`, run by the lead skill, marks the current session as a lead in the hook state, keyed by session id. Its prompts are not routed; the hook adds one short line instead. `susanoo lead off` undoes it.
+Under automatic routing, every message to the lead would get a brief telling it to investigate, plan, and verify, and would leave a route in the main checkout's records that never gets an outcome, beside the worker's route for the same task. [ADR 0016](0016-app-messages-are-not-the-users-message.md) already keeps the app's own prompts out of routing: worker notes, peer messages, and CI events reach the lead without opening a route. The user's own messages are still routed, and nothing native prevents that. *Proposed:* `susanoo lead on`, run by the lead skill, marks the current session as a lead in the hook state, keyed by session id. Its prompts are not routed; the hook adds one short line instead. `susanoo lead off` undoes it.
+
+The same ADR decides how workers see the lead's messages. A worker's brief is its session's first message, so it is routed as the user's message. Everything the lead sends later (review findings, a rebase request, a follow-up request) arrives as a message from another session: it opens no route and keeps the worker's open route and floor. Review findings and rebase requests belong to the open route. A **new request** sent to a running worker does not, so the worker routes it itself with `susanoo route`, never below its open route; the autonomy and named workflow of the user's first message do not carry over to it (0016).
 
 ### Evidence bound to a commit
 

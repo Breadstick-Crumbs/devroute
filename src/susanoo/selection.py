@@ -156,6 +156,8 @@ def _registry_candidate(
         return None
     if tool.kind == "script" and finding is None:
         return None  # Project scripts are only meaningful where they exist.
+    if tool.supersedes and finding is None:
+        return None  # A better form of another tool (parallel pytest) is no install suggestion.
     # Discovery picks the project-configured variant of `run` (see ToolSpec.configured_run).
     configured = finding.detail.get("run") if finding else None
     run = configured if isinstance(configured, dict) else tool.run
@@ -325,8 +327,27 @@ def candidates_for(
         _adjust_for_size(candidates, inventory, context)
     if context.task:
         _adjust_for_task(candidates, registry, context)
-    # A tool whose command had to be withheld ranks after runnable ones (e.g. `make test`).
-    return sorted(candidates, key=lambda c: (bool(c.command_withheld), -c.score, c.name))
+    superseded = _superseded(candidates, registry)
+    # A tool whose command had to be withheld ranks after runnable ones (e.g. `make test`), and a
+    # superseded tool after the tool that supersedes it.
+    return sorted(candidates, key=lambda c: (bool(c.command_withheld), -c.score, c.id in superseded, c.name))
+
+
+def _superseded(candidates: list[Candidate], registry: Registry) -> set[str]:
+    by_id = {c.id: c for c in candidates}
+    superseded: set[str] = set()
+    for c in candidates:
+        spec = registry.tools.get(c.id)
+        for other_id in spec.supersedes if spec is not None else ():
+            other = by_id.get(other_id)
+            if other is None or c.command_withheld or not c.status.usable or not other.status.usable:
+                continue
+            # Both work; a version probe of only the superseded one (`--verify-tools`) must not
+            # turn the order around.
+            c.score = max(c.score, other.score)
+            superseded.add(other_id)
+            c.adjustments.append(f"preferred over {other.name}, which it supersedes")
+    return superseded
 
 
 # Kinds a user adds to Claude Code on purpose: worth naming even when a simpler tool is selected.
