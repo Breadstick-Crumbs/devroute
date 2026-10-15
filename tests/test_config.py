@@ -79,6 +79,9 @@ def test_merge_does_not_mutate_inputs():
             "either 'signal' or 'dimension'",
         ),
         ('[enforcement]\nhands_off = "false"\n', "hands_off must be true or false"),
+        ('[auto]\napp_envelopes = "system-reminder"\n', "app_envelopes must be a list of non-empty"),
+        ('[auto]\napp_envelopes = ["<system-reminder>"]\n', "app_envelopes must be tag names"),
+        ('[auto]\napp_envelope_frames = [""]\n', "app_envelope_frames must be a list of non-empty"),
         ('[selection]\ndefault_package_manager = "pnmp"\n', "default_package_manager must be one of"),
     ],
 )

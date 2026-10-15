@@ -18,3 +18,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0012](0012-delegation-plans.md) | Task decomposition and delegation plans: Claude drafts a tool-neutral JSON plan; Susanoo checks it and gives each unit a merge verdict from its own copy of the plan; Claude Code and Scion are optional executors (proposed) |
 | [0013](0013-leases-and-landing-queue.md) | Leases, interface-change notices, and an evidence-gated local landing queue: the queue comes first and its records decide whether leases and notices are built (proposed) |
 | [0014](0014-susanoo-land.md) | `susanoo land` tests agent branches on one combined tree, finds the branch that breaks it, and merges pull requests only with the user's `--merge` |
+| [0016](0016-app-messages-are-not-the-users-message.md) | A prompt made only of the app's blocks (other sessions, notifications, status reminders) is not the user's message: it leaves routes and the recorded user message alone |
