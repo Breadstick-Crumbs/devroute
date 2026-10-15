@@ -503,6 +503,125 @@ def test_package_script_is_runnable_through_the_detected_manager(tmp_path: Path,
     assert with_pnpm is not None and with_pnpm.status.usable
 
 
+def _site_packages(env: Path, *dist_infos: str) -> None:
+    """An environment's site-packages with the given ``.dist-info`` folders (POSIX layout)."""
+    for name in dist_infos:
+        (env / "lib" / "python3.12" / "site-packages" / name).mkdir(parents=True)
+    (env / "lib" / "python3.12" / "site-packages").mkdir(parents=True, exist_ok=True)
+
+
+def test_pytest_xdist_is_detected_only_where_it_is_installed(tmp_path: Path, registry):
+    spec = registry.tools["pytest-xdist"]
+    root = tmp_path / "project"
+    write(root, "pyproject.toml", '[project]\nname = "p"\nversion = "1"\n')
+    pytest_in_venv = str(root / ".venv" / "bin" / "pytest")
+    in_venv = lambda name: pytest_in_venv if name == "pytest" else None  # noqa: E731
+
+    # Installed in the project's environment, even when not declared.
+    _site_packages(root / ".venv", "pytest_xdist-3.6.1.dist-info", "pytest-8.3.4.dist-info")
+    finding = detect_tool(spec, scan_project(root), {}, False, which=in_venv)
+    assert finding is not None and finding.status is Status.INSTALLED_UNVERIFIED
+    assert any("pytest-xdist installed" in e for e in finding.evidence)
+
+    # Declared but missing from the environment that runs pytest: `-n auto` would be rejected.
+    write(
+        root,
+        "pyproject.toml",
+        '[project]\nname = "p"\nversion = "1"\n[dependency-groups]\ndev = ["pytest-xdist"]\n',
+    )
+    (root / ".venv" / "lib" / "python3.12" / "site-packages" / "pytest_xdist-3.6.1.dist-info").rmdir()
+    assert detect_tool(spec, scan_project(root), {}, False, which=in_venv) is None
+
+    # Plain pytest is unaffected.
+    assert detect_tool(registry.tools["pytest"], scan_project(root), {}, False, which=in_venv) is not None
+
+
+def test_pytest_xdist_on_path_needs_a_declaration(tmp_path: Path, registry):
+    spec = registry.tools["pytest-xdist"]
+    root, system = tmp_path / "project", tmp_path / "system"
+    write(root, "pyproject.toml", '[project]\nname = "p"\nversion = "1"\n')
+    _site_packages(system, "pytest_xdist-3.6.1.dist-info")
+    on_path = lambda name: str(system / "bin" / name) if name == "pytest" else None  # noqa: E731
+    # Another environment's plugins are not the project's: they may be missing where tests run.
+    assert detect_tool(spec, scan_project(root), {}, False, which=on_path) is None
+
+    write(root, "requirements-dev.txt", "pytest\npytest-xdist>=3\n")
+    finding = detect_tool(spec, scan_project(root), {}, False, which=on_path)
+    assert finding is not None and finding.status is Status.INSTALLED_UNVERIFIED
+
+    # Declared, but the pytest on PATH lacks it.
+    (system / "lib" / "python3.12" / "site-packages" / "pytest_xdist-3.6.1.dist-info").rmdir()
+    assert detect_tool(spec, scan_project(root), {}, False, which=on_path) is None
+
+
+def test_pytest_xdist_in_an_external_environment_counts_when_declared(tmp_path: Path, registry):
+    # Poetry/uv keep the environment outside the project: nothing to inspect, so the declaration decides.
+    spec = registry.tools["pytest-xdist"]
+    root = tmp_path / "project"
+    write(root, "Pipfile", '[dev-packages]\npytest = "*"\npytest-xdist = "*"\n')
+    finding = detect_tool(spec, scan_project(root), {}, False, which=no_binaries)
+    assert finding is not None and finding.detail["python_declared"]
+    write(root, "Pipfile", '[dev-packages]\npytest = "*"\n')
+    assert detect_tool(spec, scan_project(root), {}, False, which=no_binaries) is None
+
+
+def test_windows_environment_layout_is_inspected(tmp_path: Path):
+    from susanoo.discovery.executables import python_package_installed
+
+    env = tmp_path / "Python311"
+    (env / "Lib" / "site-packages" / "pytest_xdist-3.6.1.dist-info").mkdir(parents=True)
+    script = str(env / "Scripts" / "pytest.exe")
+    assert python_package_installed("pytest-xdist", script) is True
+    assert python_package_installed("pytest-cov", script) is False
+    assert python_package_installed("pytest-xdist", str(tmp_path / "nowhere" / "bin" / "pytest")) is None
+
+
+def test_pytest_xdist_needs_an_environment_it_can_inspect(tmp_path: Path, registry):
+    # A pyenv/asdf shim or a launcher copied out of its environment: the folder beside it has no
+    # site-packages, so whether pytest there has the plugin is unknown and `-n` is not risked.
+    spec = registry.tools["pytest-xdist"]
+    root = tmp_path / "project"
+    write(root, "requirements-dev.txt", "pytest\npytest-xdist\n")
+    shim = lambda name: str(tmp_path / ".pyenv" / "shims" / name) if name == "pytest" else None  # noqa: E731
+    assert detect_tool(spec, scan_project(root), {}, False, which=shim) is None
+
+
+def test_pytest_xdist_of_another_python_version_does_not_count(tmp_path: Path, registry):
+    from susanoo.discovery.executables import python_package_installed
+
+    prefix = tmp_path / "homebrew"
+    (prefix / "lib" / "python3.11" / "site-packages" / "pytest_xdist-3.6.1.dist-info").mkdir(parents=True)
+    (prefix / "lib" / "python3.11" / "site-packages" / "pytest-8.3.4.dist-info").mkdir()
+    (prefix / "lib" / "python3.12" / "site-packages" / "pytest-8.3.4.dist-info").mkdir(parents=True)
+    # pytest is in both versions: which one /bin/pytest runs is unknown.
+    assert python_package_installed("pytest-xdist", str(prefix / "bin" / "pytest")) is None
+    # pytest only in 3.12: that is its environment, and it lacks the plugin.
+    (prefix / "lib" / "python3.11" / "site-packages" / "pytest-8.3.4.dist-info").rmdir()
+    assert python_package_installed("pytest-xdist", str(prefix / "bin" / "pytest")) is False
+
+
+def test_debian_dist_packages_layout_is_inspected(tmp_path: Path):
+    from susanoo.discovery.executables import python_package_installed
+
+    (tmp_path / "usr" / "lib" / "python3" / "dist-packages" / "pytest_xdist-3.5.0.egg-info").mkdir(
+        parents=True
+    )
+    # Debian: apt packages live in the unversioned /usr/lib/python3/dist-packages.
+    assert python_package_installed("pytest-xdist", str(tmp_path / "usr" / "bin" / "pytest")) is True
+
+
+def test_external_environment_decides_by_declaration_even_with_pytest_on_path(tmp_path: Path, registry):
+    # Poetry runs the checks in its own environment, not in the one the PATH pytest belongs to.
+    spec = registry.tools["pytest-xdist"]
+    root, system = tmp_path / "project", tmp_path / "system"
+    write(root, "pyproject.toml", '[tool.poetry.group.dev.dependencies]\npytest = "*"\npytest-xdist = "*"\n')
+    _site_packages(system, "pytest-8.3.4.dist-info")
+    on_path = lambda name: str(system / "bin" / name) if name == "pytest" else None  # noqa: E731
+    assert detect_tool(spec, scan_project(root), {}, False, which=on_path) is None
+    finding = detect_tool(spec, scan_project(root), {}, False, which=on_path, external_environment=True)
+    assert finding is not None and any("declared" in e for e in finding.evidence)
+
+
 def _command(root: Path, registry, capability: str, tool_id: str) -> list[str] | None:
     from susanoo.discovery import Inventory
     from susanoo.selection import candidates_for
@@ -622,3 +741,26 @@ def test_configured_run_entries_are_validated(tmp_path: Path):
     ):
         with pytest.raises(ConfigError):
             load(bad)
+
+
+def test_parallel_pytest_and_configured_mypy_and_bandit_hold_together(tmp_path: Path, registry):
+    # One project with both: pytest-xdist in its environment, mypy files and [tool.bandit] configured.
+    from susanoo.analyzer import CapabilityRequirement
+    from susanoo.discovery import Inventory
+    from susanoo.selection import recommend
+
+    root = tmp_path / "project"
+    write(root, "pyproject.toml", '[tool.mypy]\nfiles = ["src"]\n\n[tool.bandit]\nskips = ["B101"]\n')
+    write(root, "src/app.py", "")
+    _site_packages(root / ".venv", "pytest-8.3.4.dist-info", "pytest_xdist-3.6.1.dist-info")
+    installed = {"pytest", "mypy", "bandit"}
+    in_venv = lambda name: str(root / ".venv" / "bin" / name) if name in installed else None  # noqa: E731
+    facts = scan_project(root)
+    findings = [f for t in registry.tools.values() if (f := detect_tool(t, facts, {}, False, which=in_venv))]
+    inv = Inventory(str(root), "", False, facts.languages, findings)
+    needs = ["unit_testing", "type_checking", "security_analysis"]
+    recs = recommend([CapabilityRequirement(c, "required") for c in needs], inv, registry)
+    commands = {r.capability: r.selected.command if r.selected else None for r in recs}
+    assert commands["unit_testing"] == ["python", "-m", "pytest", "-n", "auto", "-q"]
+    assert commands["type_checking"] == ["mypy"]
+    assert (commands["security_analysis"] or [])[:3] == ["bandit", "-c", "pyproject.toml"]
