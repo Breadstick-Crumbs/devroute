@@ -96,6 +96,8 @@ env = ["CLAUDECODE"]   # set in every Claude Code session
 
 Detection keys are those listed at the top of [`tools.toml`](../src/susanoo/data/tools.toml); any one that matches counts, except `requires_files`, which must also match (screenshot baselines for visual regression).
 
+A tool whose command depends on the project's own configuration lists `[[tools.configured_run]]` tables after its other keys: `when` names `file:section[:key]` sources in the tool's lookup order (`pyproject.toml:tool.mypy:files`), and `run` replaces those capabilities' commands when the first of those files the tool would read sets that key; the first matching table wins. A tool-specific file (`mypy.ini`) decides once it exists and parses; a shared one (`pyproject.toml`, `setup.cfg`, `tox.ini`) only once it has the section. Susanoo only checks that the key is set and never puts its value into a command; the file must be in the project root.
+
 Project tool entries are repository-controlled. Susanoo ignores their `version_args`, so `--verify` never runs them. Their `run` commands do execute under `susanoo verify --execute`, just like the project's own test scripts.
 
 ### Keep task text out of records
