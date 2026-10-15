@@ -943,6 +943,82 @@ def cmd_approve(ctx: Context, stdin: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_lead(ctx: Context, stdin: TextIO) -> int:
+    """`susanoo lead on|off`: mark this Claude Code session as a lead, whose prompts are not routed.
+
+    The mark lives in the hook state of this project, keyed by session id (ADR 0015). It changes
+    only how the prompt hook treats this session's prompts; the gates of an open route still apply.
+    Only the user turns it on: the marked session's latest message must be their `/susanoo-lead`,
+    and inside a Claude Code session only that session can be marked. Without automatic routing
+    there is nothing to stop, so no mark is written (none is left behind if routing is turned on
+    later). Turning it off adds process, so it is never refused.
+    """
+    # The project the prompt hook will see (`CLAUDE_PROJECT_DIR`), not wherever the shell is now.
+    root = ctx.root if ctx.args.path else _hook_root({})
+    if not is_initialized(root):
+        raise CLIError("local records are disabled; run `susanoo init` first")
+    store = RecordStore(root)
+    current = _session()
+    session = ctx.args.session or current
+    if not session:
+        raise CLIError("no Claude Code session id: run this inside Claude Code, or pass --session <id>")
+    on = ctx.args.lead_action == "on"
+    routing = bool(auto_settings(root))
+    before = prompt_state.is_lead(root, session)
+    if on and routing and not before:
+        if current and session != current:
+            raise CLIError("inside a Claude Code session, only that session can be marked as a lead")
+        if (prompt_state.load(root, session) or {}).get("lead_requested") is not True:
+            raise CLIError(
+                "a lead's prompts are not routed, so only the user turns it on: ask them to run "
+                "/susanoo-lead in that session"
+            )
+    if on and not routing:
+        lead = before  # nothing to stop, so nothing is marked
+    else:
+        try:
+            prompt_state.set_lead(root, session, on, datetime.now(UTC).isoformat(timespec="seconds"))
+        except OSError as exc:
+            raise CLIError(f"could not {'mark' if on else 'unmark'} the session: {exc}") from exc
+        lead = on
+    state = active_route(store, session)
+    if ctx.args.json:
+        ctx.emit_json(
+            {
+                "session": session,
+                "lead": lead,
+                "was_lead": before,
+                "automatic_routing": routing,
+                "open_route": state.record_id if state is not None else None,
+            }
+        )
+        return EXIT_OK
+    if on:
+        if routing:
+            ctx.emit(
+                ("This session was already a lead." if before else "This session is now a lead.")
+                + " Its prompts are not routed; hand every change to a worker. `susanoo lead off` undoes it."
+            )
+        else:
+            ctx.emit(
+                "Automatic routing is off in this project, so this session's prompts are not routed anyway; "
+                "nothing was marked. Act as the lead all the same. Susanoo's hooks may not be active, so "
+                "nothing may ask the user before `susanoo land --merge`: ask them in chat before each merge."
+            )
+        if state is not None:
+            ctx.emit(
+                f"Route {state.record_id} is still open in this session and its gates still apply: "
+                "finish it or record its outcome."
+            )
+    else:
+        ctx.emit(
+            "This session is no longer a lead; its prompts are routed again."
+            if before
+            else "This session was not a lead; nothing changed."
+        )
+    return EXIT_OK
+
+
 def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     """Raise the open route of this session to a stricter profile. Never lowers anything.
 
@@ -1405,6 +1481,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--checkpoint", default="plan", help="which checkpoint is approved (default: plan)")
     p.add_argument("--note", help="optional note")
     p.set_defaults(func=cmd_approve)
+
+    p = sub.add_parser(
+        "lead",
+        parents=[common],
+        allow_abbrev=False,
+        help="mark this Claude Code session as a lead (its prompts are not routed) or unmark it",
+    )
+    p.add_argument("lead_action", choices=["on", "off"], metavar="on|off", help="mark or unmark the session")
+    p.add_argument("--session", help="Claude Code session id (default: $CLAUDE_CODE_SESSION_ID)")
+    p.set_defaults(func=cmd_lead)
 
     p = sub.add_parser("hook", help="entry point for Claude Code hooks (reads the event JSON on stdin)")
     p.add_argument("event", choices=HOOK_EVENTS)

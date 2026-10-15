@@ -12,7 +12,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 def test_templates_have_valid_frontmatter():
     for target in targets(with_agents=True):
-        if not target.path.endswith(".md"):
+        # Skills and subagents; a skill's other files (worker-rules.md) are plain Markdown.
+        if not target.path.endswith(".md") or (
+            "/skills/" in target.path and not target.path.endswith("/SKILL.md")
+        ):
             continue
         meta = parse_frontmatter(target.content)
         assert meta.get("name"), target.path
@@ -29,6 +32,23 @@ def test_skill_uses_arguments_and_records_evidence():
     assert "susanoo verify --execute" in skill.content
     # The skill must not pre-approve running project commands.
     assert "susanoo verify" not in meta["allowed-tools"]
+
+
+def test_lead_skill_is_user_only_and_never_preapproves_merging():
+    """Only the user starts a lead (a worker never loads the skill), and each merge asks the user."""
+    files = {t.path: t.content for t in targets()}
+    skill = files[".claude/skills/susanoo-lead/SKILL.md"]
+    meta = parse_frontmatter(skill)
+    assert meta["name"] == "susanoo-lead"
+    assert meta["disable-model-invocation"] == "true"
+    assert "susanoo lead on" in skill and "<git common dir>/susanoo/lead.md" in skill
+    assert "land" not in meta["allowed-tools"] and "merge" not in meta["allowed-tools"]
+    rules = files[".claude/skills/susanoo-lead/worker-rules.md"]
+    assert "worker-rules.md" in skill
+    for status in ("READY pr=#<n>", "BLOCKED <reason>", "NEEDS-INPUT <question>"):
+        assert status in rules
+    # Workers read only the rules, never the lead's own steps.
+    assert "lead on" not in rules
 
 
 def test_reviewer_is_read_only():

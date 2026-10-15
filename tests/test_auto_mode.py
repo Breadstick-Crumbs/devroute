@@ -282,6 +282,8 @@ def test_global_install_merges_and_uninstall_restores(isolated: Path):
     assert (isolated / "skills/susanoo/SKILL.md").is_file() and (
         isolated / "agents/susanoo-reviewer.md"
     ).is_file()
+    assert (isolated / "skills/susanoo-lead/SKILL.md").is_file()
+    assert (isolated / "skills/susanoo-lead/worker-rules.md").is_file()
     # A second run changes nothing.
     _, out, _ = _global("--json")
     assert {a["action"] for a in json.loads(out)["actions"]} == {"unchanged"}
@@ -291,6 +293,7 @@ def test_global_install_merges_and_uninstall_restores(isolated: Path):
     assert settings == {"model": "opus", "hooks": {"PreToolUse": [foreign]}}
     assert (isolated / "CLAUDE.md").read_text(encoding="utf-8") == "# Mine\n\nKeep my notes.\n"
     assert not (isolated / "skills/susanoo").exists()
+    assert not (isolated / "skills/susanoo-lead").exists()
 
 
 def test_new_playbook_gets_rules_and_is_removed_with_uninstall(isolated: Path):
