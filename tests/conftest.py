@@ -23,6 +23,8 @@ def isolated_susanoo_home(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pyt
     path = tmp_path_factory.mktemp("susanoo-home")
     monkeypatch.setenv("SUSANOO_HOME", str(path))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(path / "claude-config"))
+    # Tests run inside a Claude Code session must not route against that session's messages.
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     return path
 
 

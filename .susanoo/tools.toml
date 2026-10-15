@@ -1,0 +1,19 @@
+# Project tool overrides (matched by id). This repository runs its suite in parallel with
+# pytest-xdist (AGENTS.md); serial `pytest -q` exceeds the verification timeout.
+
+[[tools]]
+id = "pytest"
+name = "pytest"
+kind = "cli"
+capabilities = ["unit_testing", "integration_testing"]
+languages = ["python"]
+binaries = ["pytest"]
+python_packages = ["pytest"]
+pyproject_tools = ["pytest"]
+files = ["pytest.ini", "conftest.py", "tests/conftest.py"]
+run = { unit_testing = ["pytest", "-n", "auto", "-q"], integration_testing = ["pytest", "-n", "auto", "-q"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install pytest pytest-xdist"
