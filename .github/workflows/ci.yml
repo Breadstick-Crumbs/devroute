@@ -43,6 +43,8 @@ jobs:
       - run: pytest -n auto --cov=susanoo --cov-report=term-missing:skip-covered
       - name: Routing evaluation
         run: susanoo eval --min-agreement 0.9 --fail-on-risk-violation
+      - name: UI routing evaluation
+        run: susanoo eval --suite src/susanoo/data/suites/ui-v1.toml --min-agreement 0.9 --fail-on-risk-violation
       - name: CLI smoke test
         run: |
           susanoo doctor
