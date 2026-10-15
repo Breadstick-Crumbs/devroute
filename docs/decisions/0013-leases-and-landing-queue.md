@@ -1,6 +1,6 @@
 # 0013: Leases, interface-change notices, and an evidence-gated landing queue
 
-**Status:** proposed (draft for review). Nothing here is implemented; every command and file marked *proposed* is new work. Builds on [0012](0012-delegation-plans.md). The landing queue (phase 3) is built first and doubles as the measurement; leases and notices (phases 1 and 2) are built only if its data meet the rule in phase 0. Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md). If accepted, it amends 0007's list of prompts that stay in every mode (see "Applying a landing"). Example: [`0013-coordination-state.example.json`](0013-coordination-state.example.json).
+**Status:** proposed (draft for review). Nothing here is implemented; every command and file marked *proposed* is new work. Builds on [0012](0012-delegation-plans.md). Phase 3 (the landing queue) is built first by [0014](0014-susanoo-land.md), which lists where it differs from this design; for phase 3, 0014 decides. The landing queue (phase 3) is built first and doubles as the measurement; leases and notices (phases 1 and 2) are built only if its data meet the rule in phase 0. Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md). If accepted, it amends 0007's list of prompts that stay in every mode (see "Applying a landing"). Example: [`0013-coordination-state.example.json`](0013-coordination-state.example.json).
 
 ## Context
 
@@ -30,7 +30,7 @@ Option 4.
 
 An earlier draft measured first with a separate tool and built the queue only if the data called for it. Measuring needs most of the queue anyway (temporary worktrees, combined runs, tip-bound evidence), so the user chose this order, dogfooding each step on Susanoo's own parallel sessions before deciding anything about a separate product:
 
-1. **`susanoo land`** (phase 3 below). It is built first, in its own session, under the next ADR number (0014). Its `landings` records, together with `land --measure`, are the phase 0 data. Where the two designs differ, the later ADR says which part of this one it replaces.
+1. **`susanoo land`** (phase 3 below), built first as [ADR 0014](0014-susanoo-land.md). Its records are the phase 0 data. 0014 merges through pull requests, takes its order from the command line instead of a stored queue, and resolves append-only conflicts in a scratch worktree. Its section "Where this differs from 0013" says which parts of phase 3 it replaces. It also has its own go/no-go rule for itself; the phase 0 rule here still decides leases and notices.
 2. **A board**: one view of what each parallel session and branch is doing and where each stands in the queue. It is not designed here.
 3. **Leases and intents.** An intent is a session declaring what it plans to change before it edits. It extends the declared-claim path of phase 1 and is not designed here yet.
 
@@ -125,6 +125,8 @@ When a branch changes something other worktrees depend on, they should hear abou
   Notices are hints. The landing queue is still the check.
 
 ### Phase 3: the evidence-gated landing queue
+
+This is the original design. [ADR 0014](0014-susanoo-land.md) builds a first version of it and, where they differ, replaces it.
 
 *Proposed:* `susanoo land`. Branches land one at a time on the local base branch, and each one is checked on the combined tree, before anything is pushed. GitHub's merge queue does a similar job after push. This one is local, and it knows the plan, the leases, and the evidence.
 
