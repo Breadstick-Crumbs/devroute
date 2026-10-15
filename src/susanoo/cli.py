@@ -950,8 +950,14 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
             raise CLIError("local records are disabled; run `susanoo init` first")
         raise CLIError("no open route in this Claude Code session to raise (route the task first)")
     store, state = found
-    if store.root != ctx.root and auto_settings(store.root):
-        _refuse_extra_config(ctx)
+    # The route's own checkout gates it: its configuration decides the safety side of the raise
+    # (signals in the reason, approvals, records). The checks are planned here, like verify's.
+    route_config = ctx.config
+    if store.root != ctx.root:
+        if auto_settings(store.root):
+            _refuse_extra_config(ctx)
+        extra = Path(ctx.args.config) if getattr(ctx.args, "config", None) else None
+        route_config = load_config(store.root, extra)
     reason = redact(" ".join(ctx.args.reason.split()))[:500]
     if not reason:
         raise CLIError("give the reason for raising the route with --reason")
@@ -960,7 +966,12 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     task = stored if isinstance(stored, str) and stored.strip() else reason
     # The target is a minimum, not an override: a reason that routes higher wins.
     floor = Floor.merge(
-        [route_floor(state.route), message_floor(reason, ctx.config), Floor({}, [], [], ctx.args.profile)],
+        [
+            route_floor(state.route),
+            message_floor(reason, ctx.config),
+            message_floor(reason, route_config) if route_config is not ctx.config else None,
+            Floor({}, [], [], ctx.args.profile),
+        ],
         PROFILE_ORDER,
     )
     plan = plan_task(task, ctx.root, ctx.config, floor=floor)
@@ -976,14 +987,14 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
         )
         return EXIT_OK
     plan.record_id = new_record_id()
-    data = route_record(plan, plan.record_id, ctx.config, session)
+    data = route_record(plan, plan.record_id, route_config, session)
     data["task"] = stored if isinstance(stored, str) else None
     for key in ("auto", "routed_by", "floor", "autonomous"):
         if key in state.route:
             data[key] = state.route[key]
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
-    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", ctx.config)
+    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", route_config)
     # The same task with more process: checks already run still count. A plan approval covers the
     # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
     # adds a check), so only autonomy asked for in the user's own words carries over.
@@ -993,11 +1004,10 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     for item in store.read("approvals"):
         if item.get("record_id") == old and item.get("checkpoint") == "autonomy":
             store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
-    for root in dict.fromkeys([store.root, ctx.root]):  # the hooks run where the session started
-        hook_state = SessionState(root, session)
-        if hook_state.data.get("record_id") == old:
-            hook_state.data["record_id"] = plan.record_id
-            hook_state.save()
+    hook_state = SessionState(store.root, session)
+    if hook_state.data.get("record_id") == old:
+        hook_state.data["record_id"] = plan.record_id
+        hook_state.save()
     if ctx.args.json:
         ctx.emit_json({"raised_from": old, "added_controls": added, **plan.to_dict()})
         return EXIT_OK
@@ -1005,7 +1015,7 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     approved = any(a.get("record_id") == plan.record_id for a in store.read("approvals"))
     if added:
         header += f"\nNew safety controls: {', '.join(added)}."
-    enforcement = ctx.config.get("enforcement", {})
+    enforcement = route_config.get("enforcement", {})
     configured_hands_off = bool(enforcement.get("hands_off"))
     if not approved and not configured_hands_off and target in set(enforcement.get("approval_profiles", [])):
         header += " The plan needs the user's approval again."

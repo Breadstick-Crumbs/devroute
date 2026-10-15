@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from susanoo.enforcement.prompt import session_file
 from susanoo.evaluation.store import RecordStore, sibling_stores
 from susanoo.paths import is_initialized
 
@@ -106,23 +108,35 @@ def active_route(store: RecordStore, session_id: str | None) -> RouteState | Non
 
 
 def find_active_route(root: Path, session_id: str | None) -> tuple[RecordStore, RouteState] | None:
-    """The session's newest open route in ``root``'s records or another checkout of its repository.
+    """The session's open route in ``root``'s records or another checkout of its repository.
 
     Each checkout keeps its own records and its own gates (ADR 0017): the route is often recorded
     in the main checkout while the work happens in a git worktree. Every checkout's active route
-    of ``session_id`` counts, and the newest wins (this checkout's on a tie). Routes of other
+    of ``session_id`` counts. A route that a checkout's hooks are tracking wins, because that is
+    the one a Stop hook enforces; then the newest (this checkout's on a tie). Routes of other
     sessions are never active. Returns the store that holds the route: whatever replaces it
     belongs there, where that checkout's Stop hook reads it.
     """
     if not session_id:
         return None
     stores = [RecordStore(root)] if is_initialized(root) else []
-    hits: list[tuple[RecordStore, RouteState]] = []
+    hits: list[tuple[bool, str, RecordStore, RouteState]] = []
     for store in [*stores, *sibling_stores(root)]:
         state = active_route(store, session_id)
         if state is not None:
-            hits.append((store, state))
+            tracked = _hook_record(store.root, session_id) == state.record_id
+            hits.append((tracked, str(state.route.get("created_at", "")), store, state))
     if not hits:
         return None
     # `max` keeps the first of equals: this checkout's route on a tie
-    return max(hits, key=lambda hit: str(hit[1].route.get("created_at", "")))
+    _, _, store, state = max(hits, key=lambda hit: (hit[0], hit[1]))
+    return store, state
+
+
+def _hook_record(root: Path, session_id: str) -> object:
+    """The route the hooks in ``root`` last saw for the session (see ``hooks.SessionState``)."""
+    try:
+        data = json.loads(session_file(root, session_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data.get("record_id") if isinstance(data, dict) else None

@@ -17,6 +17,7 @@ from susanoo.enforcement.state import active_route, evidence_status
 from susanoo.evaluation.store import RecordStore
 from susanoo.paths import global_manifest_path, head_commit, sibling_checkouts
 from susanoo.verification.executor import Evidence
+from tests.conftest import GATED_TOML
 
 SESSION = "session-wt"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
@@ -543,6 +544,8 @@ def test_raise_from_a_worktree_without_records_keeps_the_automatic_routes_rules(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
     code, _, err = run(python_project, "init", "--enforce", "--enforce-scope", "settings", "--auto")
     assert code == 0, err
+    with (python_project / ".susanoo" / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write(GATED_TOML)  # only the main checkout asks for approvals
     worktree = tmp_path / "pyproj-wt"
     shutil.copytree(python_project, worktree, ignore=shutil.ignore_patterns(".git", ".susanoo", ".claude"))
     link_worktree(python_project, worktree)
@@ -560,3 +563,25 @@ def test_raise_from_a_worktree_without_records_keeps_the_automatic_routes_rules(
     new = RecordStore(python_project).read("routes")[-1]
     assert new["raised_from"] == old["id"] and new["auto"] is True and new["profile"] == "deep"
     assert new["id"] in out
+    # The main checkout's configuration gates the route, so its approval rule applies.
+    assert "approval again" in out
+
+
+def test_raise_takes_the_route_the_hooks_track_over_a_newer_one(
+    repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+):
+    """The session started in the main checkout; a stray route in the worktree is newer."""
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    main_root, worktree = repo
+    tracked = route_in(main_root, monkeypatch, task=STANDARD_TASK)
+    hook = SessionState(main_root, SESSION)
+    hook.for_record(tracked)["work_started"] = True
+    hook.save()
+    stray = route_in(worktree, monkeypatch, task=STANDARD_TASK)
+    code, _, err = run(worktree, "raise", "deep", "--reason", WIDER)
+    assert code == 0, err
+    new = RecordStore(main_root).read("routes")[-1]
+    assert new["profile"] == "deep" and new["raised_from"] == tracked
+    # The main checkout's Stop hook enforces the raised route; the worktree's route is untouched.
+    assert f"DEEP, record {new['id']}" in json.loads(stop_in(main_root))["reason"]
+    assert [r["id"] for r in RecordStore(worktree).read("routes")] == [stray]
