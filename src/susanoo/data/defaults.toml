@@ -192,6 +192,12 @@ task_keyword_bonus = 3.0
 # commands keep using the manager discovery checked for (npm without a lockfile).
 default_package_manager = "npm"
 
+[verify]
+# Seconds each command run by `susanoo verify --execute` may take before it is stopped and recorded
+# as a timeout (`--timeout` overrides it for one run). Raise it for a long suite, or on a machine
+# that runs several suites at once: load alone can make a run take three times as long.
+timeout_seconds = 900
+
 [auto]
 # Automatic routing (`susanoo init --global`, or `--auto` with the settings scope): every prompt
 # is classified, and only clear coding tasks are routed. Questions and ambiguous prompts get a
@@ -264,6 +270,46 @@ domain = ""
 # skill; "" means ~/.susanoo/taste. Read only from the user configuration (~/.susanoo/config.toml) or
 # SUSANOO_TASTE_DIR (an absolute path), never from Susanoo's project configuration.
 taste_dir = ""
+
+# `susanoo land` (ADR 0014). Read from the base branch's tree, never from a candidate's.
+[land]
+# Run the ready, required steps of the DEEP verification plan on the combined tree.
+use_verification = true
+# Commands run in the scratch tree before the checks, after every checkout (e.g. ["npm", "ci"]).
+setup = []
+# Environment for setup, checks, and compares. "{tree}" is replaced by the scratch tree's path,
+# e.g. PYTHONPATH = "{tree}/src" so a src-layout project tests its own code.
+env = {}
+# More checks, or a verification step's command replaced by id (enabled = false drops it):
+#   [[land.checks]]
+#   id = "unit_tests"
+#   command = ["pytest", "-n", "auto"]
+# Commands that print JSON, compared between the base and the combined tree when the candidates
+# change one of `paths` (a trailing "/" means a folder):
+#   [[land.compare]]
+#   id = "routing_eval"
+#   paths = ["src/app/data/"]
+#   command = ["python", "-m", "app", "eval", "--json"]
+#   no_drop = ["profile_agreement"]
+#   no_rise = ["risk_floor_violations"]
+
+# Append-only places where a conflict is resolved by keeping both sides (base branch first). Only
+# hunks where both sides added lines and neither changed or removed any, and no added line is a
+# heading. `section`: the enclosing `## ` heading must match; `lines`: every added line must match;
+# `sort`: sort the combined lines. A project's list replaces this one.
+[[land.keep_both]]
+path = "CHANGELOG.md"
+section = '^## \[Unreleased\]'
+
+[[land.keep_both]]
+path = "docs/decisions/README.md"
+lines = '^\|'
+sort = true
+
+[[land.keep_both]]
+path = "docs/adr/README.md"
+lines = '^\|'
+sort = true
 
 [enforcement]
 # Hands-off (default): Susanoo asks nothing and blocks no edit in any permission mode, and its

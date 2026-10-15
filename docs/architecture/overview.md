@@ -29,6 +29,7 @@ src/susanoo/
   pipeline.py          Orchestration                    plan_task(task, root, config) -> TaskPlan
   ui.py                UI domains and checklists       choose_domain(task, config, detected) -> UIContext
   architecture.py      Architecture context             detect_architecture_files(root), describe_architecture(inventory)
+  land/                Landing agent branches           land(root, options) -> record (ADR 0014)
   render.py            Execution brief and reports
   cli.py               Command-line interface
   data/                defaults.toml, profiles/, tools.toml, capabilities.toml, ui_domains.toml, architecture.toml, suites/, templates/
@@ -106,6 +107,10 @@ Identical commands run once per execution; later steps reuse the result and say 
 - `summarize`: per-profile completion rate, duration, interventions, tokens, cost, regressions, and executed-check failure rate. Insights appear only after `min_samples` outcomes per profile (default 10) and are phrased as suggestions to review.
 - `run_suite`: deterministic routing evaluation against a labeled suite (see [evaluation.md](../evaluation.md)).
 - `adapters/claude_code/usage.py` (opt-in, `records.capture_usage`): fills an outcome's empty `tokens`, `token_counts` (fresh input, cache writes, cache reads, output), `duration_minutes`, and `tool_calls` from the route's Claude Code session transcripts, reading them from the end and only the usage counts, timestamps, ids, and tool names of assistant messages between the route's creation and its outcome or the session's next route. Any unexpected format captures nothing.
+
+### Landing (`land/`)
+
+`susanoo land` ([ADR 0014](../decisions/0014-susanoo-land.md), [land.md](../land.md)) merges agent branches in order into a scratch worktree at the fetched base, keeps both sides of append-only conflicts (`keepboth.py`, rules in `[[land.keep_both]]`), runs the checks (`checks.py`: the DEEP plan's ready, required steps through the verification executor, plus `[[land.checks]]` and `[[land.compare]]`) with configuration from the base, attributes a failure by rerunning and testing prefixes and the culprit alone, pushes base merges whose trees equal the tested ones, and merges pull requests through `gh` only with `--merge`. Git and `gh` are called with argv lists (`gitops.py`). Runs are appended to `<git common dir>/susanoo/records/land.jsonl` (`records.py`), shared by all worktrees.
 
 ### Claude Code adapter
 

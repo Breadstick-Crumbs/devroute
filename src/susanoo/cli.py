@@ -49,7 +49,7 @@ from susanoo.adapters.claude_code.settings_hooks import (
 )
 from susanoo.adapters.claude_code.usage import fill_outcome
 from susanoo.analyzer import Floor, assess
-from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
+from susanoo.config import MAX_TIMEOUT_SECONDS, PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
 from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.auto import (
@@ -67,6 +67,10 @@ from susanoo.entry import _project_has_own_hooks
 from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
 from susanoo.evaluation.store import RecordError, RecordStore, find_route, new_record_id
 from susanoo.evaluation.suite import run_suite
+from susanoo.land import LandError, LandOptions, land
+from susanoo.land.gitops import common_dir
+from susanoo.land.records import read_records
+from susanoo.land.records import stats as land_stats
 from susanoo.paths import (
     OFF_FILE,
     find_project_root,
@@ -765,8 +769,9 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
         return EXIT_OK
 
     only = set(args.step) if args.step else None
+    timeout = args.timeout if args.timeout is not None else float(ctx.config["verify"]["timeout_seconds"])
     results = execute_plan(
-        plan.verification, ctx.root, timeout=args.timeout, only=only, required_only=args.required_only
+        plan.verification, ctx.root, timeout=timeout, only=only, required_only=args.required_only
     )
     record_id = record.get("id") if record else None
     # The route may live in another checkout of this repository (see find_route): the checks ran
@@ -790,6 +795,16 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
     required = {s.id for s in plan.verification.steps if s.level == "required"}
     failed = [e for e in results if e.step in required and e.status in ("failed", "error", "timeout")]
     return EXIT_FAIL if failed else EXIT_OK
+
+
+def _timeout_seconds(value: str) -> float:
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = float("nan")
+    if not 0 < seconds <= MAX_TIMEOUT_SECONDS:  # also rejects nan and inf
+        raise argparse.ArgumentTypeError(f"expected seconds greater than 0 and at most {MAX_TIMEOUT_SECONDS}")
+    return seconds
 
 
 def _session() -> str | None:
@@ -1084,6 +1099,62 @@ def cmd_eval(ctx: Context, stdin: TextIO) -> int:
     return EXIT_FAIL if below else EXIT_OK
 
 
+def cmd_land(ctx: Context, stdin: TextIO) -> int:
+    args = ctx.args
+    if args.stats:
+        try:
+            data = land_stats(read_records(common_dir(ctx.root)))
+        except LandError as exc:
+            raise CLIError(str(exc)) from exc
+        if args.json:
+            ctx.emit_json(data)
+            return EXIT_OK
+        culprits = ", ".join(f"{k} {v}" for k, v in sorted(data["culprits"].items())) or "none"
+        overhead = data["median_overhead_s"]
+        ctx.emit(
+            "\n".join(
+                [
+                    f"land runs: {data['runs']} ({data['multi_candidate_runs']} with two or more candidates)",
+                    "results: "
+                    + (", ".join(f"{k} {v}" for k, v in sorted(data["results"].items())) or "none"),
+                    f"conflicts kept both: {data['auto_resolved_runs']} runs; "
+                    f"needed a manual merge: {data['unresolved_conflict_runs']} runs",
+                    f"combined-tree failures by kind: {culprits}; flaky runs: {data['flaky_runs']}",
+                    "median time on top of the checks: "
+                    + (f"{overhead}s" if overhead is not None else "n/a"),
+                    f"go or no-go ({data['rule']}, counts, not validated thresholds): {data['verdict']}",
+                ]
+            )
+        )
+        return EXIT_OK
+    if not args.candidates:
+        raise CLIError("name the pull requests or branches to land, e.g. `susanoo land 52 53`")
+    if args.config:
+        # The checks come from the base branch's configuration, so nothing can swap them per run.
+        raise CLIError("land reads its configuration from the base branch; --config is not accepted")
+    options = LandOptions(
+        candidates=list(args.candidates),
+        base=args.base,
+        remote=args.remote,
+        merge=args.merge,
+        push=not args.no_push,
+        timeout=args.timeout,
+        reuse=not args.no_cache,
+        keep_scratch=args.keep_scratch,
+    )
+
+    def say(line: str) -> None:
+        # Flushed per line: a run takes minutes, and its output is often piped to a file.
+        if not args.json:
+            ctx.emit(line)
+            ctx.out.flush()
+
+    record, code = land(ctx.root, options, say)
+    if args.json:
+        ctx.emit_json(record)
+    return code
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -1205,7 +1276,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true", help="run the ready steps and record evidence")
     p.add_argument("--step", action="append", help="only this step id (repeatable)")
     p.add_argument("--required-only", action="store_true", help="only required steps")
-    p.add_argument("--timeout", type=float, default=900, help="per-command timeout in seconds (default 900)")
+    p.add_argument(
+        "--timeout",
+        type=_timeout_seconds,
+        help="per-command timeout in seconds (default: [verify] timeout_seconds in the configuration, 900)",
+    )
     p.add_argument("--no-record", action="store_true", help="do not store evidence")
     p.set_defaults(func=cmd_verify)
 
@@ -1274,6 +1349,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="capture: where to write the sites (default: <taste folder>/sites)")
     p.set_defaults(func=cmd_taste)
 
+    p = sub.add_parser(
+        "land",
+        parents=[common],
+        allow_abbrev=False,
+        help="test pull requests or branches on one combined tree, then push; merge only with --merge",
+    )
+    p.add_argument("candidates", nargs="*", help="pull request numbers (52 or #52) or branch names, in order")
+    p.add_argument("--base", help="base branch (default: the pull requests' base, else main)")
+    p.add_argument("--remote", default="origin", help="remote to fetch from and push to (default origin)")
+    p.add_argument(
+        "--merge",
+        action="store_true",
+        help="merge the pull requests with gh after the checks pass; only the user gives this flag",
+    )
+    p.add_argument("--no-push", action="store_true", help="test only; push nothing")
+    p.add_argument("--no-cache", action="store_true", help="rerun the checks even if this exact tree passed")
+    p.add_argument(
+        "--timeout", type=float, default=1800, help="per-command timeout in seconds (default 1800)"
+    )
+    p.add_argument("--keep-scratch", action="store_true", help="keep the scratch worktree for inspection")
+    p.add_argument("--stats", action="store_true", help="summarize recorded land runs (ADR 0014 go or no-go)")
+    p.set_defaults(func=cmd_land)
+
     p = sub.add_parser("eval", parents=[common], help="evaluate routing against a labeled task suite")
     p.add_argument("--suite", help="path to a suite TOML (default: bundled routing-v1)")
     p.add_argument("--min-agreement", type=float, help="exit 1 if profile agreement is below this (0-1)")
@@ -1313,7 +1411,7 @@ def main(
     try:
         result: int = args.func(ctx, stdin or sys.stdin)
         return result
-    except (CLIError, ConfigError, RecordError, ValueError) as exc:
+    except (CLIError, ConfigError, RecordError, LandError, ValueError) as exc:
         err.write(f"susanoo: error: {exc}\n")
         return EXIT_FAIL
     except KeyboardInterrupt:

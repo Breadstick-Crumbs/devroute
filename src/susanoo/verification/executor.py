@@ -218,6 +218,11 @@ def _execute_step(
         recorded_at=_now(),
         output_tail=tail,
     )
+    if status == "timeout":
+        result.note = (
+            f"stopped after {timeout:g} s; if the check needs longer (a large suite, or a busy machine), "
+            "raise the limit with `--timeout <seconds>` or `[verify] timeout_seconds` in .susanoo/config.toml"
+        )
     cache[key] = result
     return result
 
