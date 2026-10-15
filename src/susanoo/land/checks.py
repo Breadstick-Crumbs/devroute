@@ -25,8 +25,9 @@ from pathlib import Path
 from typing import Any
 
 from susanoo import __version__
-from susanoo.config import Config, ConfigError
+from susanoo.config import Config, ConfigError, load_toml_data, load_toml_file
 from susanoo.discovery.executables import project_dirs, resolve_executable
+from susanoo.paths import project_config_path
 from susanoo.verification.executor import (
     KILL_GRACE_SECONDS,
     OUTPUT_TAIL_CHARS,
@@ -196,6 +197,24 @@ def load_settings(config: Config, plan_steps: list[Any], timeout: float) -> Land
     return LandSettings(
         unique, compares, setup, dict(env), timeout, land.get("keep_both"), skipped, require_review
     )
+
+
+def base_require_review(tree: Path) -> bool:
+    """``[land] require_review`` from the defaults and ``tree``'s own project file only.
+
+    The user configuration is left out: it lives outside the project, where an agent can change it
+    without a merge, and this setting is a merge gate. The base's project file changes only through
+    a merge, which the user approves.
+    """
+    value = load_toml_data("defaults.toml").get("land", {}).get("require_review", True)
+    path = project_config_path(tree)
+    if path.is_file():
+        land = load_toml_file(path).get("land", {})
+        if isinstance(land, dict) and "require_review" in land:
+            value = land["require_review"]
+    if not isinstance(value, bool):
+        raise ConfigError("[land] require_review must be true or false")
+    return value
 
 
 def _expand(value: str, tree: Path) -> str:

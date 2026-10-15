@@ -181,10 +181,16 @@ def review_for(reviews: list[dict[str, Any]], tip: str, tool: str = "code-review
     return None
 
 
-def review_status(reviews: list[dict[str, Any]], tip: str) -> dict[str, str]:
-    """Per review tool, the newest review of exactly ``tip``: its status, or ``missing``."""
+def review_status(reviews: list[dict[str, Any]], commits: list[str]) -> dict[str, str]:
+    """Per review tool, the newest review of the first of ``commits`` that has one: its status, or
+    ``missing``. ``commits`` is a tip, then the commits a review of which also covers it (merges of
+    the base that add nothing, newest first), so a review of the tip itself always decides first."""
     status: dict[str, str] = {}
     for tool in REVIEW_TOOLS:
-        found = review_for(reviews, tip, tool)
-        status[tool] = str(found.get("status")) if found else "missing"
+        status[tool] = "missing"
+        for commit in commits:
+            found = review_for(reviews, commit, tool)
+            if found is not None:
+                status[tool] = str(found.get("status"))
+                break
     return status

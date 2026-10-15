@@ -127,8 +127,8 @@ def unverified_steps(
     With ``reviews`` (review records, see ``land.reviews``), a step a review stands for
     (``review_tools``) holds instead when the gate accepts it and the newest review of ``tip`` by
     each of its tools passed; its reported evidence then needs no ``head``, and an explained skip
-    or a review of another commit does not count. Never looser than the gate: a step the gate
-    refuses never holds.
+    alone or a review of another commit does not count. Never looser than the gate: a step the
+    gate refuses never holds.
     """
     demanded = _demanded(route)
     missing, failing = evidence_status(route, evidence)
