@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 from susanoo.analyzer import CapabilityRequirement, assess
-from susanoo.discovery import Finding, Inventory, Status
+from susanoo.discovery import Finding, Inventory, Status, executables
+from susanoo.pipeline import plan_task
 from susanoo.router import route
 from susanoo.selection import candidates_for, recommend
 from susanoo.verification import (
@@ -19,6 +21,7 @@ from susanoo.verification import (
     select_steps,
     verification_requirements,
 )
+from tests.conftest import write
 
 
 def plan_for(task, config, profiles, registry, findings=(), override=None):
@@ -74,7 +77,7 @@ def test_step_modes_reflect_tools(config, profiles, registry):
     )
     plan = plan_for("Fix the crash when saving settings", config, profiles, registry, [pytest_finding])
     unit = plan.get("unit_tests")
-    assert unit.mode == "ready" and unit.command == ["pytest", "-q"]
+    assert unit.mode == "ready" and unit.command == ["python", "-m", "pytest", "-q"]
     assert plan.get("static_analysis").mode == "unavailable"
 
 
@@ -98,7 +101,7 @@ def test_python_checks_run_in_external_environment(config, profiles, registry):
     unit = plan_for("Fix the crash when saving settings", config, profiles, registry, findings).get(
         "unit_tests"
     )
-    assert unit.mode == "ready" and unit.command == ["poetry", "run", "pytest", "-q"]
+    assert unit.mode == "ready" and unit.command == ["poetry", "run", "python", "-m", "pytest", "-q"]
 
 
 def test_python_checks_become_manual_without_environment_manager(config, profiles, registry):
@@ -126,7 +129,7 @@ def test_tools_declared_in_external_environment_are_usable(registry):
     [rec] = recommend([CapabilityRequirement("unit_testing", "required")], inv, registry)
     assert rec.selected is not None and rec.selected.id == "pytest"
     assert rec.selected.status is Status.INSTALLED_UNVERIFIED
-    assert rec.selected.command == ["poetry", "run", "pytest", "-q"]
+    assert rec.selected.command == ["poetry", "run", "python", "-m", "pytest", "-q"]
 
     without_manager = Inventory(
         ".", "", False, {"python": 3}, [declared, _environment(Status.CONFIGURED_INACCESSIBLE)]
@@ -274,6 +277,38 @@ def test_missing_executable_and_timeout(tmp_path: Path):
     results = {e.step: e for e in execute_plan(plan, tmp_path, timeout=0.5)}
     assert results["missing"].status == "error"
     assert results["slow"].status == "timeout"
+
+
+def test_unit_tests_import_an_uninstalled_flat_layout_package(
+    tmp_path: Path, home: Path, monkeypatch: pytest.MonkeyPatch, config
+):
+    # The A/B pilot's project: package at the root, not installed, conftest.py only in tests/, and a
+    # README that says `python -m pytest`. Bare `pytest` puts tests/ on sys.path, not the root, so a
+    # correct fix failed with ModuleNotFoundError and the evidence gate would have blocked it.
+    root = tmp_path / "project"
+    write(
+        root,
+        "pyproject.toml",
+        '[project]\nname = "ledgerly"\nversion = "1.0"\n\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+    )
+    write(root, "ledgerly/__init__.py", "def total(amounts):\n    return sum(amounts)\n")
+    write(root, "tests/conftest.py", "")
+    write(
+        root,
+        "tests/test_total.py",
+        "from ledgerly import total\n\n\ndef test_total():\n    assert total([1, 2]) == 3\n",
+    )
+    # The interpreter running this suite has pytest; nothing else may decide the import path.
+    monkeypatch.setenv("PATH", str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setattr(executables, "_cache", None)
+    for name in ("PYTHONPATH", "PYTEST_ADDOPTS"):
+        monkeypatch.delenv(name, raising=False)
+
+    plan = plan_task("Fix the crash when saving settings", root, config, home=home).verification
+    unit = plan.get("unit_tests")
+    assert unit is not None and unit.mode == "ready"
+    [evidence] = execute_plan(plan, root, timeout=120, only={"unit_tests"})
+    assert evidence.status == "passed", evidence.output_tail
 
 
 def test_reported_evidence_is_marked_reported():

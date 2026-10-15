@@ -34,6 +34,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - UI reference suite `ui-v1.toml` (15 cases, labeled before any UI heuristic changed): `susanoo eval --suite src/susanoo/data/suites/ui-v1.toml` from a source checkout. With v0.7 heuristics it agrees on 8 of 15 with 0 risk-floor violations; visual redesigns and presentational checkout changes route DEEP.
 - Routing suites can list `controls` a case's route must include; a missing control counts as a risk-floor violation, and an unknown control id is a suite error.
 
+### Fixed
+- `susanoo verify --execute` runs pytest as `python -m pytest -q` (was `pytest -q`). The module form always puts the project root on `sys.path`; the `pytest` script does so only for some layouts, so a flat-layout project whose package is not installed (conftest.py only in `tests/`) failed its unit and integration checks with `ModuleNotFoundError` on correct work, and the evidence gate blocked it. `python` is the project's environment (`.venv`, `venv`, `env`) when there is one; otherwise it is the interpreter the discovered `pytest` script belongs to (its `#!` line or a `python` beside it), so pipx or `uv tool` installs and systems without a `python` command (macOS, Debian) still run the same pytest as before. Poetry and Pipenv projects run `poetry run python -m pytest -q` and `pipenv run python -m pytest -q`.
+
 ## [0.7.0] - 2026-10-14
 
 ### Changed
