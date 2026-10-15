@@ -457,10 +457,15 @@ def on_prompt(
     own, envelopes = split_app_envelopes(prompt, cfg)
     if envelopes and not own.strip():
         return _on_app_message(event, root, session, command)
-    kind = classify(prompt, cfg)
     # Asking for autonomy or naming a workflow lowers process, so only the user's own text counts
     # for it; the floor below still reads the whole prompt, the app's blocks included.
     requests = requests_text(own, cfg)
+    # Whether it is a task, and whether it continues the open one, is read from the user's own text
+    # too, so a reminder the app put first does not hide their task. With a stray tag left in it (a
+    # block closed early or left open), the whole prompt counts, as before. The floor and the plan
+    # below still read the whole prompt, so this never lowers a route.
+    said = requests if envelopes and requests.strip() else prompt
+    kind = classify(said, cfg)
     hands_off = wants_autonomy(requests, cfg)
     # Every message is remembered (as its keyword floor, not its text), so a route Claude makes
     # later in this turn is never lower than the message, and only the user picks a lighter one.
@@ -497,7 +502,7 @@ def on_prompt(
     if (
         state is not None
         and not higher
-        and (unfinished or _is_follow_up(prompt, state, cfg, _last_activity(store, state, hook_record)))
+        and (unfinished or _is_follow_up(said, state, cfg, _last_activity(store, state, hook_record)))
     ):
         # A follow-up to the task in progress: keep its route and remind Claude of it. A task with
         # unfinished work is never closed automatically; Claude is told instead.
