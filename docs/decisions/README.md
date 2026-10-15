@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Short records of decisions that shape Susanoo, written when the decision was made. Each lists the options considered and why one was chosen. To revisit a decision, add a new record that supersedes the old one instead of editing it.
+Short records of decisions that shape Susanoo, written when the decision was made. Each lists the options considered and why one was chosen. A record that adds a feature also says what the model and Claude Code already provide for it, and the exact gap Susanoo fills, so Susanoo builds checks and gates rather than what they already do. To revisit a decision, add a new record that supersedes the old one instead of editing it.
 
 | ADR | Decision |
 |---|---|
@@ -18,5 +18,6 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0012](0012-delegation-plans.md) | Task decomposition and delegation plans: Claude drafts a tool-neutral JSON plan; Susanoo checks it and gives each unit a merge verdict from its own copy of the plan; Claude Code and Scion are optional executors (proposed) |
 | [0013](0013-leases-and-landing-queue.md) | Leases, interface-change notices, and an evidence-gated local landing queue: the queue comes first and its records decide whether leases and notices are built (proposed) |
 | [0014](0014-susanoo-land.md) | `susanoo land` tests agent branches on one combined tree, finds the branch that breaks it, and merges pull requests only with the user's `--merge` |
+| [0015](0015-lead-session-and-board.md) | One lead session per repository hands each change to a worker through the app's own session features, has it reviewed with `/code-review` and landed with `susanoo land`; Susanoo adds only checks: evidence and reviews bound to a commit, a read-only `susanoo board`, and a merge gate (proposed) |
 | [0016](0016-app-messages-are-not-the-users-message.md) | A prompt made only of the app's blocks (other sessions, notifications, status reminders) is not the user's message: it leaves routes and the recorded user message alone |
 | [0017](0017-route-records-across-worktrees.md) | `susanoo verify`, `evidence`, and `outcome` find a route in the repository's other checkouts (git worktrees); evidence is recorded next to the route with the checkout and commit it ran on, and the gate counts runs per checkout |
