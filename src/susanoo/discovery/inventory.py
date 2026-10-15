@@ -22,9 +22,11 @@ from susanoo.discovery.models import Finding, Inventory, Status
 from susanoo.discovery.project import (
     BUILD_FILES,
     ProjectFacts,
+    configured_source,
     is_github_remote,
     normalize_package,
     scan_project,
+    split_source,
 )
 from susanoo.registry import Registry, ToolSpec
 from susanoo.ui import detect_design_files, detect_domains
@@ -164,6 +166,16 @@ def detect_tool(
     else:
         status = Status.CONFIGURED_INACCESSIBLE
 
+    detail: dict[str, object] = {"registry_id": tool.id, "python_declared": bool(declared_py)}
+    for variant in tool.configured_run:
+        source = configured_source(facts, variant.when)
+        if source:
+            # Only picks between registry commands; config values never reach the argv.
+            detail["run"] = {cap: list(argv) for cap, argv in {**tool.run, **variant.run}.items()}
+            name, section, key = split_source(source)
+            evidence.append(f"follows the project's {name} [{section}]{' ' + key if key else ''}")
+            break
+
     return Finding(
         id=f"tool:{tool.id}",
         kind="tool",
@@ -173,7 +185,7 @@ def detect_tool(
         evidence=evidence,
         scope="project" if configured else "system",
         tool_kind=tool.kind,
-        detail={"registry_id": tool.id, "python_declared": bool(declared_py)},
+        detail=detail,
     )
 
 
@@ -265,7 +277,6 @@ def build_inventory(
     environ = os.environ if env is None else env
     facts = scan_project(root)
     facts.package_manager = detect_package_manager(facts, registry)
-    warnings = list(facts.warnings)
     findings: list[Finding] = []
 
     for language, count in sorted(facts.languages.items(), key=lambda kv: -kv[1]):
@@ -323,6 +334,8 @@ def build_inventory(
         if finding is not None:
             findings.append(finding)
 
+    # After tool detection, which may read tool config files and add warnings.
+    warnings = list(facts.warnings)
     if include_claude_code:
         # Imported here to avoid a package import cycle (the adapter uses discovery.models).
         from susanoo.adapters.claude_code.discovery import discover_claude_code

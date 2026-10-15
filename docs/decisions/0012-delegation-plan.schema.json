@@ -1,0 +1,416 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Breadstick-Crumbs/susanoo/docs/decisions/0012-delegation-plan.schema.json",
+  "title": "Susanoo delegation plan (version 1, proposed)",
+  "description": "Sketch for ADR 0012. Tool-neutral: names no executor. Structural rules only; the cross-field rules (no overlapping owns or serial_paths between concurrent units, acyclic ordering, one provider per interface, floors matching the parent route, symlink-safe and normalized paths) are checked by `susanoo delegate check`, which JSON Schema cannot express.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "plan_id",
+    "revision",
+    "parent_route_id",
+    "base",
+    "units",
+    "interfaces",
+    "coordinator_owns",
+    "integration"
+  ],
+  "properties": {
+    "format": {
+      "const": "susanoo.delegation-plan/1"
+    },
+    "plan_id": {
+      "$ref": "#/$defs/id",
+      "description": "Stable across revisions."
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "supersedes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The revision this one replaces; absent on revision 1."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "parent_route_id": {
+      "type": "string",
+      "description": "The route record (su-...) of the whole task. Its mandatory controls flow into every unit's floor."
+    },
+    "task": {
+      "type": "string",
+      "description": "Optional. Omitted when records store only a hash of the task (ADR 0004)."
+    },
+    "task_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "commit"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "description": "Full SHA-1 or SHA-256 commit id. Frozen interfaces must already exist here."
+        }
+      }
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/unit"
+      }
+    },
+    "interfaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/interface"
+      }
+    },
+    "coordinator_owns": {
+      "type": "array",
+      "description": "Paths no unit may change; the coordinator changes them after merging. Defaults come from data (lockfiles, CHANGELOG.md, manifests, version files, .susanoo/).",
+      "items": {
+        "$ref": "#/$defs/path"
+      },
+      "uniqueItems": true
+    },
+    "serial_paths": {
+      "type": "array",
+      "description": "Directories where at most one of the units that can run concurrently may own anything. Defaults come from data (migration folders).",
+      "items": {
+        "$ref": "#/$defs/path"
+      },
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "type": "array",
+      "description": "Packages units need. The coordinator adds them to the base before fan-out, or between waves; units never edit manifests or lockfiles.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "for_units",
+          "manifest",
+          "requirement",
+          "added_on_base"
+        ],
+        "properties": {
+          "for_units": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "manifest": {
+            "$ref": "#/$defs/path"
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "added_on_base": {
+            "type": "boolean",
+            "description": "True when it is already committed on base.commit; otherwise the coordinator adds it before the first wave containing one of for_units."
+          }
+        }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verification"
+      ],
+      "properties": {
+        "merge_order": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true,
+          "description": "Optional. Must be a topological order of `after`; computed from the schedule when omitted."
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "reasons"
+      ],
+      "description": "Computed by `susanoo delegate check`; any value Claude writes is replaced.",
+      "properties": {
+        "mode": {
+          "enum": [
+            "parallel",
+            "serial",
+            "single_agent"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "waves"
+      ],
+      "description": "Computed by `susanoo delegate check`; any value Claude writes is replaced.",
+      "properties": {
+        "waves": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/id"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+      "description": "Also used in branch and agent names, so it stays short and shell-safe."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f])(?![/\\x5c])(?![A-Za-z]:)(?!.*//)(?!(.*/)?\\.{1,2}(/|$))(?!(.*/)?[.][Gg][Ii][Tt](/|$))[^\\x5c*?\\[\\]{}]+$",
+      "description": "Relative POSIX path inside the repository: a file, or a directory ending in '/'. Rejects absolute paths, drive letters, empty, '.' and '..' segments, '.git' in any segment and letter case, backslashes, control characters, and glob characters. Symlink escapes, case folding, and NFC normalization are handled by `delegate check`, not here."
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "reason"
+      ],
+      "properties": {
+        "step": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "A verification step id from Susanoo's data (unit_tests, integration_tests, migration_check, security_scan, independent_review, visual_check, ...)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required"
+      ],
+      "properties": {
+        "required": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "recommended": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "brief",
+        "owns",
+        "after",
+        "verification",
+        "floor"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "brief": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Self-contained task text for the unit agent. Data, not instructions to Susanoo."
+        },
+        "feature_area": {
+          "type": "string",
+          "description": "The detected feature area this unit came from, when it came from one."
+        },
+        "owns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/path"
+          },
+          "description": "Paths this unit may change, delete, or create. Disjoint from every unit it can run concurrently with."
+        },
+        "reads": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/path"
+          },
+          "description": "Informational: paths the unit depends on but must not change."
+        },
+        "provides": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "consumes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "after": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "description": "Units whose branches must be merged before this one starts."
+        },
+        "verification": {
+          "$ref": "#/$defs/verification"
+        },
+        "floor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile",
+            "controls"
+          ],
+          "description": "The unit's own route can never go below this.",
+          "properties": {
+            "profile": {
+              "enum": [
+                "fast",
+                "standard",
+                "deep"
+              ]
+            },
+            "controls": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              },
+              "description": "Mandatory control ids inherited from the parent route (security-review, data-safety, ...)."
+            }
+          }
+        },
+        "size": {
+          "enum": [
+            "small",
+            "medium",
+            "large"
+          ],
+          "description": "Claude's estimate; feeds the single-agent recommendation."
+        }
+      }
+    },
+    "interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "provider",
+        "consumers",
+        "location",
+        "contract",
+        "frozen"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "python_api",
+            "http_api",
+            "cli",
+            "schema",
+            "file_format",
+            "event",
+            "other"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^([a-z0-9][a-z0-9-]{0,39}|base)$",
+          "description": "The unit that implements it, or 'base' when it already exists on the base commit."
+        },
+        "consumers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "location": {
+          "$ref": "#/$defs/path",
+          "description": "Where the contract is defined (stub, type, schema, or spec file)."
+        },
+        "contract": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short statement of what consumers may rely on."
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "True: the contract is committed on the base commit, nobody owns its location during the plan, and consumers need not wait for the provider."
+        }
+      }
+    }
+  }
+}
