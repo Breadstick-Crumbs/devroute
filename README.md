@@ -95,6 +95,7 @@ susanoo outcome latest --status completed --minutes 25              # record how
 susanoo report                                                      # records, summaries, suggestions
 susanoo eval                                                        # routing behavior on the reference suite
 susanoo land 52 53                                                  # test PRs on one combined tree; --merge (yours) merges
+susanoo review record 57 --tip 1a2b3c4 --status passed --tool code-review  # a review, bound to the commit it saw
 ```
 
 ## How it works

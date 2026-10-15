@@ -1,6 +1,7 @@
 """Land records: one JSON line per run, shared by every worktree of a repository.
 
-They live in ``<git common dir>/susanoo/records/land.jsonl`` rather than in a worktree's
+They live in ``<git common dir>/susanoo/records/land.jsonl`` (review records, ADR 0015, next to
+them in ``reviews.jsonl``) rather than in a worktree's
 ``.susanoo/records``, because agent worktrees are deleted after their session. They are local,
 never committed, and never pushed. On Windows an antivirus scanner or another process can hold
 the file for a moment, so writes retry.
@@ -27,12 +28,12 @@ GO_MIN_AUTO_RESOLVED = 5
 GO_MAX_MEDIAN_OVERHEAD_S = 60.0
 
 
-def land_records_path(common: Path) -> Path:
-    return common / "susanoo" / "records" / LAND_FILE
+def land_records_path(common: Path, name: str = LAND_FILE) -> Path:
+    return common / "susanoo" / "records" / name
 
 
-def append_record(common: Path, record: dict[str, Any]) -> Path:
-    path = land_records_path(common)
+def append_record(common: Path, record: dict[str, Any], name: str = LAND_FILE) -> Path:
+    path = land_records_path(common, name)
     line = (json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
     for attempt in range(WRITE_ATTEMPTS):
         try:
@@ -52,8 +53,8 @@ def append_record(common: Path, record: dict[str, Any]) -> Path:
     return path  # pragma: no cover
 
 
-def read_records(common: Path) -> list[dict[str, Any]]:
-    path = land_records_path(common)
+def read_records(common: Path, name: str = LAND_FILE) -> list[dict[str, Any]]:
+    path = land_records_path(common, name)
     for attempt in range(WRITE_ATTEMPTS):
         try:
             text = path.read_text(encoding="utf-8") if path.is_file() else ""

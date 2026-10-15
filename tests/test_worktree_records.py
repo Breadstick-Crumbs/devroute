@@ -15,7 +15,8 @@ from susanoo.cli import main
 from susanoo.enforcement.hooks import SessionState, handle
 from susanoo.enforcement.state import active_route, evidence_status
 from susanoo.evaluation.store import RecordStore
-from susanoo.paths import global_manifest_path, head_commit, sibling_checkouts
+from susanoo.paths import global_manifest_path, sibling_checkouts
+from susanoo.verification.commit import tree_state
 from susanoo.verification.executor import Evidence
 from tests.conftest import GATED_TOML
 
@@ -129,8 +130,6 @@ def test_corrupt_git_files_are_ignored(repo: tuple[Path, Path], tmp_path: Path):
     entry.mkdir()
     (entry / "gitdir").write_text("C:/some" + chr(0) + "where/.git", encoding="utf-8")
     assert [p.resolve() for p in sibling_checkouts(main_root)] == [worktree.resolve()]
-    (main_root / ".git" / "HEAD").write_text("ref: refs/heads/a" + chr(0) + "b", encoding="utf-8")
-    assert head_commit(main_root) is None
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
@@ -149,60 +148,19 @@ def test_real_git_worktree(tmp_path: Path):
         head = subprocess.run(  # nosec B603
             [*git, "rev-parse", "HEAD"], cwd=checkout, check=True, capture_output=True, text=True
         ).stdout.strip()
-        assert head_commit(checkout) == head
-    assert head_commit(main_root) != head_commit(worktree)
-
-
-# --- the commit a checkout has checked out ------------------------------------------------
-
-
-def test_head_commit_follows_a_worktrees_branch_to_the_common_refs(repo: tuple[Path, Path]):
-    main_root, worktree = repo
-    assert head_commit(worktree) == COMMIT
-    assert head_commit(main_root) is None  # no HEAD written in the fixture's main `.git`
-
-
-def test_head_commit_reads_detached_heads_and_packed_refs(tmp_path: Path):
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
-    (git_dir / "HEAD").write_text(COMMIT + "\n", encoding="utf-8")
-    assert head_commit(tmp_path) == COMMIT
-    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
-    assert head_commit(tmp_path) is None
-    (git_dir / "packed-refs").write_text(
-        f"# pack-refs with: peeled fully-peeled sorted\n{'f' * 40} refs/heads/other\n{COMMIT} refs/heads/main\n",
-        encoding="utf-8",
-    )
-    assert head_commit(tmp_path) == COMMIT
-
-
-@pytest.mark.parametrize(
-    "head",
-    [
-        "ref: ../../outside",
-        "ref: refs/../../outside",
-        r"ref: refs/heads\..\..\..\outside",
-        "ref: refs/heads/C:/outside",
-        "not a commit",
-        "",
-    ],
-)
-def test_head_commit_refuses_odd_heads(tmp_path: Path, head: str):
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
-    (tmp_path / "outside").write_text(COMMIT, encoding="utf-8")
-    (git_dir / "HEAD").write_text(head, encoding="utf-8")
-    assert head_commit(tmp_path) is None
-    assert head_commit(tmp_path / "no-repo") is None
+        assert tree_state(checkout).head == head
+        assert tree_state(checkout).dirty is False
+    assert tree_state(main_root).head != tree_state(worktree).head
 
 
 # --- verify, evidence, and outcome across checkouts --------------------------------------
 
 
 def test_verify_in_worktree_records_executed_evidence_on_main_route(
-    repo: tuple[Path, Path], ran_in: list[Path], monkeypatch: pytest.MonkeyPatch
+    repo: tuple[Path, Path], ran_in: list[Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     main_root, worktree = repo
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
     record_id = route_in(main_root, monkeypatch)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
     code, out, err = run(worktree, "verify", "--execute", "--record", record_id)
@@ -213,7 +171,8 @@ def test_verify_in_worktree_records_executed_evidence_on_main_route(
     evidence = RecordStore(main_root).read("evidence")
     assert evidence and all(e["record_id"] == record_id and e["source"] == "executed" for e in evidence)
     assert {e["checkout"] for e in evidence} == {str(worktree.resolve())}
-    assert {e["commit"] for e in evidence} == {COMMIT}
+    # The fixture's `.git` files are not a repository git can read: the commit is unknown.
+    assert all(e["head"] is None and e["dirty"] is None and "commit" not in e for e in evidence)
     assert RecordStore(worktree).read("evidence") == []
     assert str(main_root.resolve()) in out
     # The evidence gate accepts it.

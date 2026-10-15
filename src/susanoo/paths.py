@@ -164,38 +164,6 @@ def sibling_checkouts(root: Path) -> list[Path]:
     return found
 
 
-_SHA = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
-
-
-def head_commit(checkout: Path) -> str | None:
-    """The commit checked out at ``checkout`` (its ``HEAD``), or None when it cannot be read.
-
-    Read-only and without running git: follows ``HEAD`` to a loose ref in the worktree's or the
-    common git directory, then to ``packed-refs``. Uncommitted changes are not part of it.
-    """
-    git_dir = _git_dir(checkout)
-    head = _read_pointer(git_dir / "HEAD") if git_dir else None
-    if git_dir is None or head is None:
-        return None
-    if not head.startswith("ref:"):
-        return head if _SHA.fullmatch(head) else None
-    ref = head[len("ref:") :].strip()
-    parts = ref.split("/")
-    if parts[0] != "refs" or "\\" in ref or ":" in ref or any(part in ("", ".", "..") for part in parts):
-        return None
-    common = _common_dir(git_dir)
-    for base in (git_dir, common):
-        value = _read_pointer(base / ref)
-        if value is not None:
-            return value if _SHA.fullmatch(value) else None
-    packed = _read_pointer(common / "packed-refs") or ""
-    for line in packed.splitlines():
-        sha, _, name = line.partition(" ")
-        if name == ref and _SHA.fullmatch(sha):
-            return sha
-    return None
-
-
 def state_dir(root: Path) -> Path:
     """The project's own state directory (project mode)."""
     return root / STATE_DIR

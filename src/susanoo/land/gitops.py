@@ -106,6 +106,19 @@ class Git:
         return sorted({p for p in raw.split("\0") if p})
 
 
+def pick_tip(repo: Git, branch: str, local: str | None, remote: str | None, remote_name: str) -> str:
+    """A branch's current tip: its local or its remote copy, whichever contains the other."""
+    if local and remote:
+        if local == remote or repo.is_ancestor(local, remote):
+            return remote
+        if repo.is_ancestor(remote, local):
+            return local
+        raise LandError(f"{branch}: the local branch and {remote_name}/{branch} have diverged")
+    if local or remote:
+        return str(local or remote)
+    raise LandError(f"no branch named {branch}, locally or on {remote_name}")
+
+
 def git_version() -> tuple[int, int]:
     text = Git(Path.cwd()).out("--version")
     match = re.search(r"(\d+)\.(\d+)", text)
