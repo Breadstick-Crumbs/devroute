@@ -56,6 +56,8 @@ def render_assessment(a: Assessment) -> str:
         lines.append(f"- Feature areas: {', '.join(a.areas)}")
     if a.negated:
         lines.append(f"- Ignored as out of scope: {', '.join(repr(p) for p in a.negated)}")
+    if a.presentational:
+        lines.append(f"- Ignored as a purely visual change: {', '.join(a.presentational)}")
     lines += ["", "| Dimension | Level | Why |", "|---|---|---|"]
     for dim in a.dimensions.values():
         why = "; ".join(r for r in dim.reasons if not r.startswith("baseline")) or "-"

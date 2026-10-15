@@ -4,18 +4,6 @@ description: Assess a software engineering task, choose a fitting workflow (FAST
 argument-hint: "[--profile fast|standard|deep] <task description>"
 disable-model-invocation: true
 allowed-tools: Bash(susanoo route *), Bash(susanoo raise *), Bash(susanoo assess *), Bash(susanoo research *), Bash(susanoo evidence *), Bash(susanoo outcome *), Bash(susanoo report *), Bash(python -m susanoo route *)
-hooks:
-  PreToolUse:
-    - matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell"
-      hooks:
-        - type: command
-          command: "susanoo hook pre-tool-use"
-          timeout: 30
-  Stop:
-    - hooks:
-        - type: command
-          command: "susanoo hook stop"
-          timeout: 30
 ---
 
 # Susanoo

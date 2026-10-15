@@ -83,6 +83,119 @@ def find_project_root(start: Path | None = None) -> Path:
     return origin
 
 
+def _resolved(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except (OSError, ValueError):  # ValueError: a NUL byte from a corrupt git file
+        return path.absolute()
+
+
+def _canonical(path: Path) -> str:
+    return os.path.normcase(str(_resolved(path)))
+
+
+def _read_pointer(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):  # ValueError includes UnicodeDecodeError and NUL bytes in `path`
+        return None
+    return text if text and "\x00" not in text else None
+
+
+def _git_dir(checkout: Path) -> Path | None:
+    """The git directory of a working tree: its ``.git`` folder, or where its ``.git`` file points."""
+    dot = checkout / ".git"
+    if dot.is_dir():
+        return dot
+    text = _read_pointer(dot) if dot.is_file() else None
+    if text is None or not text.startswith("gitdir:"):
+        return None
+    target = Path(text[len("gitdir:") :].strip())
+    return target if target.is_absolute() else checkout / target
+
+
+def _common_dir(git_dir: Path) -> Path:
+    """The repository's shared git directory (a linked worktree's ``commondir``)."""
+    text = _read_pointer(git_dir / "commondir")
+    if text is None:
+        return git_dir
+    target = Path(text)
+    return target if target.is_absolute() else git_dir / target
+
+
+def sibling_checkouts(root: Path) -> list[Path]:
+    """The other working trees of the git repository at ``root`` (main checkout and worktrees).
+
+    Read-only and without running git: follows ``.git`` files, ``commondir``, and
+    ``<common dir>/worktrees/*/gitdir``. A folder counts only when the repository lists it (as its
+    main working tree or a registered worktree) and its own ``.git`` leads back to the
+    repository, so neither a stale or edited worktree entry nor a hand-written ``.git`` file in an
+    unregistered folder connects an unrelated folder. ``root`` must be listed too, or there are none.
+    """
+    git_dir = _git_dir(root)
+    if git_dir is None:
+        return []
+    common = _resolved(_common_dir(git_dir))  # resolved first: `.parent` of `wt/../..` is wrong
+    key = _canonical(common)
+    candidates = [common.parent]  # the main working tree, when the repository is not bare
+    try:
+        entries = sorted((common / "worktrees").iterdir())
+    except OSError:
+        entries = []
+    for entry in entries:
+        text = _read_pointer(entry / "gitdir")
+        if text is not None:
+            target = Path(text)
+            candidates.append((target if target.is_absolute() else entry / target).parent)
+    here = _canonical(root)
+    if here not in {_canonical(candidate) for candidate in candidates}:
+        return []
+    seen = {here}
+    found: list[Path] = []
+    for candidate in candidates:
+        name = _canonical(candidate)
+        if name in seen or not candidate.is_dir():
+            continue
+        other = _git_dir(candidate)
+        if other is None or _canonical(_common_dir(other)) != key:
+            continue
+        seen.add(name)
+        found.append(_resolved(candidate))
+    return found
+
+
+_SHA = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
+
+
+def head_commit(checkout: Path) -> str | None:
+    """The commit checked out at ``checkout`` (its ``HEAD``), or None when it cannot be read.
+
+    Read-only and without running git: follows ``HEAD`` to a loose ref in the worktree's or the
+    common git directory, then to ``packed-refs``. Uncommitted changes are not part of it.
+    """
+    git_dir = _git_dir(checkout)
+    head = _read_pointer(git_dir / "HEAD") if git_dir else None
+    if git_dir is None or head is None:
+        return None
+    if not head.startswith("ref:"):
+        return head if _SHA.fullmatch(head) else None
+    ref = head[len("ref:") :].strip()
+    parts = ref.split("/")
+    if parts[0] != "refs" or "\\" in ref or ":" in ref or any(part in ("", ".", "..") for part in parts):
+        return None
+    common = _common_dir(git_dir)
+    for base in (git_dir, common):
+        value = _read_pointer(base / ref)
+        if value is not None:
+            return value if _SHA.fullmatch(value) else None
+    packed = _read_pointer(common / "packed-refs") or ""
+    for line in packed.splitlines():
+        sha, _, name = line.partition(" ")
+        if name == ref and _SHA.fullmatch(sha):
+            return sha
+    return None
+
+
 def state_dir(root: Path) -> Path:
     """The project's own state directory (project mode)."""
     return root / STATE_DIR

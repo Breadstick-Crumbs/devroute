@@ -15,15 +15,18 @@ from susanoo.discovery.executables import (
     PROJECT_ENV_DIRS,
     describe_location,
     has_project_python_env,
+    python_package_installed,
     resolve_executable,
 )
 from susanoo.discovery.models import Finding, Inventory, Status
 from susanoo.discovery.project import (
     BUILD_FILES,
     ProjectFacts,
+    configured_source,
     is_github_remote,
     normalize_package,
     scan_project,
+    split_source,
 )
 from susanoo.registry import Registry, ToolSpec
 from susanoo.ui import detect_design_files, detect_domains
@@ -65,8 +68,13 @@ def detect_tool(
     env: Mapping[str, str],
     verify: bool,
     which: Callable[[str], str | None] | None = None,
+    external_environment: bool = False,
 ) -> Finding | None:
-    """Detect one registry tool without executing it (unless ``verify`` is set)."""
+    """Detect one registry tool without executing it (unless ``verify`` is set).
+
+    ``external_environment``: Python tools run through an environment manager's environment
+    outside the project (Poetry, Pipenv, uv), not the one an executable on PATH belongs to.
+    """
     if tool.kind == "mcp":
         return None  # MCP servers are discovered from Claude Code configuration instead.
     required_files = [f for f in tool.requires_files if facts.has_file(f)]
@@ -77,6 +85,11 @@ def detect_tool(
         return which(name) if which is not None else resolve_executable(name, facts.root)
 
     evidence: list[str] = [f"found: {', '.join(required_files[:3])}"] if required_files else []
+    if tool.requires_python_packages:
+        found_package = _required_python_package(tool, facts, lookup, external_environment)
+        if found_package is None:
+            return None
+        evidence.append(found_package)
     runnable = False
     configured = False
     verified = False
@@ -153,6 +166,16 @@ def detect_tool(
     else:
         status = Status.CONFIGURED_INACCESSIBLE
 
+    detail: dict[str, object] = {"registry_id": tool.id, "python_declared": bool(declared_py)}
+    for variant in tool.configured_run:
+        source = configured_source(facts, variant.when)
+        if source:
+            # Only picks between registry commands; config values never reach the argv.
+            detail["run"] = {cap: list(argv) for cap, argv in {**tool.run, **variant.run}.items()}
+            name, section, key = split_source(source)
+            evidence.append(f"follows the project's {name} [{section}]{' ' + key if key else ''}")
+            break
+
     return Finding(
         id=f"tool:{tool.id}",
         kind="tool",
@@ -162,8 +185,33 @@ def detect_tool(
         evidence=evidence,
         scope="project" if configured else "system",
         tool_kind=tool.kind,
-        detail={"registry_id": tool.id, "python_declared": bool(declared_py)},
+        detail=detail,
     )
+
+
+def _required_python_package(
+    tool: ToolSpec, facts: ProjectFacts, lookup: Callable[[str], str | None], external_environment: bool
+) -> str | None:
+    """Evidence that one of ``tool.requires_python_packages`` is where the tool runs, or ``None``.
+
+    The project's own environment decides by what is installed in it. An executable found on PATH
+    may not be the one the project uses, so the project must also declare the package. An
+    environment outside the project (Poetry, uv) cannot be inspected, so the declaration decides.
+    An environment that cannot be told apart (a shim, several Python versions) counts as missing:
+    a plugin option passed to a tool without the plugin fails correct work.
+    """
+    declared = [p for p in tool.requires_python_packages if normalize_package(p) in facts.python_packages]
+    executable = next((path for name in tool.binaries if (path := lookup(name))), None)
+    in_project = executable is not None and _inside(executable, facts.root)
+    if executable is None or (external_environment and not in_project):
+        return f"declared in Python dependencies: {', '.join(declared)}" if declared else None
+    if not (in_project or declared):
+        return None
+    where = describe_location(executable, facts.root)
+    for package in declared or tool.requires_python_packages:
+        if python_package_installed(package, executable):
+            return f"{package} installed {where}"
+    return None
 
 
 def detect_environment(
@@ -229,7 +277,6 @@ def build_inventory(
     environ = os.environ if env is None else env
     facts = scan_project(root)
     facts.package_manager = detect_package_manager(facts, registry)
-    warnings = list(facts.warnings)
     findings: list[Finding] = []
 
     for language, count in sorted(facts.languages.items(), key=lambda kv: -kv[1]):
@@ -281,10 +328,14 @@ def build_inventory(
         findings.append(environment)
 
     for tool in registry.tools.values():
-        finding = detect_tool(tool, facts, environ, verify, which=cached_lookup)
+        finding = detect_tool(
+            tool, facts, environ, verify, which=cached_lookup, external_environment=environment is not None
+        )
         if finding is not None:
             findings.append(finding)
 
+    # After tool detection, which may read tool config files and add warnings.
+    warnings = list(facts.warnings)
     if include_claude_code:
         # Imported here to avoid a package import cycle (the adapter uses discovery.models).
         from susanoo.adapters.claude_code.discovery import discover_claude_code

@@ -49,7 +49,7 @@ from susanoo.adapters.claude_code.settings_hooks import (
 )
 from susanoo.adapters.claude_code.usage import fill_outcome
 from susanoo.analyzer import Floor, assess
-from susanoo.config import PROFILE_ORDER, Config, ConfigError, load_config
+from susanoo.config import MAX_TIMEOUT_SECONDS, PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
 from susanoo.enforcement import prompt as prompt_state
 from susanoo.enforcement.auto import (
@@ -62,19 +62,25 @@ from susanoo.enforcement.auto import (
 )
 from susanoo.enforcement.hooks import HOOK_EVENTS, SessionState, handle
 from susanoo.enforcement.hooks import _project_root as _hook_root
-from susanoo.enforcement.state import active_route, evidence_status
+from susanoo.enforcement.state import active_route, evidence_status, find_active_route
 from susanoo.entry import _project_has_own_hooks
 from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
-from susanoo.evaluation.store import RecordError, RecordStore, new_record_id
+from susanoo.evaluation.store import RecordError, RecordStore, find_route, new_record_id
 from susanoo.evaluation.suite import run_suite
+from susanoo.land import LandError, LandOptions, land
+from susanoo.land.gitops import common_dir
+from susanoo.land.records import read_records
+from susanoo.land.records import stats as land_stats
 from susanoo.paths import (
     OFF_FILE,
     find_project_root,
     global_installed,
+    head_commit,
     home_state,
     is_initialized,
     project_mode,
     records_dir,
+    sibling_checkouts,
     state_dir,
 )
 from susanoo.pipeline import TaskPlan, message_floor, plan_task, project_context, route_floor, route_record
@@ -731,12 +737,13 @@ def cmd_report(ctx: Context, stdin: TextIO) -> int:
 def cmd_verify(ctx: Context, stdin: TextIO) -> int:
     args = ctx.args
     record: dict[str, Any] | None = None
+    store = RecordStore(ctx.root)
     if args.task or args.stdin:
         task = _task_text(args, stdin)
         override = args.profile
     else:
         try:
-            record = RecordStore(ctx.root).resolve_route(args.record, _session())
+            store, record = find_route(ctx.root, args.record, _session())
         except RecordError as exc:
             raise CLIError(f'{exc}. Pass the task text instead: susanoo verify "<task>"') from exc
         if not record.get("task"):
@@ -762,27 +769,55 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
         return EXIT_OK
 
     only = set(args.step) if args.step else None
+    timeout = args.timeout if args.timeout is not None else float(ctx.config["verify"]["timeout_seconds"])
     results = execute_plan(
-        plan.verification, ctx.root, timeout=args.timeout, only=only, required_only=args.required_only
+        plan.verification, ctx.root, timeout=timeout, only=only, required_only=args.required_only
     )
     record_id = record.get("id") if record else None
-    if record_id and not args.no_record and is_initialized(ctx.root):
-        store = RecordStore(ctx.root)
-        for item in results:
-            item.record_id = str(record_id)
-            store.append("evidence", item.to_dict())
+    # The route may live in another checkout of this repository (see find_route): the checks ran
+    # here, on this checkout's code, and the evidence says so.
+    origin = _origin(ctx, store)
+    recorded = bool(record_id) and not args.no_record and is_initialized(store.root)
+    evidence = [e.to_dict() for e in results]
+    if recorded:
+        for data in evidence:
+            data["record_id"] = str(record_id)
+            data.update(origin)
+            store.append("evidence", data)
     if args.json:
-        ctx.emit_json({"record_id": record_id, "evidence": [e.to_dict() for e in results]})
+        ctx.emit_json({"record_id": record_id, "evidence": evidence})
     else:
         ctx.emit(render_evidence(results))
+        if recorded and origin:
+            ctx.emit(
+                f"Evidence recorded for route {record_id} in {store.root} (the checks ran in {ctx.root})."
+            )
     required = {s.id for s in plan.verification.steps if s.level == "required"}
     failed = [e for e in results if e.step in required and e.status in ("failed", "error", "timeout")]
     return EXIT_FAIL if failed else EXIT_OK
 
 
+def _timeout_seconds(value: str) -> float:
+    try:
+        seconds = float(value)
+    except ValueError:
+        seconds = float("nan")
+    if not 0 < seconds <= MAX_TIMEOUT_SECONDS:  # also rejects nan and inf
+        raise argparse.ArgumentTypeError(f"expected seconds greater than 0 and at most {MAX_TIMEOUT_SECONDS}")
+    return seconds
+
+
 def _session() -> str | None:
     """The Claude Code session running this command, if any (scopes `latest`)."""
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
+
+
+def _origin(ctx: Context, store: RecordStore) -> dict[str, str]:
+    """Where evidence for a route in another checkout came from: this checkout and its commit."""
+    if store.root == ctx.root:
+        return {}
+    commit = head_commit(ctx.root)
+    return {"checkout": str(ctx.root), **({"commit": commit} if commit else {})}
 
 
 def _require_initialized(ctx: Context) -> RecordStore:
@@ -791,12 +826,23 @@ def _require_initialized(ctx: Context) -> RecordStore:
     return RecordStore(ctx.root)
 
 
-def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
-    store = _require_initialized(ctx)
+def _route_and_store(ctx: Context) -> tuple[RecordStore, dict[str, Any]]:
+    """The route named by ``ctx.args.record`` and the store holding it, here or in another checkout."""
     try:
-        record = store.resolve_route(ctx.args.record, _session())
+        store, record = find_route(ctx.root, ctx.args.record, _session())
     except RecordError as exc:
+        # A worktree without its own records is common; `susanoo init` is the remedy only when no
+        # checkout of the repository has records.
+        if not is_initialized(ctx.root) and not any(is_initialized(c) for c in sibling_checkouts(ctx.root)):
+            raise CLIError("local records are disabled; run `susanoo init` first") from exc
         raise CLIError(str(exc)) from exc
+    if not is_initialized(store.root):
+        raise CLIError("local records are disabled; run `susanoo init` first")
+    return store, record
+
+
+def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
+    store, record = _route_and_store(ctx)
     try:
         item = reported_evidence(
             ctx.args.step, ctx.args.status, ctx.args.evidence_command, ctx.args.note or ""
@@ -804,9 +850,10 @@ def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
     except ValueError as exc:
         raise CLIError(str(exc)) from exc
     item.record_id = str(record["id"])
-    store.append("evidence", item.to_dict())
+    data = {**item.to_dict(), **_origin(ctx, store)}
+    store.append("evidence", data)
     if ctx.args.json:
-        ctx.emit_json(item.to_dict())
+        ctx.emit_json(data)
     else:
         ctx.emit(
             f"Recorded reported evidence for {item.record_id}: {item.step} = {item.status} (source: reported)"
@@ -819,11 +866,7 @@ def _csv(value: str | None) -> list[str]:
 
 
 def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
-    store = _require_initialized(ctx)
-    try:
-        record = store.resolve_route(ctx.args.record, _session())
-    except RecordError as exc:
-        raise CLIError(str(exc)) from exc
+    store, record = _route_and_store(ctx)
     a = ctx.args
     for name in ("minutes", "interventions", "tokens", "cost", "regressions"):
         value = getattr(a, name)
@@ -894,14 +937,27 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     data") is added to it, so its safety controls apply. The raised route replaces the open one
     and keeps its recorded evidence. The user's plan approval is kept too, unless the reason
     adds a safety control: then the user approves the plan again.
+
+    The open route may be in another checkout of the repository (a git worktree, ADR 0017): the
+    raised route then replaces it there, where that checkout's Stop hook reads it.
     """
-    store = _require_initialized(ctx)
     session = ctx.args.session or _session()
     if session and auto_settings(ctx.root):
         _refuse_extra_config(ctx)
-    state = active_route(store, session) if session else None
-    if not session or state is None:
+    found = find_active_route(ctx.root, session) if session else None
+    if not session or found is None:
+        if not is_initialized(ctx.root) and not any(is_initialized(c) for c in sibling_checkouts(ctx.root)):
+            raise CLIError("local records are disabled; run `susanoo init` first")
         raise CLIError("no open route in this Claude Code session to raise (route the task first)")
+    store, state = found
+    # The route's own checkout gates it: its configuration decides the safety side of the raise
+    # (signals in the reason, approvals, records). The checks are planned here, like verify's.
+    route_config = ctx.config
+    if store.root != ctx.root:
+        if auto_settings(store.root):
+            _refuse_extra_config(ctx)
+        extra = Path(ctx.args.config) if getattr(ctx.args, "config", None) else None
+        route_config = load_config(store.root, extra)
     reason = redact(" ".join(ctx.args.reason.split()))[:500]
     if not reason:
         raise CLIError("give the reason for raising the route with --reason")
@@ -910,7 +966,12 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     task = stored if isinstance(stored, str) and stored.strip() else reason
     # The target is a minimum, not an override: a reason that routes higher wins.
     floor = Floor.merge(
-        [route_floor(state.route), message_floor(reason, ctx.config), Floor({}, [], [], ctx.args.profile)],
+        [
+            route_floor(state.route),
+            message_floor(reason, ctx.config),
+            message_floor(reason, route_config) if route_config is not ctx.config else None,
+            Floor({}, [], [], ctx.args.profile),
+        ],
         PROFILE_ORDER,
     )
     plan = plan_task(task, ctx.root, ctx.config, floor=floor)
@@ -926,14 +987,14 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
         )
         return EXIT_OK
     plan.record_id = new_record_id()
-    data = route_record(plan, plan.record_id, ctx.config, session)
+    data = route_record(plan, plan.record_id, route_config, session)
     data["task"] = stored if isinstance(stored, str) else None
     for key in ("auto", "routed_by", "floor", "autonomous"):
         if key in state.route:
             data[key] = state.route[key]
     data.update({"raised_from": old, "raise_reason": reason})
     store.append("routes", data)  # the new route first, so the session never lacks an active route
-    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", ctx.config)
+    close_superseded(store, state, f"raised to {target.upper()} as {plan.record_id}: {reason}", route_config)
     # The same task with more process: checks already run still count. A plan approval covers the
     # plan the user saw, and a raise always changes it (a stricter profile adds phases, a new control
     # adds a check), so only autonomy asked for in the user's own words carries over.
@@ -943,7 +1004,7 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     for item in store.read("approvals"):
         if item.get("record_id") == old and item.get("checkpoint") == "autonomy":
             store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
-    hook_state = SessionState(ctx.root, session)
+    hook_state = SessionState(store.root, session)
     if hook_state.data.get("record_id") == old:
         hook_state.data["record_id"] = plan.record_id
         hook_state.save()
@@ -954,17 +1015,24 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     approved = any(a.get("record_id") == plan.record_id for a in store.read("approvals"))
     if added:
         header += f"\nNew safety controls: {', '.join(added)}."
-    enforcement = ctx.config.get("enforcement", {})
+    enforcement = route_config.get("enforcement", {})
     configured_hands_off = bool(enforcement.get("hands_off"))
     if not approved and not configured_hands_off and target in set(enforcement.get("approval_profiles", [])):
         header += " The plan needs the user's approval again."
+    if store.root != ctx.root:
+        header += f"\nThe route was recorded in {store.root}; the raised route replaces it there."
     if state.route.get("auto") is True:
         modes = set(enforcement.get("autonomous_modes", []))
-        message = prompt_state.load(ctx.root, session) or {}
+        message = prompt_state.load(store.root, session) or prompt_state.load(ctx.root, session) or {}
         hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
         asked_autonomy = autonomy_requested(store, state.route, old, message)
         brief = compact_brief(
-            plan, plan.record_id, hands_off, _brief_command(ctx.root), "again", asked_autonomy=asked_autonomy
+            plan,
+            plan.record_id,
+            hands_off,
+            _brief_command(store.root),
+            "again",
+            asked_autonomy=asked_autonomy,
         )
         ctx.emit(header + "\n" + brief)
     else:
@@ -1054,6 +1122,62 @@ def cmd_eval(ctx: Context, stdin: TextIO) -> int:
         ctx.err.write(f"{result.risk_floor_violations} risk-floor violation(s)\n")
         return EXIT_FAIL
     return EXIT_FAIL if below else EXIT_OK
+
+
+def cmd_land(ctx: Context, stdin: TextIO) -> int:
+    args = ctx.args
+    if args.stats:
+        try:
+            data = land_stats(read_records(common_dir(ctx.root)))
+        except LandError as exc:
+            raise CLIError(str(exc)) from exc
+        if args.json:
+            ctx.emit_json(data)
+            return EXIT_OK
+        culprits = ", ".join(f"{k} {v}" for k, v in sorted(data["culprits"].items())) or "none"
+        overhead = data["median_overhead_s"]
+        ctx.emit(
+            "\n".join(
+                [
+                    f"land runs: {data['runs']} ({data['multi_candidate_runs']} with two or more candidates)",
+                    "results: "
+                    + (", ".join(f"{k} {v}" for k, v in sorted(data["results"].items())) or "none"),
+                    f"conflicts kept both: {data['auto_resolved_runs']} runs; "
+                    f"needed a manual merge: {data['unresolved_conflict_runs']} runs",
+                    f"combined-tree failures by kind: {culprits}; flaky runs: {data['flaky_runs']}",
+                    "median time on top of the checks: "
+                    + (f"{overhead}s" if overhead is not None else "n/a"),
+                    f"go or no-go ({data['rule']}, counts, not validated thresholds): {data['verdict']}",
+                ]
+            )
+        )
+        return EXIT_OK
+    if not args.candidates:
+        raise CLIError("name the pull requests or branches to land, e.g. `susanoo land 52 53`")
+    if args.config:
+        # The checks come from the base branch's configuration, so nothing can swap them per run.
+        raise CLIError("land reads its configuration from the base branch; --config is not accepted")
+    options = LandOptions(
+        candidates=list(args.candidates),
+        base=args.base,
+        remote=args.remote,
+        merge=args.merge,
+        push=not args.no_push,
+        timeout=args.timeout,
+        reuse=not args.no_cache,
+        keep_scratch=args.keep_scratch,
+    )
+
+    def say(line: str) -> None:
+        # Flushed per line: a run takes minutes, and its output is often piped to a file.
+        if not args.json:
+            ctx.emit(line)
+            ctx.out.flush()
+
+    record, code = land(ctx.root, options, say)
+    if args.json:
+        ctx.emit_json(record)
+    return code
 
 
 # ---------------------------------------------------------------------------
@@ -1177,7 +1301,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--execute", action="store_true", help="run the ready steps and record evidence")
     p.add_argument("--step", action="append", help="only this step id (repeatable)")
     p.add_argument("--required-only", action="store_true", help="only required steps")
-    p.add_argument("--timeout", type=float, default=900, help="per-command timeout in seconds (default 900)")
+    p.add_argument(
+        "--timeout",
+        type=_timeout_seconds,
+        help="per-command timeout in seconds (default: [verify] timeout_seconds in the configuration, 900)",
+    )
     p.add_argument("--no-record", action="store_true", help="do not store evidence")
     p.set_defaults(func=cmd_verify)
 
@@ -1246,6 +1374,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="capture: where to write the sites (default: <taste folder>/sites)")
     p.set_defaults(func=cmd_taste)
 
+    p = sub.add_parser(
+        "land",
+        parents=[common],
+        allow_abbrev=False,
+        help="test pull requests or branches on one combined tree, then push; merge only with --merge",
+    )
+    p.add_argument("candidates", nargs="*", help="pull request numbers (52 or #52) or branch names, in order")
+    p.add_argument("--base", help="base branch (default: the pull requests' base, else main)")
+    p.add_argument("--remote", default="origin", help="remote to fetch from and push to (default origin)")
+    p.add_argument(
+        "--merge",
+        action="store_true",
+        help="merge the pull requests with gh after the checks pass; only the user gives this flag",
+    )
+    p.add_argument("--no-push", action="store_true", help="test only; push nothing")
+    p.add_argument("--no-cache", action="store_true", help="rerun the checks even if this exact tree passed")
+    p.add_argument(
+        "--timeout", type=float, default=1800, help="per-command timeout in seconds (default 1800)"
+    )
+    p.add_argument("--keep-scratch", action="store_true", help="keep the scratch worktree for inspection")
+    p.add_argument("--stats", action="store_true", help="summarize recorded land runs (ADR 0014 go or no-go)")
+    p.set_defaults(func=cmd_land)
+
     p = sub.add_parser("eval", parents=[common], help="evaluate routing against a labeled task suite")
     p.add_argument("--suite", help="path to a suite TOML (default: bundled routing-v1)")
     p.add_argument("--min-agreement", type=float, help="exit 1 if profile agreement is below this (0-1)")
@@ -1285,7 +1436,7 @@ def main(
     try:
         result: int = args.func(ctx, stdin or sys.stdin)
         return result
-    except (CLIError, ConfigError, RecordError, ValueError) as exc:
+    except (CLIError, ConfigError, RecordError, LandError, ValueError) as exc:
         err.write(f"susanoo: error: {exc}\n")
         return EXIT_FAIL
     except KeyboardInterrupt:

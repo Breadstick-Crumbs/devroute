@@ -27,6 +27,8 @@ PROFILE_ORDER: tuple[str, ...] = ("fast", "standard", "deep")
 REQUIREMENT_LEVELS: tuple[str, ...] = ("recommended", "required")
 
 # Arrays of tables merged by their `id` key instead of being replaced wholesale.
+# One day: longer is a hung check; `inf` would overflow the platform's timer.
+MAX_TIMEOUT_SECONDS = 86400
 _ID_MERGED_ARRAYS = frozenset({"signals", "controls", "verification"})
 
 
@@ -171,6 +173,14 @@ def validate(config: Config) -> None:
         isinstance(config.get("enforcement", {}).get("hands_off", True), bool),
         "[enforcement] hands_off must be true or false",
     )
+    timeout = config.get("verify", {}).get("timeout_seconds", 900)
+    # bool is an int subclass: `true` must not mean one second.
+    _require(
+        isinstance(timeout, int | float)
+        and not isinstance(timeout, bool)
+        and 0 < timeout <= MAX_TIMEOUT_SECONDS,
+        f"[verify] timeout_seconds must be a number of seconds greater than 0 and at most {MAX_TIMEOUT_SECONDS}",
+    )
     managers = sorted(str(pm.get("id")) for pm in load_toml_data("tools.toml").get("package_managers", []))
     _require(
         config.get("selection", {}).get("default_package_manager", "npm") in managers,
@@ -210,6 +220,16 @@ def validate(config: Config) -> None:
         isinstance(exempt, list) and all(isinstance(p, str) for p in exempt),
         "[auto] route_before_edit_exempt must be a list of strings",
     )
+    for key in ("app_envelopes", "app_envelope_frames"):
+        value = auto.get(key, [])
+        _require(
+            isinstance(value, list) and all(isinstance(v, str) and v.strip() for v in value),
+            f"[auto] {key} must be a list of non-empty strings",
+        )
+    _require(
+        all(re.fullmatch(r"[A-Za-z][\w-]*", v) for v in auto.get("app_envelopes", [])),
+        "[auto] app_envelopes must be tag names (letters, digits, '-' and '_')",
+    )
 
     _check_dimension_map("[assessment] baseline", config.get("assessment", {}).get("baseline", {}))
 
@@ -245,12 +265,68 @@ def validate(config: Config) -> None:
     _check_patterns("[assessment.negation] clause", [clause] if clause else [])
     for signal in config.get("signals", []):
         id_lists[f"signal '{signal['id']}' caps_unless_signals"] = signal.get("caps_unless_signals", [])
+        id_lists[f"signal '{signal['id']}' caps_if_signals"] = signal.get("caps_if_signals", [])
     for where, ids in id_lists.items():
         _require(
             isinstance(ids, list) and all(isinstance(i, str) for i in ids), f"{where} must be a list of ids"
         )
         for sid in ids:
             _require(sid in seen, f"{where}: unknown signal '{sid}'")
+    presentational = config.get("assessment", {}).get("presentational", {})
+    _require(isinstance(presentational, dict), "[assessment.presentational] must be a table")
+    _check_patterns("[assessment.presentational] keep", presentational.get("keep", []))
+    known = {
+        "max_words", "reject_words", "determiners", "ui_nouns", "appearance", "values", "platform", "subjects",
+        "phrases", "keep", "rules", "page_names",
+    }  # fmt: skip
+    unknown_keys = sorted(set(presentational) - known)
+    _require(not unknown_keys, f"[assessment.presentational]: unknown key(s) {', '.join(unknown_keys)}")
+    for key in (
+        "reject_words",
+        "determiners",
+        "values",
+        "page_names",
+        "ui_nouns",
+        "appearance",
+        "platform",
+        "subjects",
+        "phrases",
+    ):
+        words = presentational.get(key, [])
+        _require(
+            isinstance(words, list) and all(isinstance(w, str) for w in words),
+            f"[assessment.presentational] {key} must be a list of words",
+        )
+    max_words = presentational.get("max_words", 20)
+    _require(
+        isinstance(max_words, int) and not isinstance(max_words, bool) and 1 <= max_words <= 40,
+        "[assessment.presentational] max_words must be an integer from 1 to 40",
+    )
+    rules = presentational.get("rules", [])
+    _require(
+        isinstance(rules, list) and all(isinstance(r, dict) for r in rules),
+        "[assessment.presentational] rules must be an array of tables",
+    )
+    for i, rule in enumerate(rules):
+        where = f"[assessment.presentational] rules[{i}]"
+        unknown = sorted(set(rule) - {"signals", "verbs", "require_appearance"})
+        _require(not unknown, f"{where}: unknown key(s) {', '.join(unknown)}")
+        verbs = rule.get("verbs", [])
+        _require(
+            isinstance(verbs, list) and bool(verbs) and all(isinstance(v, str) for v in verbs),
+            f"{where} verbs must be a non-empty list of words",
+        )
+        _require(
+            isinstance(rule.get("require_appearance", False), bool),
+            f"{where} require_appearance must be true or false",
+        )
+        ids = rule.get("signals", [])
+        _require(
+            isinstance(ids, list) and bool(ids) and all(isinstance(i, str) for i in ids),
+            f"{where} signals must be a non-empty list of ids",
+        )
+        for sid in ids:
+            _require(sid in seen, f"{where} signals: unknown signal '{sid}'")
     # Patterns are complete only once {target} and {location} are expanded.
     from susanoo.analyzer.engine import negation_patterns  # imported here: the engine imports config
 

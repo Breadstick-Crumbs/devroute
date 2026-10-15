@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from susanoo.paths import home_state, records_dir
+from susanoo.paths import home_state, is_initialized, records_dir, sibling_checkouts
 
 RECORD_KINDS = ("routes", "outcomes", "evidence", "research", "approvals", "enforcement")
 
@@ -81,14 +81,72 @@ class RecordStore:
                 "no route records yet (records are written by `susanoo route` after `susanoo init`)"
             )
         if ref == "latest":
-            own = [r for r in routes if session_id and r.get("session_id") == session_id]
+            own = _own(routes, session_id)
             return own[-1] if own else routes[-1]
-        exact = [r for r in routes if r.get("id") == ref]
-        if exact:
-            return exact[-1]
-        matches = [r for r in routes if str(r.get("id", "")).startswith(ref)]
+        matches = _matching(routes, ref)
         if len(matches) == 1:
             return matches[0]
         if not matches:
             raise RecordError(f"no route record matches '{ref}'")
         raise RecordError(f"'{ref}' matches {len(matches)} records; use a longer prefix")
+
+
+def _own(routes: list[dict[str, Any]], session_id: str | None) -> list[dict[str, Any]]:
+    return [r for r in routes if session_id and r.get("session_id") == session_id]
+
+
+def _matching(routes: list[dict[str, Any]], ref: str) -> list[dict[str, Any]]:
+    exact = [r for r in routes if r.get("id") == ref]
+    return exact[-1:] if exact else [r for r in routes if str(r.get("id", "")).startswith(ref)]
+
+
+def find_route(root: Path, ref: str, session_id: str | None = None) -> tuple[RecordStore, dict[str, Any]]:
+    """Resolve a route in ``root``'s records or in another checkout of its repository.
+
+    DEEP work happens in a git worktree while the route was often recorded in the main checkout
+    (or the other way round), and each checkout has its own records. ``latest`` is the current
+    session's newest own route in any checkout (this one wins a tie), so another session's route
+    is never taken from elsewhere. A route id or prefix that matches nothing here is looked up in
+    the repository's other checkouts. Returns the store that holds the route: evidence and
+    outcomes belong next to it.
+    """
+    store = RecordStore(root)
+    routes = store.read("routes")
+    if ref == "latest" and session_id:
+        hits = [(store, route) for route in _own(routes, session_id)[-1:]]
+        for other in sibling_stores(root):
+            hits += [(other, route) for route in _own(other.read("routes"), session_id)[-1:]]
+        if hits:  # `max` keeps the first of equals: this checkout's route on a tie
+            return max(hits, key=lambda hit: str(hit[1].get("created_at", "")))
+    if ref == "latest" or _matching(routes, ref):
+        return store, _resolve_here(store, ref, session_id)
+    hits = []
+    for other in sibling_stores(root):
+        hits += [(other, route) for route in _matching(other.read("routes"), ref)]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        places = ", ".join(sorted({str(hit[0].root) for hit in hits}))
+        raise RecordError(f"'{ref}' matches {len(hits)} records in {places}; use a longer prefix")
+    return store, _resolve_here(store, ref, session_id)
+
+
+def sibling_stores(root: Path) -> list[RecordStore]:
+    """The record stores of the repository's other checkouts where Susanoo is active."""
+    return [RecordStore(checkout) for checkout in sibling_checkouts(root) if is_initialized(checkout)]
+
+
+def _resolve_here(store: RecordStore, ref: str, session_id: str | None) -> dict[str, Any]:
+    """``store.resolve_route``, naming the repository's other checkouts when this one has no routes."""
+    try:
+        return store.resolve_route(ref, session_id)
+    except RecordError as exc:
+        if store.read("routes"):
+            raise
+        others = [str(other.root) for other in sibling_stores(store.root) if other.read("routes")]
+        if not others:
+            raise
+        raise RecordError(
+            f"this checkout has no route records; other checkouts of this repository do "
+            f"({', '.join(others)}): pass the route id, or run the command there"
+        ) from exc

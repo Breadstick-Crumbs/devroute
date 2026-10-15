@@ -61,21 +61,26 @@ id = "ui-mobile-onboarding-redesign"
 task = "Redesign the onboarding screens in the React Native app"
 expected = "standard"
 
-# --- Presentational changes on payment pages. Only markup and styling change, so payment
-# controls add process without protecting anything. Labeled for the routing fix (slice 4).
+# --- Presentational changes on payment pages. First labeled as styling only; relabeled DEEP with
+# the payment controls when the user decided heuristics never remove them (see each case).
 
 [[cases]]
 id = "ui-checkout-button-color"
-# A color on the checkout page: no payment data, amounts, or provider calls are touched.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled FAST as presentational.
 task = "Change the checkout button color to green"
-expected = "fast"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 [[cases]]
 id = "ui-checkout-form-responsive"
-# Layout of an existing form across breakpoints. Fields, validation, and submission stay as
-# they are.
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled STANDARD as presentational.
 task = "Make the checkout form layout responsive on small screens"
-expected = "standard"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
 
 # --- Payment logic, or payment logic mixed with UI work. These must keep every payment
 # control. A false negative here is a safety bug, so the labels err strict.
@@ -129,4 +134,221 @@ min_risk = "moderate"
 id = "ui-redesign-frontend-state"
 # Re-architecting how the whole frontend manages state touches every screen.
 task = "Redesign the frontend state management architecture"
+expected = "deep"
+
+# --- Added with the routing fix (slice 4), labeled before these tasks were run. Mostly traps for
+# the presentational rule: anything that could touch payment behavior keeps every payment control.
+
+[[cases]]
+id = "ui4-fix-checkout-button"
+# A bug in the checkout button may be that it no longer submits the payment: not only visual.
+task = "Fix the checkout button"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-redesign-checkout-page"
+# A checkout redesign can change fields and steps; without a look word it stays payment work.
+task = "Redesign the checkout page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-checkout-validation-messages"
+# Validation decides what gets submitted for payment.
+task = "Change the checkout form validation messages"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-color-and-tax"
+# A second clause with payment logic keeps the controls.
+task = "Change the checkout button color and the tax rate"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-stripe-button-color"
+# Naming the payment provider keeps the controls, even for a color.
+task = "Change the Stripe checkout button color"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-redesign-payment-form"
+# The payment form collects card data; a redesign without a look word stays payment work.
+task = "Redesign the payment form"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-recolor-billing-buttons"
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled FAST as presentational.
+task = "Recolor the billing page buttons to match the brand"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-payment-form-padding"
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled FAST as presentational.
+task = "Tighten the padding on the payment form"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-restyle-checkout-page"
+# Relabeled 2026-10-15 (user decision): a heuristic never removes payment controls, so payment-page
+# styling keeps them and the DEEP route. Was labeled STANDARD as presentational.
+task = "Restyle the checkout page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4-redesign-settings-dark-mode"
+# A visual redesign of one page.
+task = "Redesign the settings page for dark mode"
+expected = "standard"
+
+# --- Added after the slice 4 review, labeled before the stricter rule was written: phrasings that
+# escaped the first version. Every payment one must keep every payment control; every
+# architecture one must stay DEEP.
+
+[[cases]]
+id = "ui4r-fix-checkout-mobile"
+# "Pay doesn't work on my phone" is a behavior bug, not styling.
+task = "Fix the checkout button on mobile"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-checkout-new-provider"
+# A new payment provider is payment integration.
+task = "Update the checkout page layout for the new payment provider"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-apple-pay"
+task = "Update the checkout form layout for Apple Pay"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-single-page-checkout"
+# Changing the number of checkout steps changes the flow.
+task = "Change the checkout layout to a single page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-plain-card-inputs"
+# Taking card entry out of the provider's fields is a PCI concern.
+task = "Change the payment form card fields to plain text inputs"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-stripe-hosted"
+task = "Change the checkout button color in the Stripe-hosted page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-color-and-hide"
+task = "Change the checkout button color to green and hide on mobile"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4r-redesign-microservices"
+task = "Redesign the orders page with microservices"
+expected = "deep"
+
+[[cases]]
+id = "ui4r-redesign-ssr"
+task = "Redesign the product page with server-side rendering"
+expected = "deep"
+
+[[cases]]
+id = "ui4r-redesign-redux"
+task = "Redesign the settings page to use Redux"
+expected = "deep"
+
+# --- Added after the second slice 4 review, labeled before the structural grammar was written.
+
+[[cases]]
+id = "ui4s-card-fields-text"
+# Card entry moved out of the provider's fields: PCI scope.
+task = "Change the payment form card fields to text fields"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-checkout-to-modal"
+# Turning the checkout page into a modal changes the flow.
+task = "Change the checkout layout to a modal"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-checkout-link-web"
+# A link to another checkout changes where payment happens.
+task = "Make the white checkout button link to the web checkout page"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-checkout-compact-modal"
+task = "Make the checkout page a compact modal"
+expected = "deep"
+min_risk = "critical"
+controls = ["security-review", "data-safety", "external-sandbox"]
+
+[[cases]]
+id = "ui4s-redesign-into-web-views"
+# Moving native screens to web views is a platform change.
+task = "Redesign the react native screens into web views"
+expected = "deep"
+
+[[cases]]
+id = "ui4s-redesign-into-web-components"
+task = "Redesign the page components into web components"
+expected = "deep"
+
+[[cases]]
+id = "ui4s-redesign-onboarding-cards"
+# A visual redesign of a few cards: plan it and check it.
+task = "Redesign the onboarding cards"
+expected = "standard"
+
+[[cases]]
+id = "ui4s-spacing-and-realtime-sync"
+# A small UI tweak next to heavy work must not cap the heavy work.
+task = "Adjust the spacing on the dashboard page and implement real-time sync with conflict resolution"
+expected = "deep"
+
+[[cases]]
+id = "ui4s-variants-and-job-queue"
+task = "Add size variants to the button component and build a distributed job queue with retries and exactly-once delivery"
 expected = "deep"

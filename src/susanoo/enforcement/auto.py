@@ -38,6 +38,9 @@ from susanoo.verification.executor import redact
 _CLAUSE_START = re.compile(r"(?:^|[,;:.!?–—]\s*|\s-\s|\s(?:and|then|but|so)\s)", re.IGNORECASE)
 _QUOTED = re.compile(r"\"[^\"]*\"|'[^'\s][^']*'|`[^`]*`|“[^”]*”|‘[^’]*’")
 _CLAUSES = re.compile(r"[,;:.!?–—]|\s-\s")
+# Longer prompts are never taken for an app message: app messages are short, and a pasted log
+# should not be scanned on every prompt. Erring this way counts the prompt as the user's.
+ENVELOPE_MAX_CHARS = 100_000
 
 
 @lru_cache(maxsize=64)
@@ -73,6 +76,84 @@ def classify(prompt: str, cfg: dict[str, Any]) -> str:
     if following and _starts(tuple(cfg.get("not_after_verb", []))).search(following):
         return AMBIGUOUS  # "write me a haiku", "make sense of this", "drop it", "move on"
     return TASK if len(text.split()) >= int(cfg.get("min_words", 3)) else AMBIGUOUS
+
+
+@lru_cache(maxsize=16)
+def _envelope_open(tags: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(rf"<({'|'.join(map(re.escape, tags))})(?=[\s>])[^<>]*>")
+
+
+@lru_cache(maxsize=16)
+def _envelope_tag(tags: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(rf"</?(?:{'|'.join(map(re.escape, tags))})(?=[\s>/])")
+
+
+@lru_cache(maxsize=16)
+def _envelope_frames(frames: tuple[str, ...]) -> re.Pattern[str]:
+    # Whole lines only, so a frame never takes user text on the same line with it.
+    return re.compile(rf"^[ \t]*(?:{'|'.join(map(re.escape, frames))})[ \t]*\r?$", re.MULTILINE)
+
+
+def split_app_envelopes(prompt: str, cfg: dict[str, Any]) -> tuple[str, int]:
+    """``prompt`` without the app's envelope blocks, and how many it had (ADR 0016).
+
+    A block is an opening tag from ``[auto] app_envelopes`` up to its first closing tag; an
+    unclosed block ends the scan, so its text stays. Only in a prompt with a block are the app's
+    frame lines (``app_envelope_frames``, whole lines) removed too. Whatever is left is the user's
+    own text.
+    """
+    spans = _envelope_spans(prompt, cfg)
+    if not spans:
+        return prompt, 0
+    kept: list[str] = []
+    pos = 0
+    for start, end in spans:
+        kept.append(prompt[pos:start])
+        pos = end
+    return _without_frames("".join(kept) + prompt[pos:], cfg), len(spans)
+
+
+def _envelope_spans(prompt: str, cfg: dict[str, Any]) -> list[tuple[int, int]]:
+    """Where the app's blocks are in ``prompt``, in order (see ``split_app_envelopes``)."""
+    tags = tuple(cfg.get("app_envelopes", []))
+    if not tags or len(prompt) > ENVELOPE_MAX_CHARS:
+        return []
+    opening = _envelope_open(tags)
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while found := opening.search(prompt, pos):
+        closing = f"</{found.group(1)}>"
+        end = prompt.find(closing, found.end())
+        if end < 0:
+            break
+        pos = end + len(closing)
+        spans.append((found.start(), pos))
+    return spans
+
+
+def _without_frames(text: str, cfg: dict[str, Any]) -> str:
+    frames = tuple(cfg.get("app_envelope_frames", []))
+    return _envelope_frames(frames).sub("", text) if frames else text
+
+
+def from_app(prompt: str, cfg: dict[str, Any]) -> bool:
+    """Whether ``prompt`` is only the app's envelopes: a message the user did not type."""
+    own, count = split_app_envelopes(prompt, cfg)
+    return count > 0 and not own.strip()
+
+
+def users_words(prompt: str, cfg: dict[str, Any]) -> str:
+    """The text that speaks for the user: whether it is a task, and its requests that lower process.
+
+    In a prompt with the app's blocks, only the text before the first block and after the last
+    counts: a peer that closes its block early must open another one to hide the closing tag
+    left over, so whatever it writes lies between two blocks. Nothing counts when one of the
+    app's tags is still in that text (a block closed early or left open).
+    """
+    spans = _envelope_spans(prompt, cfg)
+    text = _without_frames(prompt[: spans[0][0]] + prompt[spans[-1][1] :], cfg) if spans else prompt
+    tags = tuple(cfg.get("app_envelopes", []))
+    return "" if tags and _envelope_tag(tags).search(text) else text
 
 
 def wants_autonomy(prompt: str, cfg: dict[str, Any]) -> bool:
@@ -133,6 +214,44 @@ def unrouted_note(command: str) -> str:
     )
 
 
+def app_message_note(command: str) -> str:
+    """Context for a prompt the app sent (another session, a notification): not the user's words."""
+    return (
+        "Susanoo: this message came from the app or another session, not from the user, so it was not "
+        "routed and the open route and the user's last message still set the minimum. If handling it means "
+        "changing code that is not part of an open Susanoo task, first run "
+        f'`{command} route "<the task in one line>"` and follow the brief it prints. Otherwise ignore this note.'
+    )
+
+
+def _on_app_message(event: dict[str, Any], root: Path, session: str, command: str) -> str:
+    """A prompt made only of app envelopes: routes are left alone, and the floor of the user's
+    last message stays recorded, so a route Claude makes for it is never lower.
+
+    The user's requests that lower process (autonomy, a named workflow) were for their own
+    message and do not carry over to work the app or a peer asks for; an open route keeps its own
+    autonomy. The turn moves on (a new id and time, kind "ambiguous"), so the route-before-edit
+    gate still stops the first edit made for this message while no route is open, as before.
+    """
+    previous = prompt_state.load(root, session) or {}
+    prompt_state.save(
+        root,
+        session,
+        {
+            "at": _now(),
+            "id": new_record_id(),
+            "kind": AMBIGUOUS,
+            "floor": previous.get("floor"),
+            "hands_off": False,
+            "named": [],
+            "skill": False,
+            "permission_mode": str(event.get("permission_mode", "")),
+            "from_app": True,
+        },
+    )
+    return app_message_note(command)
+
+
 def compact_brief(
     plan: TaskPlan,
     record_id: str,
@@ -155,6 +274,11 @@ def compact_brief(
     ]
     if a.negated:
         lines.append("Ignored as out of scope: " + ", ".join(repr(n) for n in a.negated) + ".")
+    if a.presentational:
+        lines.append(
+            "Ignored as a purely visual change: " + ", ".join(a.presentational) + ". If the task touches "
+            "payment logic, data, or the architecture after all, raise the route."
+        )
     for control in d.controls:
         lines.append(f"Safety control {control.id}: {control.description}")
     tools = []
@@ -346,9 +470,25 @@ def on_prompt(
         return None
     cfg = config.get("auto", {})
     prompt = str(event.get("prompt", ""))
-    kind = classify(prompt, cfg)
     command = str(settings.get("command") or "susanoo")
-    hands_off = wants_autonomy(prompt, cfg)
+    own, envelopes = split_app_envelopes(prompt, cfg)
+    if envelopes and not own.strip():
+        return _on_app_message(event, root, session, command)
+    # Asking for autonomy or naming a workflow lowers process, so only the user's own words count
+    # for it; the floor below still reads the whole prompt, the app's blocks included.
+    requests = users_words(prompt, cfg)
+    # Whether it is a task, and whether it continues the open one, is read from the user's words
+    # too, so a reminder the app put first does not hide their task. Without such words (a stray
+    # tag, or text only between blocks), the whole prompt counts, as before. The floor and the plan
+    # below still read the whole prompt, so this never lowers a route.
+    own_words = bool(envelopes and requests.strip())
+    said = requests if own_words else prompt
+    kind = classify(said, cfg)
+    if kind == SKIP and own_words and not said.strip().startswith(str(cfg.get("skip_prefix", "?"))):
+        # "/", "!" and "#" act only at the start of the prompt, which here is the app's block; the
+        # user's "?" still means "do not route this".
+        kind = AMBIGUOUS
+    hands_off = wants_autonomy(requests, cfg)
     # Every message is remembered (as its keyword floor, not its text), so a route Claude makes
     # later in this turn is never lower than the message, and only the user picks a lighter one.
     message = message_floor(prompt, config)
@@ -361,7 +501,7 @@ def on_prompt(
             "kind": kind,
             "floor": message.to_dict() if message else None,
             "hands_off": hands_off,
-            "named": prompt_state.named_profiles(prompt),
+            "named": prompt_state.named_profiles(requests),
             # `/susanoo`: the skill routes the user's own words and shows the full brief.
             "skill": bool(re.match(r"/susanoo(?![\w-])", prompt.strip(), re.IGNORECASE)),
             "permission_mode": str(event.get("permission_mode", "")),
@@ -384,7 +524,7 @@ def on_prompt(
     if (
         state is not None
         and not higher
-        and (unfinished or _is_follow_up(prompt, state, cfg, _last_activity(store, state, hook_record)))
+        and (unfinished or _is_follow_up(said, state, cfg, _last_activity(store, state, hook_record)))
     ):
         # A follow-up to the task in progress: keep its route and remind Claude of it. A task with
         # unfinished work is never closed automatically; Claude is told instead.

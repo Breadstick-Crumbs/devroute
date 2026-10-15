@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from susanoo.evaluation.store import RecordStore
+from susanoo.enforcement.prompt import session_file
+from susanoo.evaluation.store import RecordStore, sibling_stores
+from susanoo.paths import is_initialized
 
 
 @dataclass
@@ -37,9 +41,13 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     - ``ready`` steps (Susanoo can run them) need *executed* evidence; the latest run must pass.
     - ``manual`` and ``unavailable`` steps need any recorded evidence, so the agent must at least
       report what was done or explicitly record that the step was skipped and why.
+
+    Runs in another checkout of the repository (a git worktree, ADR 0017) carry ``checkout``.
+    The latest run counts per checkout, and a step passes only when it passes in every checkout
+    that ran it, so a pass in one checkout never clears a failure in another.
     """
     record_id = route.get("id")
-    latest_executed: dict[str, str] = {}
+    executed: dict[tuple[str, str], str] = {}  # (step, checkout) -> latest executed status
     latest_any: dict[str, str] = {}
     for item in evidence:
         if item.get("record_id") != record_id:
@@ -47,10 +55,14 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
         step = str(item.get("step"))
         status = str(item.get("status"))
         if item.get("source") == "executed" and status != "skipped":
-            latest_executed[step] = status
+            executed[(step, str(item.get("checkout") or ""))] = status
             latest_any[step] = status
         elif item.get("source") == "reported":
             latest_any[step] = status
+    latest_executed: dict[str, str] = {}
+    for (step, _), status in executed.items():
+        if latest_executed.get(step, "passed") == "passed":
+            latest_executed[step] = status
     missing: list[str] = []
     failing: list[str] = []
     for step in route.get("verification", []):
@@ -93,3 +105,38 @@ def active_route(store: RecordStore, session_id: str | None) -> RouteState | Non
         return None
     state = route_state(store, routes[-1])
     return None if state.closed else state
+
+
+def find_active_route(root: Path, session_id: str | None) -> tuple[RecordStore, RouteState] | None:
+    """The session's open route in ``root``'s records or another checkout of its repository.
+
+    Each checkout keeps its own records and its own gates (ADR 0017): the route is often recorded
+    in the main checkout while the work happens in a git worktree. Every checkout's active route
+    of ``session_id`` counts. A route that a checkout's hooks are tracking wins, because that is
+    the one a Stop hook enforces; then the newest (this checkout's on a tie). Routes of other
+    sessions are never active. Returns the store that holds the route: whatever replaces it
+    belongs there, where that checkout's Stop hook reads it.
+    """
+    if not session_id:
+        return None
+    stores = [RecordStore(root)] if is_initialized(root) else []
+    hits: list[tuple[bool, str, RecordStore, RouteState]] = []
+    for store in [*stores, *sibling_stores(root)]:
+        state = active_route(store, session_id)
+        if state is not None:
+            tracked = _hook_record(store.root, session_id) == state.record_id
+            hits.append((tracked, str(state.route.get("created_at", "")), store, state))
+    if not hits:
+        return None
+    # `max` keeps the first of equals: this checkout's route on a tie
+    _, _, store, state = max(hits, key=lambda hit: (hit[0], hit[1]))
+    return store, state
+
+
+def _hook_record(root: Path, session_id: str) -> object:
+    """The route the hooks in ``root`` last saw for the session (see ``hooks.SessionState``)."""
+    try:
+        data = json.loads(session_file(root, session_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data.get("record_id") if isinstance(data, dict) else None

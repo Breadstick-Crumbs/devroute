@@ -94,7 +94,9 @@ capabilities = ["visual_check"]
 env = ["CLAUDECODE"]   # set in every Claude Code session
 ```
 
-Detection keys are those listed at the top of [`tools.toml`](../src/susanoo/data/tools.toml); any one that matches counts, except `requires_files`, which must also match (screenshot baselines for visual regression).
+Detection keys are those listed at the top of [`tools.toml`](../src/susanoo/data/tools.toml); any one that matches counts, except `requires_files` and `requires_python_packages`, which must also match (screenshot baselines for visual regression; pytest-xdist for parallel pytest). A required Python package counts when it is installed in the project's own environment; when it is declared and installed beside an executable found on PATH; or, when the checks run in an environment outside the project (Poetry, Pipenv, uv) or no executable is found, when it is declared. An environment that cannot be told apart (a pyenv shim, a copied launcher, several Python versions sharing one prefix) counts as not having it. `supersedes` names tools an entry is a better form of: where both are usable it ranks first, and where it is not detected it is never suggested. Disabling the superseded tool (`enabled = false`) disables the entry too, and a project's own entry for the superseded tool wins over a packaged one that supersedes it. The packaged `pytest-xdist` entry uses both, so `susanoo verify --execute` runs `python -m pytest -n auto -q` where pytest-xdist is there and plain `python -m pytest -q` elsewhere; `enabled = false` for `pytest-xdist` turns parallel runs off for a suite that cannot run in parallel, and a project's own `pytest` entry keeps its command.
+
+A tool whose command depends on the project's own configuration lists `[[tools.configured_run]]` tables after its other keys: `when` names `file:section[:key]` sources in the tool's lookup order (`pyproject.toml:tool.mypy:files`), and `run` replaces those capabilities' commands when the first of those files the tool would read sets that key; the first matching table wins. A tool-specific file (`mypy.ini`) decides once it exists and parses; a shared one (`pyproject.toml`, `setup.cfg`, `tox.ini`) only once it has the section. Susanoo only checks that the key is set and never puts its value into a command; the file must be in the project root.
 
 Project tool entries are repository-controlled. Susanoo ignores their `version_args`, so `--verify` never runs them. Their `run` commands do execute under `susanoo verify --execute`, just like the project's own test scripts.
 
@@ -149,6 +151,18 @@ An instruction to leave a part of the code base alone is ignored when signals ar
 
 Keep this narrow. Ignoring text can only lower risk.
 
+### `[assessment.presentational]`
+A visual redesign ("Redesign the pricing page layout for mobile") does not count as an architectural change ([ADR 0008](decisions/0008-ui-ux-workflow.md)). The packaged configuration has one rule, for `architecture-change`, and deliberately none for `payments`: a heuristic never removes payment controls. The brief lists what was ignored as "Ignored as a purely visual change". The task is read word by word against a closed vocabulary and a fixed structure (see the ADR):
+- `max_words` (default 20) and `reject_words` ("and", "or", "then", ...): longer tasks, tasks with one of these words, and tasks with a comma, semicolon, colon, question mark, line break, or sentence end inside are never presentational. A leading "please" and a trailing period or exclamation mark are ignored.
+- `determiners`, `ui_nouns`, `appearance`, `values` (allowed after "to": colors, sizes), `platform`, `subjects` (payment-page words, allowed only in the object before a UI noun), `page_names` (the only other words allowed in the object, at most one), `phrases` (multi-word entries read as one word): lowercase words. Hex colors count as appearance words.
+- `keep`: regexes that keep every signal when they match anywhere, also with hyphens read as spaces (payment logic, providers, data, state, flows, card or text fields, APIs, authentication, ...).
+- `rules`: each has `signals` (ids to ignore), `verbs` (the first word of the task), and optionally `require_appearance = true` (an appearance word must appear; platform words do not count). A signal is only ignored if every phrase it matched is a rule verb or a `subjects` word. `rules = []` turns it off.
+- Unknown keys are an error. Lists replace the defaults rather than adding to them, so a project that sets `keep` must repeat every default entry it wants to keep.
+
+Keep this narrow. Ignoring a signal can only lower risk. A project can add rules, including for other signals, but the packaged data deliberately never ignores `payments`.
+
+A signal can also limit its `caps` with `caps_if_signals` (caps apply only when one of these signals matched), next to `caps_unless_signals` and `caps_only_if`.
+
 ### `[complexity]`, `[risk]`, `[uncertainty]`
 - `weights` (complexity): relative weights of the complexity dimensions.
 - `dimensions`, `max_weight`, `critical_severe_dimensions` (risk): see [architecture](architecture/overview.md).
@@ -184,8 +198,14 @@ Automatic routing of prompts (`susanoo init --global`, or `--auto` with the sett
 ### Architecture context
 Where STANDARD and DEEP briefs look for architecture documents, decision records, architecture sections of agent instructions, and boundary rules, and what they say about them, is packaged data in [`architecture.toml`](../src/susanoo/data/architecture.toml) ([ADR 0011](decisions/0011-architecture-context.md)). Boundary tools Susanoo can run (import-linter, dependency-cruiser, eslint-plugin-boundaries) are registry entries with the `architecture_boundaries` capability; the `architecture_check` step that runs them is recommended in STANDARD and DEEP and left out when no such tool is configured. Register another boundary tool with a `.susanoo/tools.toml` entry that lists `architecture_boundaries` and a `run` command for it.
 
+### `[land]`
+What `susanoo land` runs on the combined tree of the branches it lands ([ADR 0014](decisions/0014-susanoo-land.md)), read from the base branch's configuration: `use_verification` (default `true`: the ready, required steps of the DEEP verification plan), `setup` (commands run in the scratch tree after every checkout), `env` (`{tree}` is the scratch tree's path), `[[land.checks]]` (replace a verification step's command by `id`, or add a check; `enabled = false` drops one), `[[land.compare]]` (a JSON-printing command compared between the base and the combined tree when the candidates change one of its `paths`; `no_drop` and `no_rise` name the numbers), and `[[land.keep_both]]` (append-only places where a conflict is resolved by keeping both sides: `path`, optional `section`, `lines`, and `sort`). See [land.md](land.md).
+
 ### `[selection]`
 `code_navigation_size_adjustment`: how strongly repository size (compared with `context.large_repo_files`) shifts code-navigation choices between built-in search and indexed tools such as code-graph MCP servers. `task_keyword_bonus` (default 3): added to a tool whose `task_keywords` appear in the task ("postgres" picks psql over sqlite3); smaller than the gap between an installed and a missing tool. `default_package_manager` (default `npm`; also `pnpm`, `yarn`, `bun`): the JavaScript package manager for install hints when the project names none (package.json `packageManager`) and has no lockfile. Package-script commands always use the manager discovery checked for (npm without a lockfile), so a ready check never runs a binary that was not found.
+
+### `[verify]`
+`timeout_seconds` (default 900, at most 86400): how long each command `susanoo verify --execute` runs may take before it is stopped and recorded as a timeout; `--timeout` overrides it for one run. The timeout evidence says how to raise it. Raise it for a long suite, or when several suites run at once on one machine: load alone tripled one full run of Susanoo's own suite (220 s to 664 s).
 
 ## Checking the effect of a change
 

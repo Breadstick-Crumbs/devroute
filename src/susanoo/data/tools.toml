@@ -12,15 +12,25 @@
 #   files            project files or globs whose presence indicates configuration
 #   requires_files   the tool is only detected when one of these files or globs exists (AND, not OR);
 #                    a trailing / matches folders only
+#   requires_python_packages
+#                    the tool is only detected when one of these packages is installed in the
+#                    environment of its executable (a project environment decides by itself; one on
+#                    PATH also needs the project to declare it), or declared when no executable is
+#                    found (Poetry/uv environments outside the project)
 #   pyproject_tools  [tool.<name>] sections in pyproject.toml
 #   mcp_patterns     substrings matched against configured MCP server names
 #   env              environment variables that indicate availability
 # Selection keys (optional):
 #   package_managers  JavaScript package managers the tool needs (npm-only `npm audit` etc.)
 #   task_keywords     words in the task that make the tool the better pick ("postgres" -> psql)
+#   supersedes        tool ids this is a better form of: where detected, it ranks before them; where
+#                     not, it is never suggested
 # `{js_add_dev}` / `{js_create}` in `install` and `{js_run}` in `run` follow the project's package manager
 # ([[package_managers]] at the end of this file).
 # run: capability -> argv used by `susanoo verify --execute` (argv lists, never a shell)
+# [[tools.configured_run]]: `when` (file:section[:key] sources in the tool's own lookup order) and a
+#   `run` that replaces the commands above when the project's config sets that key; the config's
+#   values are only checked for being set, never put into a command
 
 [[tools]]
 id = "claude-code-subagents"
@@ -132,6 +142,26 @@ context_cost = 1
 setup_cost = 1
 security_exposure = 1
 install = "pip install pytest"
+
+[[tools]]
+id = "pytest-xdist"
+name = "pytest in parallel (pytest-xdist)"
+kind = "cli"
+capabilities = ["unit_testing", "integration_testing"]
+languages = ["python"]
+binaries = ["pytest"]
+python_packages = ["pytest-xdist"]
+requires_python_packages = ["pytest-xdist"]
+supersedes = ["pytest"]
+# A large suite run serially can outlast the verify timeout. `-n auto` is only used where
+# pytest-xdist is installed, so the option is never rejected; plain pytest stays the fallback.
+run = { unit_testing = ["python", "-m", "pytest", "-n", "auto", "-q"], integration_testing = ["python", "-m", "pytest", "-n", "auto", "-q"] }
+reliability = 3
+context_cost = 1
+setup_cost = 1
+security_exposure = 1
+install = "pip install pytest-xdist"
+notes = "Runs the test suite on one worker per CPU. A suite that cannot run in parallel turns it off with `enabled = false` for `pytest-xdist` in .susanoo/tools.toml."
 
 [[tools]]
 id = "npm-test-script"
@@ -385,6 +415,21 @@ setup_cost = 2
 security_exposure = 1
 install = "pip install mypy"
 
+# `mypy .` replaces the configured targets (`files`, `packages`, `modules`) with every Python file
+# in the project, and bare `mypy` fails without them. Sources in mypy's lookup order: it reads only
+# the first config it finds.
+[[tools.configured_run]]
+when = ["mypy.ini:mypy:files", ".mypy.ini:mypy:files", "pyproject.toml:tool.mypy:files", "setup.cfg:mypy:files"]
+run = { type_checking = ["mypy"] }
+
+[[tools.configured_run]]
+when = ["mypy.ini:mypy:packages", ".mypy.ini:mypy:packages", "pyproject.toml:tool.mypy:packages", "setup.cfg:mypy:packages"]
+run = { type_checking = ["mypy"] }
+
+[[tools.configured_run]]
+when = ["mypy.ini:mypy:modules", ".mypy.ini:mypy:modules", "pyproject.toml:tool.mypy:modules", "setup.cfg:mypy:modules"]
+run = { type_checking = ["mypy"] }
+
 [[tools]]
 id = "pyright"
 name = "Pyright"
@@ -433,6 +478,17 @@ context_cost = 1
 setup_cost = 1
 security_exposure = 1
 install = "pip install bandit"
+
+# Targets on the command line replace the targets in .bandit, so name the file instead. This is
+# the project's own `bandit --ini .bandit`: Susanoo's default exclusions give way to the file's.
+[[tools.configured_run]]
+when = [".bandit:bandit:targets"]
+run = { security_analysis = ["bandit", "--ini", ".bandit", "-r", "-q"] }
+
+# Bandit reads [tool.bandit] (skips, exclude_dirs) only when pointed at pyproject.toml.
+[[tools.configured_run]]
+when = ["pyproject.toml:tool.bandit"]
+run = { security_analysis = ["bandit", "-c", "pyproject.toml", "-r", ".", "-q", "-x", "./.venv,./venv,./node_modules,./tests,./build,./dist"] }
 
 [[tools]]
 id = "semgrep"
