@@ -114,14 +114,14 @@ def find_route(root: Path, ref: str, session_id: str | None = None) -> tuple[Rec
     routes = store.read("routes")
     if ref == "latest" and session_id:
         hits = [(store, route) for route in _own(routes, session_id)[-1:]]
-        for other in _sibling_stores(root):
+        for other in sibling_stores(root):
             hits += [(other, route) for route in _own(other.read("routes"), session_id)[-1:]]
         if hits:  # `max` keeps the first of equals: this checkout's route on a tie
             return max(hits, key=lambda hit: str(hit[1].get("created_at", "")))
     if ref == "latest" or _matching(routes, ref):
         return store, _resolve_here(store, ref, session_id)
     hits = []
-    for other in _sibling_stores(root):
+    for other in sibling_stores(root):
         hits += [(other, route) for route in _matching(other.read("routes"), ref)]
     if len(hits) == 1:
         return hits[0]
@@ -131,7 +131,7 @@ def find_route(root: Path, ref: str, session_id: str | None = None) -> tuple[Rec
     return store, _resolve_here(store, ref, session_id)
 
 
-def _sibling_stores(root: Path) -> list[RecordStore]:
+def sibling_stores(root: Path) -> list[RecordStore]:
     """The record stores of the repository's other checkouts where Susanoo is active."""
     return [RecordStore(checkout) for checkout in sibling_checkouts(root) if is_initialized(checkout)]
 
@@ -143,7 +143,7 @@ def _resolve_here(store: RecordStore, ref: str, session_id: str | None) -> dict[
     except RecordError as exc:
         if store.read("routes"):
             raise
-        others = [str(other.root) for other in _sibling_stores(store.root) if other.read("routes")]
+        others = [str(other.root) for other in sibling_stores(store.root) if other.read("routes")]
         if not others:
             raise
         raise RecordError(

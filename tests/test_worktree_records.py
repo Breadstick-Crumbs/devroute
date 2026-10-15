@@ -12,6 +12,7 @@ import pytest
 
 import susanoo.cli as cli
 from susanoo.cli import main
+from susanoo.enforcement.hooks import SessionState, handle
 from susanoo.enforcement.state import active_route, evidence_status
 from susanoo.evaluation.store import RecordStore
 from susanoo.paths import global_manifest_path, head_commit, sibling_checkouts
@@ -69,12 +70,17 @@ def ran_in(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     return roots
 
 
-def route_in(root: Path, monkeypatch: pytest.MonkeyPatch, session: str | None = SESSION) -> str:
+def route_in(
+    root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    session: str | None = SESSION,
+    task: str = "Refactor the parser module and add unit tests",
+) -> str:
     if session:
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
     else:
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
-    code, _, err = run(root, "route", "Refactor the parser module and add unit tests")
+    code, _, err = run(root, "route", task)
     assert code == 0, err
     return str(RecordStore(root).read("routes")[-1]["id"])
 
@@ -421,3 +427,136 @@ def test_a_worktree_without_its_own_records_uses_the_main_checkouts(
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
     code, _, err = run(worktree, "outcome", "latest", "--status", "completed", "--source", "agent")
     assert code == 1 and "other checkouts of this repository" in err and "susanoo init" not in err
+
+
+# --- raising a route across checkouts ----------------------------------------------------
+
+STANDARD_TASK = "Add pagination to the /users API endpoint"
+WIDER = "the change is wider than it looks"
+
+
+def stop_in(root: Path) -> str:
+    """The Stop hook's verdict in ``root`` ("" when the turn may end)."""
+    code, out = handle("stop", {"session_id": SESSION, "cwd": str(root)})
+    assert code == 0
+    return out
+
+
+def test_raise_in_a_worktree_raises_the_main_checkouts_route_and_its_gate_enforces_it(
+    repo: tuple[Path, Path], ran_in: list[Path], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    main_root, worktree = repo
+    old = route_in(main_root, monkeypatch, task=STANDARD_TASK)
+    assert RecordStore(main_root).read("routes")[-1]["profile"] == "standard"
+    hook = SessionState(main_root, SESSION)
+    hook.for_record(old)["work_started"] = True
+    hook.save()
+    store = RecordStore(main_root)
+    store.append(
+        "evidence", {"record_id": old, "step": "unit_tests", "status": "passed", "source": "executed"}
+    )
+    assert f"STANDARD, record {old}" in json.loads(stop_in(main_root))["reason"]
+
+    code, out, err = run(worktree, "raise", "deep", "--reason", WIDER)
+    assert code == 0, err
+    assert "from STANDARD to DEEP" in out and str(main_root.resolve()) in out
+    # The raised route replaces the old one where it was recorded, not in the worktree.
+    new = store.read("routes")[-1]
+    assert new["profile"] == "deep" and new["raised_from"] == old and new["session_id"] == SESSION
+    assert RecordStore(worktree).read("routes") == []
+    assert [(o["record_id"], o["status"]) for o in store.read("outcomes")] == [(old, "abandoned")]
+    assert [e["record_id"] for e in store.read("evidence")] == [old, new["id"]]
+    hook = SessionState(main_root, SESSION)
+    assert hook.data["record_id"] == new["id"] and hook.data["work_started"] is True
+    # The main checkout's Stop hook now enforces the DEEP route ...
+    verdict = json.loads(stop_in(main_root))
+    assert verdict["decision"] == "block" and f"DEEP, record {new['id']}" in verdict["reason"]
+    # ... and checks run in the worktree count for it, so the gate releases.
+    assert run(worktree, "verify", "--execute")[0] == 0
+    assert stop_in(main_root) == ""
+
+
+def test_raise_from_a_worktree_never_takes_another_sessions_route(
+    repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+):
+    main_root, worktree = repo
+    route_in(main_root, monkeypatch, session="someone-else", task=STANDARD_TASK)
+    routes = RecordStore(main_root).read("routes")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    code, _, err = run(worktree, "raise", "deep", "--reason", WIDER)
+    assert code == 1 and "no open route" in err
+    assert RecordStore(main_root).read("routes") == routes and RecordStore(worktree).read("routes") == []
+
+
+def test_raise_from_a_worktree_never_lowers(repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch):
+    main_root, worktree = repo
+    route_in(main_root, monkeypatch, task=STANDARD_TASK)
+    assert run(worktree, "raise", "deep", "--reason", WIDER)[0] == 0
+    routes = RecordStore(main_root).read("routes")
+    code, out, _ = run(worktree, "raise", "standard", "--reason", "smaller than it looks")
+    assert code == 0 and "never lowered" in out
+    assert RecordStore(main_root).read("routes") == routes
+
+
+def test_raise_takes_the_sessions_newest_open_route_in_any_checkout(
+    repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+):
+    main_root, worktree = repo
+    older = route_in(worktree, monkeypatch, task=STANDARD_TASK)
+    path = RecordStore(worktree).directory / "routes.jsonl"
+    route = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**route, "created_at": "2000-01-01T00:00:00+00:00"}) + "\n", encoding="utf-8")
+    newer = route_in(main_root, monkeypatch, task=STANDARD_TASK)
+    assert run(worktree, "raise", "deep", "--reason", WIDER)[0] == 0
+    assert RecordStore(main_root).read("routes")[-1]["raised_from"] == newer
+    assert [r["id"] for r in RecordStore(worktree).read("routes")] == [older]
+    # A closed route is not open: with the main checkout's route finished, the worktree's is next.
+    raised = str(RecordStore(main_root).read("routes")[-1]["id"])
+    assert run(main_root, "outcome", raised, "--status", "abandoned", "--source", "agent")[0] == 0
+    assert run(worktree, "raise", "deep", "--reason", WIDER)[0] == 0
+    assert RecordStore(worktree).read("routes")[-1]["raised_from"] == older
+    assert RecordStore(main_root).read("routes")[-1]["id"] == raised
+
+
+def test_an_unregistered_folder_cannot_raise_a_route(
+    repo: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    main_root, _ = repo
+    route_in(main_root, monkeypatch, task=STANDARD_TASK)
+    routes = RecordStore(main_root).read("routes")
+    rogue = tmp_path / "rogue"
+    shutil.copytree(main_root, rogue, ignore=shutil.ignore_patterns(".git", ".susanoo"))
+    (rogue / ".git").write_text(f"gitdir: {main_root / '.git'}\n", encoding="utf-8")
+    code, _, err = run(rogue, "raise", "deep", "--reason", WIDER)
+    assert code == 1 and "susanoo init" in err
+    (rogue / ".susanoo").mkdir()
+    code, _, err = run(rogue, "raise", "deep", "--reason", WIDER)
+    assert code == 1 and "no open route" in err
+    assert RecordStore(main_root).read("routes") == routes
+
+
+def test_raise_from_a_worktree_without_records_keeps_the_automatic_routes_rules(
+    python_project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", SESSION)
+    code, _, err = run(python_project, "init", "--enforce", "--enforce-scope", "settings", "--auto")
+    assert code == 0, err
+    worktree = tmp_path / "pyproj-wt"
+    shutil.copytree(python_project, worktree, ignore=shutil.ignore_patterns(".git", ".susanoo", ".claude"))
+    link_worktree(python_project, worktree)
+    event = {"session_id": SESSION, "cwd": str(python_project), "prompt": STANDARD_TASK}
+    assert handle("user-prompt-submit", event)[0] == 0
+    old = RecordStore(python_project).read("routes")[-1]
+    assert old["auto"] is True and old["profile"] == "standard"
+    # The main checkout routes automatically, so `--config` stays refused from the worktree too.
+    extra = tmp_path / "extra.toml"
+    extra.write_text("", encoding="utf-8")
+    code, _, err = run(worktree, "raise", "deep", "--reason", WIDER, "--config", str(extra))
+    assert code == 1 and "--config is not accepted" in err
+    code, out, err = run(worktree, "raise", "deep", "--reason", WIDER)
+    assert code == 0, err
+    new = RecordStore(python_project).read("routes")[-1]
+    assert new["raised_from"] == old["id"] and new["auto"] is True and new["profile"] == "deep"
+    assert new["id"] in out

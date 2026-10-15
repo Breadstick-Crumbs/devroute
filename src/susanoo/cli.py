@@ -62,7 +62,7 @@ from susanoo.enforcement.auto import (
 )
 from susanoo.enforcement.hooks import HOOK_EVENTS, SessionState, handle
 from susanoo.enforcement.hooks import _project_root as _hook_root
-from susanoo.enforcement.state import active_route, evidence_status
+from susanoo.enforcement.state import active_route, evidence_status, find_active_route
 from susanoo.entry import _project_has_own_hooks
 from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
 from susanoo.evaluation.store import RecordError, RecordStore, find_route, new_record_id
@@ -922,14 +922,21 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     data") is added to it, so its safety controls apply. The raised route replaces the open one
     and keeps its recorded evidence. The user's plan approval is kept too, unless the reason
     adds a safety control: then the user approves the plan again.
+
+    The open route may be in another checkout of the repository (a git worktree, ADR 0016): the
+    raised route then replaces it there, where that checkout's Stop hook reads it.
     """
-    store = _require_initialized(ctx)
     session = ctx.args.session or _session()
     if session and auto_settings(ctx.root):
         _refuse_extra_config(ctx)
-    state = active_route(store, session) if session else None
-    if not session or state is None:
+    found = find_active_route(ctx.root, session) if session else None
+    if not session or found is None:
+        if not is_initialized(ctx.root) and not any(is_initialized(c) for c in sibling_checkouts(ctx.root)):
+            raise CLIError("local records are disabled; run `susanoo init` first")
         raise CLIError("no open route in this Claude Code session to raise (route the task first)")
+    store, state = found
+    if store.root != ctx.root and auto_settings(store.root):
+        _refuse_extra_config(ctx)
     reason = redact(" ".join(ctx.args.reason.split()))[:500]
     if not reason:
         raise CLIError("give the reason for raising the route with --reason")
@@ -971,10 +978,11 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     for item in store.read("approvals"):
         if item.get("record_id") == old and item.get("checkpoint") == "autonomy":
             store.append("approvals", {**item, "record_id": plan.record_id, "carried_from": old})
-    hook_state = SessionState(ctx.root, session)
-    if hook_state.data.get("record_id") == old:
-        hook_state.data["record_id"] = plan.record_id
-        hook_state.save()
+    for root in dict.fromkeys([store.root, ctx.root]):  # the hooks run where the session started
+        hook_state = SessionState(root, session)
+        if hook_state.data.get("record_id") == old:
+            hook_state.data["record_id"] = plan.record_id
+            hook_state.save()
     if ctx.args.json:
         ctx.emit_json({"raised_from": old, "added_controls": added, **plan.to_dict()})
         return EXIT_OK
@@ -986,13 +994,20 @@ def cmd_raise(ctx: Context, stdin: TextIO) -> int:
     configured_hands_off = bool(enforcement.get("hands_off"))
     if not approved and not configured_hands_off and target in set(enforcement.get("approval_profiles", [])):
         header += " The plan needs the user's approval again."
+    if store.root != ctx.root:
+        header += f"\nThe route was recorded in {store.root}; the raised route replaces it there."
     if state.route.get("auto") is True:
         modes = set(enforcement.get("autonomous_modes", []))
-        message = prompt_state.load(ctx.root, session) or {}
+        message = prompt_state.load(store.root, session) or prompt_state.load(ctx.root, session) or {}
         hands_off = approved or configured_hands_off or message.get("permission_mode") in modes
         asked_autonomy = autonomy_requested(store, state.route, old, message)
         brief = compact_brief(
-            plan, plan.record_id, hands_off, _brief_command(ctx.root), "again", asked_autonomy=asked_autonomy
+            plan,
+            plan.record_id,
+            hands_off,
+            _brief_command(store.root),
+            "again",
+            asked_autonomy=asked_autonomy,
         )
         ctx.emit(header + "\n" + brief)
     else:

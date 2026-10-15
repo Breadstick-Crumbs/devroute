@@ -27,6 +27,8 @@ Option 2. `susanoo verify`, `susanoo evidence`, and `susanoo outcome` look the r
 - **What the evidence says:** evidence recorded for a route in another checkout carries `checkout`, the folder the commands ran in, and `commit`, the commit checked out there (read from `HEAD` and the refs, without running git; left out when it cannot be read). Uncommitted changes are not part of `commit`. Evidence recorded in the route's own checkout is unchanged.
 - **How the gate counts it:** the latest executed run of a step counts per checkout, and the step passes only when it passes in every checkout that ran it. A pass in a clean checkout therefore never clears a failure in the checkout with the change; only a later pass there does.
 
+`susanoo raise` finds the session's open route the same way: the open route of the current session in each checkout counts, and the newest wins (this checkout's on a tie). The raised route replaces the old one in the checkout that holds it, together with the old route's outcome, its carried evidence, and the hook state, so the Stop hook there enforces the raised profile. The raise itself is unchanged: the open route is its floor, so nothing is ever lowered, and without a session, or with only other sessions' routes, there is nothing to raise. `--config` is refused when either checkout routes automatically. The raised route is planned the way `susanoo verify` plans its checks: from the current checkout's configuration and tools.
+
 `susanoo approve` stays local: approvals are the user's confirmation and are not widened by this change.
 
 Option 1 would change where every existing record lives and let all checkouts share `latest`, open routes, and the enforcement state, which concurrent sessions in different worktrees rely on being separate. Option 3 makes the agent remember a flag the brief does not mention, and run without it, the command fails as before. Option 4 is what the gate exists to prevent.
@@ -34,6 +36,7 @@ Option 1 would change where every existing record lives and let all checkouts sh
 ## Consequences
 
 - DEEP work in a worktree can record executed evidence and a `completed` outcome without extra flags.
+- A route can be raised from the worktree where the risk shows up. Before, `susanoo raise` there said "no open route in this Claude Code session to raise", and the main checkout's gate kept enforcing the lower route.
 - Susanoo still cannot tell which checkout holds the change a route is about. A checkout that only ever passed (for example an unchanged one) counts like the route's own checkout did before; `checkout` and `commit` make such evidence visible in the records. A failure is cleared only by a pass in the same checkout.
 - A failing run in a worktree that was removed afterwards keeps that step failing; rerun the checks where the change now is, record `partial`, or let the user accept the missing evidence.
 - `latest` with a session reads the other checkouts' route records on every call; an id or prefix reads them only when it is not found here.

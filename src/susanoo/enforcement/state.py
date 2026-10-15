@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from susanoo.evaluation.store import RecordStore
+from susanoo.evaluation.store import RecordStore, sibling_stores
+from susanoo.paths import is_initialized
 
 
 @dataclass
@@ -101,3 +103,26 @@ def active_route(store: RecordStore, session_id: str | None) -> RouteState | Non
         return None
     state = route_state(store, routes[-1])
     return None if state.closed else state
+
+
+def find_active_route(root: Path, session_id: str | None) -> tuple[RecordStore, RouteState] | None:
+    """The session's newest open route in ``root``'s records or another checkout of its repository.
+
+    Each checkout keeps its own records and its own gates (ADR 0016): the route is often recorded
+    in the main checkout while the work happens in a git worktree. Every checkout's active route
+    of ``session_id`` counts, and the newest wins (this checkout's on a tie). Routes of other
+    sessions are never active. Returns the store that holds the route: whatever replaces it
+    belongs there, where that checkout's Stop hook reads it.
+    """
+    if not session_id:
+        return None
+    stores = [RecordStore(root)] if is_initialized(root) else []
+    hits: list[tuple[RecordStore, RouteState]] = []
+    for store in [*stores, *sibling_stores(root)]:
+        state = active_route(store, session_id)
+        if state is not None:
+            hits.append((store, state))
+    if not hits:
+        return None
+    # `max` keeps the first of equals: this checkout's route on a tie
+    return max(hits, key=lambda hit: str(hit[1].route.get("created_at", "")))
