@@ -359,13 +359,17 @@ def test_outcome_is_refused_while_the_worktree_that_failed_has_not_passed(
 
     monkeypatch.setattr(cli, "execute_plan", fake_execute)
     record_id = route_in(main_root, monkeypatch)
+    # Required steps Susanoo cannot run depend on the installed tools (ruff, mypy, ...): report them
+    # as passed from the worktree up front, so only the failed unit tests can hold the outcome back.
+    route = RecordStore(main_root).read("routes")[-1]
+    for step in (s["id"] for s in route["verification"] if s["level"] == "required" and s["mode"] != "ready"):
+        assert run(worktree, "evidence", "latest", "--step", step, "--status", "passed")[0] == 0
     assert run(worktree, "verify", "--execute")[0] == 1
     status["value"] = "passed"
     assert run(clean, "verify", "--execute")[0] == 0
     code, _, err = run(worktree, "outcome", "latest", "--status", "completed", "--source", "agent")
-    assert code == 1 and "lacks passing evidence" in err and "unit_tests" in err
+    assert code == 1 and "lacks passing evidence: unit_tests" in err
     assert run(worktree, "verify", "--execute")[0] == 0
-    assert run(worktree, "evidence", "latest", "--step", "independent_review", "--status", "passed")[0] == 0
     code, _, err = run(worktree, "outcome", record_id, "--status", "completed", "--source", "agent")
     assert code == 0, err
 
