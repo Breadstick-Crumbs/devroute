@@ -94,6 +94,7 @@ susanoo research browser_testing                                    # options fo
 susanoo outcome latest --status completed --minutes 25              # record how it went
 susanoo report                                                      # records, summaries, suggestions
 susanoo eval                                                        # routing behavior on the reference suite
+susanoo land 52 53                                                  # test PRs on one combined tree; --merge (yours) merges
 ```
 
 ## How it works
