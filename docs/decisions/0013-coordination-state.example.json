@@ -1,0 +1,242 @@
+{
+  "_comment": "Sketch for ADR 0013, continuing the billing-webhooks plan example of ADR 0012 (merge order: migration, settings-page, webhooks, billing-api). Each key naming a path is a separate file under `git rev-parse --path-format=absolute --git-common-dir`/susanoo/; `landing_record` is one line of the coordinator's landings.jsonl. Scenario: in wave 2, webhooks' handler.py calls format_status() from src/app/billing/api.py, which exists on the base and which billing-api owns. billing-api renames it to serialize_status(). Each branch passes alone; webhooks lands first; billing-api merges cleanly on top of it and the combined tree fails. Both units ran as subagents of one coordinator, so they share a session id; leases are keyed by worktree. Nothing here is implemented.",
+  "susanoo/leases.json": {
+    "format": "susanoo.leases/1",
+    "leases": [
+      {
+        "id": "ls-20261015-102010-7c2e",
+        "worktree": "D:/DevRoute/.claude/worktrees/webhooks",
+        "holder": {
+          "branch": "billing-webhooks-webhooks",
+          "session_id": "3f9a0c1e-5b7d-4e2a-9c61-0d8e4b2a7f13",
+          "plan_id": "billing-webhooks",
+          "revision": 1,
+          "unit_id": "webhooks"
+        },
+        "base_at_claim": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+        "owns": [
+          "src/app/billing/webhooks/",
+          "tests/billing/test_webhooks.py"
+        ],
+        "observed": [
+          "src/app/billing/webhooks/handler.py",
+          "tests/billing/test_webhooks.py"
+        ],
+        "blast_radius": {
+          "predicted": [
+            "src/app/urls.py"
+          ],
+          "predicted_method": "reverse python imports on the base, depth 1",
+          "observed": [],
+          "languages_not_scanned": []
+        },
+        "claimed_at": "2026-10-15T10:20:10+00:00",
+        "heartbeat_at": "2026-10-15T11:02:11+00:00",
+        "state": "active",
+        "flags": [
+          {
+            "kind": "at_risk",
+            "from_lease": "ls-20261015-102011-1a90",
+            "path": "src/app/billing/webhooks/handler.py",
+            "imports": "src/app/billing/api.py",
+            "reason": "a file of this lease imports a file the other lease owns (found by `notice scan` at this worktree)"
+          }
+        ]
+      },
+      {
+        "id": "ls-20261015-102011-1a90",
+        "worktree": "D:/DevRoute/.claude/worktrees/billing-api",
+        "holder": {
+          "branch": "billing-webhooks-billing-api",
+          "session_id": "3f9a0c1e-5b7d-4e2a-9c61-0d8e4b2a7f13",
+          "plan_id": "billing-webhooks",
+          "revision": 1,
+          "unit_id": "billing-api"
+        },
+        "base_at_claim": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+        "owns": [
+          "src/app/billing/api.py",
+          "tests/billing/test_api.py"
+        ],
+        "observed": [
+          "src/app/billing/api.py",
+          "tests/billing/test_api.py"
+        ],
+        "blast_radius": {
+          "predicted": [
+            "src/app/urls.py"
+          ],
+          "predicted_method": "reverse python imports on the base, depth 1",
+          "observed": [
+            "src/app/billing/webhooks/handler.py"
+          ],
+          "languages_not_scanned": []
+        },
+        "claimed_at": "2026-10-15T10:20:11+00:00",
+        "heartbeat_at": "2026-10-15T11:04:30+00:00",
+        "state": "active",
+        "flags": []
+      }
+    ]
+  },
+  "susanoo/notices/nt-20261015-105512-b41d.json": {
+    "format": "susanoo.notice/1",
+    "id": "nt-20261015-105512-b41d",
+    "from_lease": "ls-20261015-102011-1a90",
+    "branch": "billing-webhooks-billing-api",
+    "merge_base": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+    "tip": "4d1e8b0c7a2f9e6d3b5a1c8e0f7d2b9a6c4e1f30",
+    "changes": [
+      {
+        "file": "src/app/billing/api.py",
+        "symbols": [
+          {
+            "name": "format_status",
+            "change": "renamed",
+            "to": "serialize_status"
+          }
+        ]
+      }
+    ],
+    "affected_leases": [
+      {
+        "lease": "ls-20261015-102010-7c2e",
+        "why": "src/app/billing/webhooks/handler.py imports src/app/billing/api.py at that worktree; the plan did not list api.py in the unit's reads"
+      }
+    ],
+    "created_at": "2026-10-15T10:55:12+00:00"
+  },
+  "susanoo/notices/nt-20261015-105512-b41d.ack.ls-20261015-102010-7c2e": "(absent: the webhooks session never acknowledged the notice)",
+  "susanoo/queue.json": {
+    "format": "susanoo.queue/1",
+    "base": "main",
+    "chain_root": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+    "landed_ref": "refs/susanoo/landed/main",
+    "entries": [
+      {
+        "branch": "billing-webhooks-migration",
+        "unit": "migration",
+        "enqueued_at": "2026-10-15T10:05:00+00:00",
+        "onto": "ca55985566e8ff8e3d9cc70ecfa36dd8dbe4f2b6",
+        "state": "applied",
+        "landing_commit": "8a2c4e6f0b1d3f5a7c9e1b3d5f7a9c1e3b5d7f90"
+      },
+      {
+        "branch": "billing-webhooks-settings-page",
+        "unit": "settings-page",
+        "enqueued_at": "2026-10-15T10:10:30+00:00",
+        "onto": "8a2c4e6f0b1d3f5a7c9e1b3d5f7a9c1e3b5d7f90",
+        "state": "applied",
+        "landing_commit": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61"
+      },
+      {
+        "branch": "billing-webhooks-webhooks",
+        "unit": "webhooks",
+        "enqueued_at": "2026-10-15T11:05:00+00:00",
+        "onto": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+        "state": "landed",
+        "landing_commit": "c1e3b5d7f9a1c3e5b7d9f1a3c5e7092b4d6f8a0d"
+      },
+      {
+        "branch": "billing-webhooks-billing-api",
+        "unit": "billing-api",
+        "enqueued_at": "2026-10-15T11:08:10+00:00",
+        "onto": "c1e3b5d7f9a1c3e5b7d9f1a3c5e7092b4d6f8a0d",
+        "state": "bounced",
+        "landing_id": "ld-20261015-112244-e0a7"
+      }
+    ]
+  },
+  "landing_record": {
+    "id": "ld-20261015-112244-e0a7",
+    "kind": "landing",
+    "mode": "land",
+    "rule_version": 1,
+    "base": "main",
+    "chain_root": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+    "onto": "c1e3b5d7f9a1c3e5b7d9f1a3c5e7092b4d6f8a0d",
+    "branch": "billing-webhooks-billing-api",
+    "branch_tip": "4d1e8b0c7a2f9e6d3b5a1c8e0f7d2b9a6c4e1f30",
+    "plan_id": "billing-webhooks",
+    "unit_id": "billing-api",
+    "verdict": "mergeable",
+    "textual_conflicts": [],
+    "config_from": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+    "setup": [
+      "python -m venv <tmp>/venv",
+      "<venv python> -m pip install -e ."
+    ],
+    "combined": {
+      "commit": "e5a7c9e1b3d5f7a9c1e3b5d7f908a2c4e6f0b1d3",
+      "tree": "0f2d4b6a8c0e2a4c6e8a0b2d4f6a8c0e2b4d6f8a",
+      "result": "failed",
+      "steps": [
+        {
+          "step": "unit_tests",
+          "status": "failed",
+          "source": "executed",
+          "exit_code": 1,
+          "reran": true,
+          "output_tail": "AttributeError: module 'app.billing.api' has no attribute 'format_status' [truncated]"
+        },
+        {
+          "step": "integration_tests",
+          "status": "passed",
+          "source": "executed",
+          "exit_code": 0
+        },
+        {
+          "step": "security_scan",
+          "status": "passed",
+          "source": "executed",
+          "exit_code": 0
+        },
+        {
+          "step": "static_analysis",
+          "status": "passed",
+          "source": "executed",
+          "exit_code": 0,
+          "from": "[land] verification"
+        },
+        {
+          "step": "migration_check",
+          "status": "skipped",
+          "source": "reported",
+          "from": "unit evidence at branch_tip",
+          "note": "no schema change in this unit"
+        },
+        {
+          "step": "independent_review",
+          "status": "passed",
+          "source": "reported",
+          "from": "unit evidence at branch_tip"
+        }
+      ]
+    },
+    "alone_on_applied_base": {
+      "onto": "b7d9f1a3c5e7092b4d6f8a0c2e4b6d8f0a2c4e61",
+      "result": "passed"
+    },
+    "interaction_break": true,
+    "counts_for_phase_0": false,
+    "attribution": {
+      "kind": "interaction",
+      "branch": "billing-webhooks-billing-api",
+      "with_entries": [
+        "billing-webhooks-webhooks"
+      ],
+      "evidence": [
+        {
+          "notice": "nt-20261015-105512-b41d",
+          "acknowledged": false
+        },
+        {
+          "lease_flag": "at_risk",
+          "lease": "ls-20261015-102010-7c2e",
+          "path": "src/app/billing/webhooks/handler.py"
+        }
+      ]
+    },
+    "recorded_at": "2026-10-15T11:22:44+00:00"
+  }
+}

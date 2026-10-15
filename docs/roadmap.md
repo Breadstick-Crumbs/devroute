@@ -35,10 +35,10 @@ Legend: ✅ implemented in v0.1 · 🔜 planned · 🔬 research
 
 | Item | Status |
 |---|---|
-| Task decomposition: split DEEP tasks into independently verifiable work units with explicit interfaces | 🔜 |
-| Delegation plans: which units suit parallel subagents or worktrees, and which share files and must stay serial | 🔜 |
+| Task decomposition: split DEEP tasks into independently verifiable work units with explicit interfaces | 🔜 (design proposed: [ADR 0012](decisions/0012-delegation-plans.md)) |
+| Delegation plans: which units suit parallel subagents or worktrees, and which share files and must stay serial | 🔜 (design proposed: [ADR 0012](decisions/0012-delegation-plans.md)) |
 | Landing ([ADR 0014](decisions/0014-susanoo-land.md)): `susanoo land` tests several agent branches on one combined tree, keeps both sides of append-only conflicts, attributes failures (broken alone, interaction, base), pushes base merges, and merges pull requests with `gh` only with the user's `--merge`; runs are recorded for the go or no-go | ✅ (unreleased) |
-| Landing: leases and interface-change notices (ADR 0013, on branch `delegation-plans-adr`), built only if the land records show they are needed | 🔬 |
+| Landing: leases and interface-change notices ([ADR 0013](decisions/0013-leases-and-landing-queue.md)), built only if the land records show they are needed | 🔬 |
 | Parallel sessions: a lead-session skill on the app's own session features, plus evidence and reviews bound to a commit and a read-only `susanoo board` | 🔜 (design proposed: [ADR 0015](decisions/0015-lead-session-and-board.md)) |
 | Strategy selection within profiles (test-first, spike-then-build, migration-first) based on signals | 🔜 |
 | Stronger verification: coverage-delta checks, changed-files-to-tests mapping, migration dry runs | 🔜 |

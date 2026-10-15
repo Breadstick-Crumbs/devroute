@@ -1,6 +1,6 @@
 # 0015: A lead session per repository, and a read-only `susanoo board`
 
-**Status:** proposed (draft for review). Nothing here is implemented; every command, skill, field, and file marked *proposed* is new work. The number is provisional: [0012](0012-delegation-plans.md) and [0013](0013-leases-and-landing-queue.md) are proposed on the `delegation-plans-adr` branch, so their links resolve and the number is checked again when they land. [0014](0014-susanoo-land.md) is accepted. Builds on 0014's `susanoo land` and amends two of its rules (see "Merging" and "Reviews"). Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0004](0004-local-jsonl-records.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md).
+**Status:** proposed (draft for review). Nothing here is implemented; every command, skill, field, and file marked *proposed* is new work. [0012](0012-delegation-plans.md) and [0013](0013-leases-and-landing-queue.md) are proposed; [0014](0014-susanoo-land.md) is accepted. Builds on 0014's `susanoo land` and amends two of its rules (see "Merging" and "Reviews"). Works within [0001](0001-zero-runtime-dependencies.md), [0003](0003-skill-first-claude-code-integration.md), [0004](0004-local-jsonl-records.md), [0007](0007-hands-off-by-default.md), and [0009](0009-clarifying-questions-under-hands-off.md).
 
 ## Context
 
