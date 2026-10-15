@@ -15,3 +15,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0009](0009-clarifying-questions-under-hands-off.md) | Hands-off covers permission prompts, not clarifying questions: Claude asks about the task when confidence is low |
 | [0010](0010-taste-skill-and-screenshot-helper.md) | A `taste-ui` skill makes visual decisions from the user's taste profile (a quality bar, not a required look); `susanoo taste shoot` takes screenshots but Susanoo never judges them |
 | [0011](0011-architecture-context.md) | STANDARD and DEEP briefs name the project's architecture documents, decision records, and boundary rules; its boundary tools become a recommended check |
+| [0015](0015-lead-session-and-board.md) | One lead session per repository hands each change to a worker session, reviews and lands it, and asks the user only to merge; a read-only `susanoo board` shows every worktree's state and file overlaps (proposed) |
