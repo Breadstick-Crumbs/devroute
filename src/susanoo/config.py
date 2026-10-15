@@ -210,6 +210,16 @@ def validate(config: Config) -> None:
         isinstance(exempt, list) and all(isinstance(p, str) for p in exempt),
         "[auto] route_before_edit_exempt must be a list of strings",
     )
+    for key in ("app_envelopes", "app_envelope_frames"):
+        value = auto.get(key, [])
+        _require(
+            isinstance(value, list) and all(isinstance(v, str) and v.strip() for v in value),
+            f"[auto] {key} must be a list of non-empty strings",
+        )
+    _require(
+        all(re.fullmatch(r"[A-Za-z][\w-]*", v) for v in auto.get("app_envelopes", [])),
+        "[auto] app_envelopes must be tag names (letters, digits, '-' and '_')",
+    )
 
     _check_dimension_map("[assessment] baseline", config.get("assessment", {}).get("baseline", {}))
 

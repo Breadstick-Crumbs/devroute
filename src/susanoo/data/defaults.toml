@@ -254,6 +254,22 @@ route_before_edit_exempt = [
     "CLAUDE.md", "*/CLAUDE.md", "CLAUDE.local.md", "*/CLAUDE.local.md", "AGENTS.md", "*/AGENTS.md",
     ".claude/*", "*/.claude/*",
 ]
+# Blocks the Claude Code app sends as prompts on its own: status reminders, messages from other
+# sessions and subagents, side-session notes, task notifications, CI events (ADR 0016). A prompt
+# made only of these blocks (and the app's frame lines below) is not the user's message: the
+# recorded user message and any open route stay as they were. Text outside them makes it the
+# user's message, counted whole as before.
+app_envelopes = [
+    "system-reminder", "cross-session-message", "agent-message", "side-sessions-event",
+    "task-notification", "ci-monitor-event",
+]
+# Lines the app writes around those blocks (literal line starts). They count as part of the app's
+# message only in a prompt that has at least one of the blocks.
+app_envelope_frames = [
+    "Another Claude session sent a message:",
+    "This came from another Claude session",
+    "That \"other Claude session\" is an agent working inside this same session",
+]
 
 [ui]
 # UI domain for UI tasks (ADR 0008): "" picks one from the task's words, then from the project's

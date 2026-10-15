@@ -15,3 +15,4 @@ Short records of decisions that shape Susanoo, written when the decision was mad
 | [0009](0009-clarifying-questions-under-hands-off.md) | Hands-off covers permission prompts, not clarifying questions: Claude asks about the task when confidence is low |
 | [0010](0010-taste-skill-and-screenshot-helper.md) | A `taste-ui` skill makes visual decisions from the user's taste profile (a quality bar, not a required look); `susanoo taste shoot` takes screenshots but Susanoo never judges them |
 | [0011](0011-architecture-context.md) | STANDARD and DEEP briefs name the project's architecture documents, decision records, and boundary rules; its boundary tools become a recommended check |
+| [0016](0016-app-messages-are-not-the-users-message.md) | A prompt made only of the app's blocks (other sessions, notifications, status reminders) is not the user's message: it leaves routes and the recorded user message alone |
