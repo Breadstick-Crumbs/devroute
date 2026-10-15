@@ -121,8 +121,18 @@ When an outcome is recorded (`susanoo outcome`, or Susanoo closing a route a new
 - `duration_minutes`: from the route's creation to its last assistant message.
 - `tool_calls`: calls per tool name (`Read`, `Grep`, `mcp__<server>__<tool>`), counted from tool-use blocks without reading their inputs or results.
 - `cost_usd`: only when the transcript itself records a cost (older Claude Code versions did). Susanoo does not estimate prices.
+- `time_minutes`: where `duration_minutes` went, from the session's own transcript. Each gap between two transcript lines counts toward what ended it:
+  - `model`: Claude writing a message (including thinking and API time);
+  - `tools`: a tool running, including subagents and the auto-mode permission check;
+  - `approvals`: a tool call that waited for you to answer a permission prompt, including its run time afterwards;
+  - `waiting`: the turn had ended and the session waited for the next message, from you or from the app (another session's report, a task notification).
 
-`captured` lists the fields that came from the transcript. Only usage numbers, timestamps, message ids, and tool names are read, never message text or tool inputs and results. The transcript format is not a documented interface: when it is missing or changes, nothing is captured and the outcome is recorded as before. Routes made outside a Claude Code session have no session id and are never captured; work after `/clear` or in a resumed session with a new session id is not counted. Reading stops, and nothing is captured, after about 2 seconds or 64 MB, so a route left open for a very long session may get no capture; this keeps the prompt hook fast.
+  The four parts add up to `duration_minutes`, give or take rounding. Time after you interrupt Claude counts as waiting, because the transcript marks an interruption only in message text, which is never read.
+- `tool_minutes`: the `tools` and `approvals` minutes per tool name, most first (`{"Bash": 34.7, "Agent": 9.8}`). Which command a `Bash` call ran is never read.
+- `user_prompts`: prompts you typed after Claude's first message in the route. They are often corrections or redirects, but also answers to Claude's questions.
+- `approvals`: permission prompts you answered (approved or rejected).
+
+`captured` lists the fields that came from the transcript. Only usage numbers, timestamps, message and line ids, tool names and tool-use ids, line and block types, the `isMeta` and `isCompactSummary` flags, whether a prompt was typed by you (`origin.kind`), and who allowed a tool call (`permissionDecision.source`) are read, never message text or tool inputs and results. The transcript format is not a documented interface: when it is missing or changes, nothing is captured and the outcome is recorded as before. Routes made outside a Claude Code session have no session id and are never captured; work after `/clear` or in a resumed session with a new session id is not counted. Reading stops, and nothing is captured, after about 2 seconds or 64 MB, so a route left open for a very long session may get no capture; this keeps the prompt hook fast. Decoding the session's user messages for the time split has its own half-second budget on top: past it, the time fields are left out and the rest is captured as before.
 
 ## Reference
 

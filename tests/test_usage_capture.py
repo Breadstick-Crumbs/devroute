@@ -189,8 +189,19 @@ def test_capture_fills_empty_fields_and_keeps_given_ones(tmp_path: Path):
     fill_outcome(data, route(), store, enabled(), home)
     assert data["tokens"] == 2 * 1115 and data["duration_minutes"] == 6.0
     assert data["cost_usd"] is None  # current transcripts carry no cost; none is estimated
-    assert data["captured"]["fields"] == ["tokens", "token_counts", "duration_minutes", "tool_calls"]
+    assert data["captured"]["fields"] == [
+        "tokens",
+        "token_counts",
+        "duration_minutes",
+        "tool_calls",
+        "time_minutes",
+        "tool_minutes",
+        "user_prompts",
+        "approvals",
+    ]
     assert data["captured"]["messages"] == 2
+    assert data["time_minutes"] == {"model": 6.0, "tools": 0.0, "approvals": 0.0, "waiting": 0.0}
+    assert (data["tool_minutes"], data["user_prompts"], data["approvals"]) == ({}, 0, 0)
     assert data["token_counts"] == {
         "input_tokens": 10,
         "cache_creation_input_tokens": 200,
@@ -204,7 +215,14 @@ def test_capture_fills_empty_fields_and_keeps_given_ones(tmp_path: Path):
     fill_outcome(given, route(), store, enabled(), home)
     assert given["tokens"] == 42 and given["duration_minutes"] == 3.0
     # Counts that would not add up to the given total are left out.
-    assert given["captured"]["fields"] == ["tool_calls"] and "token_counts" not in given
+    assert given["captured"]["fields"] == [
+        "tool_calls",
+        "time_minutes",
+        "tool_minutes",
+        "user_prompts",
+        "approvals",
+    ]
+    assert "token_counts" not in given
 
 
 def tool_line(minutes: float, msg_id: str, tool_id: str, name: str) -> dict[str, Any]:
@@ -236,6 +254,114 @@ def test_tool_calls_are_counted_by_name_without_reading_inputs(tmp_path: Path):
     assert data["tool_calls"] == {"Read": 2, "Grep": 1, "mcp__codebase-memory-mcp__search_graph": 1}
     assert data["captured"]["messages"] == 5  # msg_a, msg_b, msg_c, msg_d, msg_s
     assert "secret" not in json.dumps(data)
+
+
+def result_line(minutes: float, tool_id: str, source: str | None = None) -> dict[str, Any]:
+    block = {"type": "tool_result", "tool_use_id": tool_id, "content": "never read"}
+    line: dict[str, Any] = {
+        "type": "user",
+        "timestamp": _stamp(minutes),
+        "uuid": f"result-{tool_id}-{minutes}",
+        "message": {"role": "user", "content": [block]},
+        "toolUseResult": {"stdout": "never read"},
+    }
+    if source is not None:
+        line["permissionDecision"] = {"decision": "accept", "source": source, "reason": "never read"}
+    return line
+
+
+def prompt_line(minutes: float, kind: str | None = "human", **extra: Any) -> dict[str, Any]:
+    origin = None if kind is None else {"kind": kind, "body": "never read"}
+    return {
+        "type": "user",
+        "timestamp": _stamp(minutes),
+        "origin": origin,
+        "message": {"role": "user", "content": "never read"},
+        **extra,
+    }
+
+
+def test_time_is_split_by_what_ended_each_gap(tmp_path: Path):
+    home = tmp_path / "claude"
+    main_file = transcript(
+        home,
+        [
+            prompt_line(-1),  # the prompt that started the task comes before the route
+            tool_line(1, "msg_a", "toolu_1", "Bash"),  # model 0-1
+            result_line(4, "toolu_1", "config"),  # tools 1-4: allowed by settings
+            tool_line(5, "msg_b", "toolu_2", "Edit"),  # model 4-5
+            result_line(7, "toolu_2", "user_temporary"),  # approvals 5-7: you answered a permission prompt
+            assistant(8, "msg_c"),  # model 7-8: the turn ends
+            prompt_line(9, kind=None, isMeta=True),  # skill text: skipped
+            prompt_line(20),  # waiting 8-20, then your follow-up
+            tool_line(21, "msg_d", "toolu_3", "Agent"),  # model 20-21
+            result_line(26, "toolu_3"),  # tools 21-26: the subagent ran
+            assistant(27, "msg_e"),  # model 26-27
+            prompt_line(28, kind="task-notification"),  # after the last message: next work
+            prompt_line(40),
+        ],
+    )
+    write_lines(main_file.parent / SESSION / "subagents" / "agent-x.jsonl", [assistant(24, "msg_s")])
+    data = outcome(45)
+    fill_outcome(data, route(), store_with(tmp_path, route()), enabled(), home)
+    assert data["duration_minutes"] == 27.0
+    assert data["time_minutes"] == {"model": 5.0, "tools": 8.0, "approvals": 2.0, "waiting": 12.0}
+    assert sum(data["time_minutes"].values()) == data["duration_minutes"]
+    assert data["tool_minutes"] == {"Agent": 5.0, "Bash": 3.0, "Edit": 2.0}
+    assert (data["user_prompts"], data["approvals"]) == (1, 1)
+    assert "never read" not in json.dumps(data)
+
+
+def test_time_split_edge_cases(tmp_path: Path):
+    home = tmp_path / "claude"
+    lines = [
+        prompt_line(0.5, uuid="u-start"),  # the prompt that started the task, just after the route
+        tool_line(2, "msg_a", "toolu_1", "Bash"),  # model 0.5-2
+        result_line(2, "toolu_1", "user_temporary"),  # same time: file order keeps the gap on model
+        tool_line(3, "msg_b", "", "Read"),  # model 2-3; a tool-use id that is empty
+        result_line(4, ""),  # tools 3-4, credited to no tool
+        prompt_line(6, uuid="u-follow"),  # waiting 4-6, a follow-up
+        {"type": "user", "timestamp": _stamp(8), "isCompactSummary": True, "message": {"content": "x"}},
+        assistant(9, "msg_c"),  # model 6-9: compaction, then the answer
+    ]
+    transcript(home, lines)
+    transcript(home, lines, project="D--moved")  # the same session copied to another project folder
+    data = outcome(10)
+    fill_outcome(data, route(), store_with(tmp_path, route()), enabled(), home)
+    assert data["time_minutes"] == {"model": 5.5, "tools": 1.0, "approvals": 0.0, "waiting": 2.5}
+    assert data["tool_minutes"] == {}  # neither the model gaps nor the result reach "Read"
+    assert (data["user_prompts"], data["approvals"]) == (1, 1)
+
+
+def test_split_has_its_own_budget_and_never_costs_the_token_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "claude"
+    transcript(
+        home, [tool_line(1, "msg_a", "toolu_1", "Bash"), result_line(4, "toolu_1"), assistant(5, "msg_b")]
+    )
+    monkeypatch.setattr(usage, "_SPLIT_SECONDS", -1.0)  # over the split's budget from the start
+    data = outcome(10)
+    fill_outcome(data, route(), store_with(tmp_path, route()), enabled(), home)
+    assert data["tokens"] == 2 * 1115 and data["duration_minutes"] == 5.0
+    assert {"time_minutes", "tool_minutes", "user_prompts", "approvals"}.isdisjoint(data)
+
+
+def test_time_after_the_sessions_last_line_goes_to_tools(tmp_path: Path):
+    home = tmp_path / "claude"
+    main_file = transcript(home, [tool_line(3, "msg_a", "toolu_1", "Agent")])
+    write_lines(main_file.parent / SESSION / "subagents" / "agent-x.jsonl", [assistant(9, "msg_s")])
+    data = outcome(10)
+    fill_outcome(data, route(), store_with(tmp_path, route()), enabled(), home)
+    assert data["time_minutes"] == {"model": 3.0, "tools": 6.0, "approvals": 0.0, "waiting": 0.0}
+    assert data["tool_minutes"] == {}  # the subagent's tail has no tool result to name it
+
+    # Without a line of the session's own transcript in the window there is no split.
+    transcript(home, [assistant(-20, "msg_old")])
+    data = outcome(10)
+    fill_outcome(data, route(), store_with(tmp_path, route()), enabled(), home)
+    assert data["duration_minutes"] == 9.0
+    assert {"time_minutes", "tool_minutes", "user_prompts", "approvals"}.isdisjoint(data)
 
 
 def test_work_after_the_sessions_next_route_belongs_to_that_route(tmp_path: Path):
@@ -369,6 +495,42 @@ def test_report_shows_cache_use_and_tools_per_profile():
     assert data["token_count_totals"]["cache_read_input_tokens"] == 3200
 
 
+def test_report_shows_where_the_time_went():
+    routes = [route("su-1"), route("su-2"), route("su-3"), route("su-4", profile="deep")]
+    split = {"model": 4.0, "tools": 10.0, "approvals": 1.0, "waiting": 5.0}
+    outcomes = [
+        {
+            "record_id": "su-1",
+            "status": "completed",
+            "time_minutes": split,
+            "tool_minutes": {"Bash": 9.0, "Agent": 1.0},
+            "user_prompts": 3,
+            "approvals": 2,
+        },
+        {
+            "record_id": "su-2",
+            "status": "completed",
+            "time_minutes": {**split, "tools": 0},
+            "tool_minutes": {"Edit": 1.0, "Bash": "slow", "Read": float("inf"), "Grep": -2},
+            "user_prompts": 1,
+        },
+        {"record_id": "su-3", "status": "completed", "time_minutes": {**split, "waiting": float("nan")}},
+        {"record_id": "su-4", "status": "completed", "time_minutes": "lots", "user_prompts": 9},
+    ]
+    report = summarize(routes, outcomes, [])
+    fast, deep = report.profiles
+    assert fast.with_time == 2
+    assert fast.time_totals == {"model": 8.0, "tools": 10.0, "approvals": 2.0, "waiting": 10.0}
+    assert (fast.user_prompts, fast.approvals) == (4, 2)
+    assert deep.with_time == 0 and deep.user_prompts == 0
+    text = render_report(routes, report, {o["record_id"]: o for o in outcomes}, 10)
+    assert "## Where the time went" in text
+    assert "| FAST | 2 | 4.0 (27%) | 5.0 (33%) | 1.0 (7%) | 5.0 (33%) | 2.0 | 1.0 |" in text
+    assert "| DEEP |" not in text.split("## Where the time went")[1]
+    assert "- FAST: Bash 9, Agent 1, Edit 1" in text
+    assert report.to_dict()["profiles"][0]["time_totals"]["tools"] == 10.0
+
+
 def test_report_cost_line_stays_out_of_the_table():
     routes = [route("su-1")]
     report = summarize(routes, [{"record_id": "su-1", "status": "completed", "cost_usd": 1.5}], [])
@@ -410,6 +572,6 @@ def test_outcome_command_captures_usage_when_enabled(
     with (python_project / ".susanoo/config.toml").open("a", encoding="utf-8") as fh:
         fh.write("\n[records]\ncapture_usage = true\n")
     _, out, _ = run(python_project, "outcome", record_id, "--status", "completed")
-    assert "captured from the session transcript: tokens, token_counts, duration_minutes, tool_calls" in out
+    assert "captured from the session transcript: tokens, token_counts, duration_minutes, tool_calls, " in out
     _, out, _ = run(python_project, "report")
     assert "7 (n=1) | 1.1k (n=1)" in out
