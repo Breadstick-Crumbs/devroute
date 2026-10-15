@@ -12,6 +12,7 @@ approval steps), so the output does not depend on which tools are installed.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from html import escape
@@ -52,9 +53,13 @@ Span = tuple[str, str]  # (text, color key)
 
 
 def route(task: str) -> dict[str, Any]:
+    # Without a session id, so the latest message of a Claude Code session running this script
+    # is not combined into the demo's routes.
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
     out = subprocess.run(
         [sys.executable, "-m", "susanoo", "route", "--no-record", "--json", task],
         cwd=ROOT,
+        env=env,
         capture_output=True,
         text=True,
         check=True,
