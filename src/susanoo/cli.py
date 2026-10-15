@@ -49,6 +49,7 @@ from susanoo.adapters.claude_code.settings_hooks import (
 )
 from susanoo.adapters.claude_code.usage import fill_outcome
 from susanoo.analyzer import Floor, assess
+from susanoo.board import BoardError, build_board, render_board
 from susanoo.config import MAX_TIMEOUT_SECONDS, PROFILE_ORDER, Config, ConfigError, load_config
 from susanoo.discovery import build_inventory
 from susanoo.enforcement import prompt as prompt_state
@@ -1227,6 +1228,19 @@ def cmd_review(ctx: Context, stdin: TextIO) -> int:
     return EXIT_OK
 
 
+def cmd_board(ctx: Context, stdin: TextIO) -> int:
+    """Per worktree branch: checks and review for its current commit, land status, shared files."""
+    try:
+        data = build_board(ctx.root, ctx.args.base, Path(ctx.args.config) if ctx.args.config else None)
+    except BoardError as exc:
+        raise CLIError(str(exc)) from exc
+    if ctx.args.json:
+        ctx.emit_json(data)
+    else:
+        ctx.emit(render_board(data))
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -1468,6 +1482,15 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("target", nargs="?", help="only this pull request number or branch name")
     q.add_argument("--last", type=int, default=20, help="number of recent records to show (default 20)")
     q.set_defaults(func=cmd_review)
+
+    p = sub.add_parser(
+        "board",
+        parents=[common],
+        allow_abbrev=False,
+        help="per worktree branch: checks and review for its current commit, land status, overlaps",
+    )
+    p.add_argument("--base", help="base branch to compare with (default: origin's default branch, else main)")
+    p.set_defaults(func=cmd_board)
 
     p = sub.add_parser("eval", parents=[common], help="evaluate routing against a labeled task suite")
     p.add_argument("--suite", help="path to a suite TOML (default: bundled routing-v1)")

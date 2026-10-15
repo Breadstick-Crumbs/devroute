@@ -30,6 +30,7 @@ src/susanoo/
   ui.py                UI domains and checklists       choose_domain(task, config, detected) -> UIContext
   architecture.py      Architecture context             detect_architecture_files(root), describe_architecture(inventory)
   land/                Landing agent branches           land(root, options) -> record (ADR 0014)
+  board.py             Read-only branch board           build_board(root, base) -> rows (ADR 0015)
   render.py            Execution brief and reports
   cli.py               Command-line interface
   data/                defaults.toml, profiles/, tools.toml, capabilities.toml, ui_domains.toml, architecture.toml, suites/, templates/
@@ -111,6 +112,8 @@ Identical commands run once per execution; later steps reuse the result and say 
 ### Landing (`land/`)
 
 `susanoo land` ([ADR 0014](../decisions/0014-susanoo-land.md), [land.md](../land.md)) merges agent branches in order into a scratch worktree at the fetched base, keeps both sides of append-only conflicts (`keepboth.py`, rules in `[[land.keep_both]]`), runs the checks (`checks.py`: the DEEP plan's ready, required steps through the verification executor, plus `[[land.checks]]` and `[[land.compare]]`) with configuration from the base, attributes a failure by rerunning and testing prefixes and the culprit alone, pushes base merges whose trees equal the tested ones, and merges pull requests through `gh` only with `--merge`. Git and `gh` are called with argv lists (`gitops.py`). Runs are appended to `<git common dir>/susanoo/records/land.jsonl` (`records.py`), shared by all worktrees. `reviews.py` records `/code-review` and `/security-review` results against a branch's current tip in `reviews.jsonl` next to it ([ADR 0015](../decisions/0015-lead-session-and-board.md)).
+
+`susanoo board` (`board.py`, ADR 0015) reads, per worktree branch from `git worktree list --porcelain`, the checkout's newest route and evidence (`is_verified` and `evidence_status` in `enforcement/state.py`), `reviews.jsonl` and `land.jsonl`, and the files changed since the merge-base with `origin/<base>`, and marks shared paths (split by `[[land.keep_both]]`) and decision-record numbers taken twice. It only reads: git runs without optional locks, fsmonitor, or redirecting variables, and nothing is fetched or written.
 
 ### Claude Code adapter
 

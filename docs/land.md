@@ -87,6 +87,23 @@ Every run appends one line to `<git common dir>/susanoo/records/land.jsonl`, sha
 
 `land` looks up the review of each candidate's tested tip (the tip before the base is merged in) and records the newest status per tool (`passed`, `failed`, or `missing`) in the run's record. With `[land] require_review = true`, the default, `--merge` refuses a candidate whose newest code-review of that tip is missing or failed, before any check runs, and checks again right before each merge, so a review that fails meanwhile still stops it. A review of an older commit does not count: a new commit needs a new review. The exception is a merge of the base that adds nothing: when `land` (or you) merged the base into a reviewed commit and nothing else changed, the review still counts, so `land` followed by `land --merge` works after the first run pushed such a merge. Without `--merge`, a missing review is a warning and the run's status line says so; the checks still run. A `security-review` is recorded in the run but not required by `land`, which cannot tell reliably which routes a branch carries; asking for one when the route has a security control is left to the lead session that ADR 0015 plans (not built yet). `require_review` is read only from the defaults and the base branch's `.susanoo/config.toml`, never from a branch or your user configuration, and when it is off and a review is missing, the run warns.
 
+## The board
+
+`susanoo board [--base <branch>] [--json]` shows one line per worktree branch, for the session that lands them ([ADR 0015](decisions/0015-lead-session-and-board.md)):
+
+```text
+a-fix   verified@a1b2c3d   review:passed  land:ready   security; overlap: src/app.py (b-feat)
+b-feat  stale (2 commits)  review:-       land:-       overlap: src/app.py (a-fix); append-only: CHANGELOG.md (c-docs)
+c-docs  unverified         review:-       land:failed  append-only: CHANGELOG.md (b-feat); ADR 0016 also taken by main
+```
+
+- **Checks:** from the worktree's newest route and its evidence `head` and `dirty`: `verified@<sha>` when every required step holds for the branch tip, `failed` when a step's newest run failed, `stale (n commits)` when every step passed on a clean tree of a commit the tip has since built on, else `unverified`. A worktree without routes of its own uses the newest route in another checkout whose checks ran there (ADR 0017).
+- **Review:** the newest `/code-review` (and `/security-review`, when there is one) recorded for exactly the tip, or `-`.
+- **Land:** the newest `land` run that had this branch at its tip, or pushed a commit built on it (when the branch has commits of its own), with this branch's part in it: `merged` when it was merged, `failed (by <other>)` when another candidate broke the checks.
+- **Marks:** `security` when the route has a security control; `locked` for a locked worktree; `uncommitted (n)` for files not yet committed, which the checks column does not cover; `overlap` with the paths another branch also changes (committed since the merge-base with `origin/<base>`, plus uncommitted files); `append-only` instead for paths `[[land.keep_both]]` may resolve; `ADR <n> also taken by ...` when a branch adds a decision record whose number another branch adds under another name, or the base already has.
+
+`--base` defaults to `origin`'s default branch as last fetched, else `main`; branches are compared with `origin/<base>`, or with the local base when that is ahead of it or the only one, and the base branch's own checkout is not listed. The `[[land.keep_both]]` rules come from the configuration of the checkout the board runs in (the lead's, on the base branch) and `--config`. Detached, prunable, and `land`'s scratch worktrees are skipped and named below the table. The board only reads: it fetches nothing, runs no checks, writes no file, index, or record, and runs git without optional locks, fsmonitor, or lazy fetching in partial clones, and without variables that point git elsewhere. Git itself may still run a configured clean filter (such as Git LFS's) on a modified file during `git status`. Text from records is cut to one line. `--json` gives the same data, with each branch's changed paths.
+
 ## Not supported yet
 
 Pull requests from forks, forges other than GitHub, and batching with bisection. A candidate whose `.gitattributes` sets a `merge=` driver is refused, because it changes how git resolves conflicts.

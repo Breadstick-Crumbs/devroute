@@ -118,7 +118,7 @@ The review itself is the built-in `/code-review` (and `/security-review`). Susan
 
 ### `susanoo board`
 
-*Proposed:* `susanoo board [--base <branch>] [--json]`. It shows only what the app and plain git listing do not: per branch, whether its checks and review hold **for its current commit**, its `land` status, and conflicts with other branches. It does not list sessions, activity, pull requests, or cleanup candidates; the app does.
+*Implemented (slice 3):* `susanoo board [--base <branch>] [--json]`. It shows only what the app and plain git listing do not: per branch, whether its checks and review hold **for its current commit**, its `land` status, and conflicts with other branches. It does not list sessions, activity, pull requests, or cleanup candidates; the app does.
 
 One line per worktree branch, for example:
 
@@ -173,7 +173,7 @@ Accepted on 2026-10-15 and built in this order, because each later slice reads w
 
 1. **Evidence bound to a commit, and review records.** `head` and `dirty` on evidence, the "verified" helper, `susanoo review record` and `list`. Implemented (unreleased).
 2. **The review gate in `land --merge`** (`[land] require_review`), and, for "verified", a review record for the tip in place of a reported review step. Implemented (unreleased); the gate requires a `code-review` only (see "Reviews").
-3. **`susanoo board`.** To build.
+3. **`susanoo board`.** Implemented (unreleased).
 4. **`susanoo lead on`/`off` and the `susanoo-lead` skill**, with the worker rules. To build.
 
 ## Open questions
