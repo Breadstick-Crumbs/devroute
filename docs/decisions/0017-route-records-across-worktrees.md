@@ -1,4 +1,4 @@
-# 0016: Route records across a repository's checkouts
+# 0017: Route records across a repository's checkouts
 
 **Status:** accepted (Unreleased)
 

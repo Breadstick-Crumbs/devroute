@@ -38,7 +38,7 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     - ``manual`` and ``unavailable`` steps need any recorded evidence, so the agent must at least
       report what was done or explicitly record that the step was skipped and why.
 
-    Runs in another checkout of the repository (a git worktree, ADR 0016) carry ``checkout``.
+    Runs in another checkout of the repository (a git worktree, ADR 0017) carry ``checkout``.
     The latest run counts per checkout, and a step passes only when it passes in every checkout
     that ran it, so a pass in one checkout never clears a failure in another.
     """
