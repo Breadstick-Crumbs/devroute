@@ -259,6 +259,8 @@ route_before_edit = true
 route_before_edit_exempt = [
     "CLAUDE.md", "*/CLAUDE.md", "CLAUDE.local.md", "*/CLAUDE.local.md", "AGENTS.md", "*/AGENTS.md",
     ".claude/*", "*/.claude/*",
+    # The lead's ledger (ADR 0015); not Susanoo's records next to it.
+    ".git/susanoo/lead.md",
 ]
 # Blocks the Claude Code app sends as prompts on its own: status reminders, messages from other
 # sessions and subagents, side-session notes, task notifications, CI events (ADR 0016). A prompt

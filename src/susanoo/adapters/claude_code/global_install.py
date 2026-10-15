@@ -3,7 +3,7 @@
 Installs into the user's Claude Code configuration directory (``CLAUDE_CONFIG_DIR``, default
 ``~/.claude``):
 
-- the ``/susanoo`` skill and the ``susanoo-*`` subagents;
+- the ``/susanoo`` and ``susanoo-lead`` skills and the ``susanoo-*`` subagents;
 - Susanoo's hook entries in ``settings.json`` (all other settings and hooks are kept). They call
   this interpreter by absolute path with ``-P`` and are marked ``hook --global``; with ``auto``
   they include the ``UserPromptSubmit`` hook that routes coding tasks automatically;
@@ -34,6 +34,7 @@ from susanoo.adapters.claude_code.installer import (
     FileAction,
     _atomic_write,
     _read,
+    lead_skill_files,
     sha256,
     skill_template,
     taste_skill_template,
@@ -73,6 +74,7 @@ def user_command() -> str:
 def file_targets(with_agents: bool, with_taste: bool = True) -> list[tuple[str, str]]:
     """(path relative to the Claude configuration directory, content) for whole-file targets."""
     items = [("skills/susanoo/SKILL.md", skill_template(False))]
+    items += [(f"skills/susanoo-lead/{name}", text) for name, text in lead_skill_files()]
     if with_taste:
         items.append(("skills/taste-ui/SKILL.md", taste_skill_template()))
     if with_agents:

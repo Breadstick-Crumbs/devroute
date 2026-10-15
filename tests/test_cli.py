@@ -168,9 +168,12 @@ def test_init_dry_run_and_uninstall(python_project: Path):
     code, out, _ = run(python_project, "init", "--dry-run")
     assert "dry run" in out and not (python_project / ".susanoo").exists()
     run(python_project, "init")
+    assert (python_project / ".claude/skills/susanoo-lead/SKILL.md").is_file()
+    assert (python_project / ".claude/skills/susanoo-lead/worker-rules.md").is_file()
     code, out, _ = run(python_project, "init", "--uninstall")
     assert code == 0 and "remove" in out
     assert not (python_project / ".claude/skills/susanoo").exists()
+    assert not (python_project / ".claude/skills/susanoo-lead").exists()
 
 
 def test_doctor_json(python_project: Path):

@@ -11,7 +11,8 @@ any workflow the user named, so that:
 One file per session, written only by the prompt hook and overwritten on every prompt. A prompt
 made only of the app's blocks (another session's note, a notification; ADR 0016) keeps the floor
 of the user's last message, clears its autonomy request and named workflows, and moves the turn on
-(id, time, kind). A separate
+(id, time, kind). A session marked as a lead (``susanoo lead on``, ADR 0015) is recorded the same
+way but never routed. A separate
 marker file records that the route-before-edit gate already stopped an edit for that prompt, so
 the floor is never rewritten (or lost) by a tool-call hook.
 """
@@ -93,6 +94,41 @@ def load(root: Path, session: str | None) -> dict[str, Any] | None:
 
 def floor(data: dict[str, Any] | None) -> Floor | None:
     return Floor.from_dict(data.get("floor")) if data else None
+
+
+def is_lead(root: Path, session: str) -> bool:
+    """Whether ``susanoo lead on`` marked the session as a lead (ADR 0015).
+
+    Only a readable mark counts: a damaged file leaves the session routed as usual.
+    """
+    try:
+        data = json.loads(session_file(root, session, ".lead").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("lead") is True
+
+
+def set_lead(root: Path, session: str, on: bool, at: str) -> bool:
+    """Mark (``on``) or unmark the session as a lead; returns whether it was marked before.
+
+    Written to a temporary file and moved into place, so the prompt hook never reads half of it.
+    Raises ``OSError`` when the mark cannot be written or removed.
+    """
+    path = session_file(root, session, ".lead")
+    before = is_lead(root, session)
+    if not on:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        return before
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        tmp.write_text(json.dumps({"lead": True, "since": at}), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+    return before
 
 
 def nudged(root: Path, session: str, message_id: str) -> bool:

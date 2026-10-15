@@ -1,7 +1,7 @@
 """Safe project installation of the Susanoo Claude Code integration.
 
 Rules:
-- Only Susanoo-owned files are written: the /susanoo skill, the taste-ui skill, susanoo-* subagents,
+- Only Susanoo-owned files are written: the /susanoo, susanoo-lead, and taste-ui skills, susanoo-* subagents,
   and files under .susanoo/. CLAUDE.md and .mcp.json are never touched; settings only with the
   opt-in settings enforcement scope (see settings_hooks.py), and then only Susanoo's own entries.
 - Existing files are never overwritten unless they are unmodified Susanoo installs
@@ -76,10 +76,19 @@ def taste_skill_template() -> str:
     return read_data_text("templates", "skills", "taste-ui", "SKILL.md")
 
 
+LEAD_SKILL_FILES = ("SKILL.md", "worker-rules.md")
+
+
+def lead_skill_files() -> list[tuple[str, str]]:
+    """The susanoo-lead skill (ADR 0015): (file name, content); the lead points workers at the rules."""
+    return [(name, read_data_text("templates", "skills", "susanoo-lead", name)) for name in LEAD_SKILL_FILES]
+
+
 def targets(with_agents: bool = True, enforce: bool = False, with_taste: bool = True) -> list[Target]:
     """Files to install; ``enforce`` puts the hooks in the skill (the default "skill" scope)."""
     items = [
         Target(".claude/skills/susanoo/SKILL.md", skill_template(enforce)),
+        *(Target(f".claude/skills/susanoo-lead/{name}", text) for name, text in lead_skill_files()),
         Target(".susanoo/config.toml", read_data_text("templates", "config.toml")),
         Target(".susanoo/.gitignore", GITIGNORE),
     ]

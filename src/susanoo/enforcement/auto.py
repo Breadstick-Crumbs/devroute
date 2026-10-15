@@ -224,6 +224,14 @@ def app_message_note(command: str) -> str:
     )
 
 
+def lead_note(command: str) -> str:
+    """Context for every prompt of a lead session (``susanoo lead on``, ADR 0015): one short line."""
+    return (
+        "Susanoo: lead session, so this message was not routed. Hand changes to a worker (susanoo-lead "
+        f"skill); do not edit project files here. `{command} lead off` ends lead mode."
+    )
+
+
 def _on_app_message(event: dict[str, Any], root: Path, session: str, command: str) -> str:
     """A prompt made only of app envelopes: routes are left alone, and the floor of the user's
     last message stays recorded, so a route Claude makes for it is never lower.
@@ -472,8 +480,12 @@ def on_prompt(
     prompt = str(event.get("prompt", ""))
     command = str(settings.get("command") or "susanoo")
     own, envelopes = split_app_envelopes(prompt, cfg)
+    # A lead (ADR 0015) hands every change to a worker, whose brief is routed there. Its own
+    # prompts are recorded as usual (the floor, the user's requests) but never routed.
+    lead = prompt_state.is_lead(root, session)
     if envelopes and not own.strip():
-        return _on_app_message(event, root, session, command)
+        note = _on_app_message(event, root, session, command)
+        return lead_note(command) if lead else note
     # Asking for autonomy or naming a workflow lowers process, so only the user's own words count
     # for it; the floor below still reads the whole prompt, the app's blocks included.
     requests = users_words(prompt, cfg)
@@ -498,15 +510,22 @@ def on_prompt(
         {
             "at": _now(),
             "id": new_record_id(),  # unique per message (stamps are to the second)
-            "kind": kind,
+            # A lead's task is not routed, so it counts as unrouted: the route-before-edit gate
+            # still stops the first edit of a project file made for it.
+            "kind": AMBIGUOUS if lead and kind == TASK else kind,
             "floor": message.to_dict() if message else None,
             "hands_off": hands_off,
             "named": prompt_state.named_profiles(requests),
             # `/susanoo`: the skill routes the user's own words and shows the full brief.
             "skill": bool(re.match(r"/susanoo(?![\w-])", prompt.strip(), re.IGNORECASE)),
+            # `/susanoo-lead`: only the user's own invocation lets `susanoo lead on` stop routing.
+            # Read from the user's own words, so an app block above it does not hide it.
+            "lead_requested": bool(re.match(r"/susanoo-lead(?![\w-])", requests.strip(), re.IGNORECASE)),
             "permission_mode": str(event.get("permission_mode", "")),
         },
     )
+    if lead:
+        return None if kind == SKIP else lead_note(command)
     if kind in (QUESTION, AMBIGUOUS):
         return unrouted_note(command)
     if kind != TASK:

@@ -56,10 +56,10 @@ Option 5. The user talks to one session, the **lead**. The lead never edits trac
 
 ### The lead skill
 
-*Proposed:* a `susanoo-lead` skill, installed by `susanoo init` next to `/susanoo`. It is instructions, not code (ADR 0003). The loop:
+*Implemented (slice 4):* a `susanoo-lead` skill, installed by `susanoo init` next to `/susanoo` (in the project and with `--global`), with `disable-model-invocation`, so only the user starts a lead and a worker never loads it. It is instructions, not code (ADR 0003). It starts by running `susanoo lead on` and checking that the main checkout is on the base branch, clean, and fast-forwarded; when it is not, it tells the user instead of stashing, resetting, or switching branches. The loop:
 
 1. **Intake.** Read the app's linked sessions, `susanoo board`, and the ledger. If a running worker already owns the area, send it the request as a follow-up, unless its pull request is in a `land` run. If the request will likely touch files a running worker has changed, queue it in the ledger until that worker lands, or give it to that worker. Otherwise start a new worker.
-2. **Dispatch.** Fast-forward the main checkout to the remote base. Start the worker with a brief whose **first line is the user's request in their words**, then what the lead found when reading, the files it expects the worker to touch, and an ADR number if one is needed. The worker rules are not pasted in; the brief names the skill section that holds them, so they are not routed as part of every task. Put the worker in the repository's sidebar group, and note it in the ledger.
+2. **Dispatch.** Fast-forward the main checkout to the remote base. Start the worker with a brief whose **first line is the user's request in their words**, then what the lead found when reading, the files it expects the worker to touch, and an ADR number if one is needed. The worker rules are not pasted in; the brief gives the path of the skill's `worker-rules.md`, so they are not routed as part of every task and a worker reads only them. How the findings are worded follows from open question 1. Put the worker in the repository's sidebar group, and note it in the ledger.
 3. **Wait.** The app's note arrives when the worker finishes a turn. A note is a claim, not proof.
 4. **Check.** The worker's board row must show its checks passing for its current commit. Then run `/code-review` on its pull request, and `/security-review` too when the worker's route carries a security control (the board marks it). Record the result with `susanoo review` (below). Findings go to the worker as a message, and step 3 repeats.
 5. **Land.** Run `susanoo land <pr>...` without `--merge`. A failed or conflicting run goes back to the culprit worker, with `land`'s attribution.
@@ -70,7 +70,7 @@ Option 5. The user talks to one session, the **lead**. The lead never edits trac
 
 ### Worker rules
 
-Held in the skill, so they are data, not code.
+Held in the skill, so they are data, not code: in `worker-rules.md`, a file next to the skill's `SKILL.md`, so a worker reads the rules without the lead's steps.
 
 - When the lead sends a new request, not findings on the current one, route it with `susanoo route` before editing.
 - Change only what the task needs. If it needs files another worker is likely changing, tell the lead before editing them.
@@ -82,7 +82,16 @@ Held in the skill, so they are data, not code.
 
 ### Routing the lead
 
-Under automatic routing, every message to the lead would get a brief telling it to investigate, plan, and verify, and would leave a route in the main checkout's records that never gets an outcome, beside the worker's route for the same task. [ADR 0016](0016-app-messages-are-not-the-users-message.md) already keeps the app's own prompts out of routing: worker notes, peer messages, and CI events reach the lead without opening a route. The user's own messages are still routed, and nothing native prevents that. *Proposed:* `susanoo lead on`, run by the lead skill, marks the current session as a lead in the hook state, keyed by session id. Its prompts are not routed; the hook adds one short line instead. `susanoo lead off` undoes it.
+Under automatic routing, every message to the lead would get a brief telling it to investigate, plan, and verify, and would leave a route in the main checkout's records that never gets an outcome, beside the worker's route for the same task. [ADR 0016](0016-app-messages-are-not-the-users-message.md) already keeps the app's own prompts out of routing: worker notes, peer messages, and CI events reach the lead without opening a route. The user's own messages are still routed, and nothing native prevents that. *Implemented (slice 4):* `susanoo lead on`, run by the lead skill, marks the current session as a lead in the hook state, keyed by session id (`$CLAUDE_CODE_SESSION_ID`, or `--session`). Its prompts are not routed; the hook adds one short line instead. `susanoo lead off` undoes it. In detail:
+
+- The prompt is still recorded as the user's latest message: its floor, autonomy request, and named workflows, as for any message. A route the lead makes itself with `susanoo route` is never lower than it.
+- A task is recorded as unrouted, so the route-before-edit gate still stops the lead's first edit of a project file for that message, as for a question.
+- The app's own prompts (0016) are recorded as before and get the same short line. A prompt that asks for no routing (`?`, a slash command such as `/susanoo`) gets nothing, as before.
+- An open route in the lead session is neither continued nor closed, and its gates still apply; `lead on` names it. Nothing changes for other sessions.
+- Only the user turns it on. Lead mode stops routing, which is lowering process, so `lead on` is refused unless the marked session's latest message is the user's `/susanoo-lead` (recorded by the prompt hook from the user's own words, as `/susanoo` is), and inside a Claude Code session it marks only that session; `--session` names another session only from outside Claude Code, and the same rule applies to it. `lead off` only adds process and is never refused.
+- Without automatic routing there is nothing to stop, so `lead on` writes no mark (none is left to take effect if routing is turned on later). It says so, and that Susanoo's hooks may not be active, so nothing may ask before `land --merge`; the skill then asks the user in chat before each merge.
+- The ledger, `.git/susanoo/lead.md`, is exempt from the route-before-edit gate (`[auto] route_before_edit_exempt`); Susanoo's records beside it are not.
+- A missing or damaged mark leaves the session routed. Like the other records, the mark is a guardrail against drift, not a security boundary (0007): an agent could still write the prompt record or the mark itself.
 
 The same ADR decides how workers see the lead's messages. A worker's brief is its session's first message, so it is routed as the user's message. Everything the lead sends later (review findings, a rebase request, a follow-up request) arrives as a message from another session: it opens no route and keeps the worker's open route and floor. Review findings and rebase requests belong to the open route. A **new request** sent to a running worker does not, so the worker routes it itself with `susanoo route`, never below its open route; the autonomy and named workflow of the user's first message do not carry over to it (0016).
 
@@ -172,11 +181,15 @@ Accepted on 2026-10-15 and built in this order, because each later slice reads w
 1. **Evidence bound to a commit, and review records.** `head` and `dirty` on evidence, the "verified" helper, `susanoo review record` and `list`. Implemented (unreleased).
 2. **The review gate in `land --merge`** (`[land] require_review`), and, for "verified", a review record for the tip in place of a reported review step. To build.
 3. **`susanoo board`.** To build.
-4. **`susanoo lead on`/`off` and the `susanoo-lead` skill**, with the worker rules. To build.
+4. **`susanoo lead on`/`off` and the `susanoo-lead` skill**, with the worker rules. Implemented (unreleased).
 
 ## Open questions
 
-1. How much the lead's findings in a brief raise a worker's routing floor, checked with `susanoo route` on sample briefs before the skill ships. If too much, the findings move to a file the brief points to.
+1. How much the lead's findings in a brief raise a worker's routing floor, checked with `susanoo route` on sample briefs before the skill ships. If too much, the findings move to a file the brief points to. *Answered (2026-10-15), keep the findings in the brief.* Seven sample briefs on this repository, each routed three ways: the user's request alone, the request with findings and expected files, and the request with a line pointing to a findings file. These are seven keyword runs, not a validated measure.
+   - The findings changed 3 of the 7 routes, each through a few words. "A previous session deleted the old helper" matched the authentication signal ("session") and added the security-review control to a change of output colors. In two briefs the findings removed the STANDARD that low confidence ("the task description lacks detail") had given the bare request, making them FAST; in one of those, the lead's own words "only the wording changes" matched the small-change and trivial-edit signals. The request's own keyword floor was kept in all seven, because the request is the brief's first line.
+   - A rules line written "Worker rules: read ..." matched the concurrency signal ("worker") in every brief and raised complexity; with a pointer file it made one FAST brief DEEP. Written "Rules: read .../worker-rules.md" it matched nothing.
+   - Findings that named real risks did not raise the route: checking a pull request URL against the repository so another repository's review cannot be recorded, and an uninstall that "would delete user files outside the project". Keywords are not a reviewer; the lead's own check step and `susanoo raise` cover this.
+   - A pointer file kept every route at the request alone, but it would also hide the detail that resolves real uncertainty and any risk the lead writes down. So the findings stay in the brief, and the skill says how to word them: facts without size judgements, no history of sessions or agents, no "worker", real risks named plainly, and a request to run `susanoo raise` when the lead knows a risk the words may not show. Because the whole brief counts as the user's message, the lead's words could also ask for autonomy or name a lighter workflow (a finding quoting `--profile fast`); the skill forbids both outside the first line. Signals and thresholds are unchanged.
 2. Whether `/code-review` can be pointed at a pull request or branch from the lead's checkout and read the branch's files, or needs the worker's worktree path.
 3. Whether Claude Code's agent teams can run workers that land through pull requests; if so, the skill could use them in the CLI.
 4. Whether the shared files should go instead of being resolved: changelog fragments, ADR numbers taken at landing, generated files rebuilt once after landing. Separate work.
