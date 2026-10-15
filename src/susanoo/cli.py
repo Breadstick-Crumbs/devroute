@@ -65,7 +65,7 @@ from susanoo.enforcement.hooks import _project_root as _hook_root
 from susanoo.enforcement.state import active_route, evidence_status
 from susanoo.entry import _project_has_own_hooks
 from susanoo.evaluation.report import OUTCOME_STATUSES, latest_by_record, summarize
-from susanoo.evaluation.store import RecordError, RecordStore, new_record_id
+from susanoo.evaluation.store import RecordError, RecordStore, find_route, new_record_id
 from susanoo.evaluation.suite import run_suite
 from susanoo.land import LandError, LandOptions, land
 from susanoo.land.gitops import common_dir
@@ -75,10 +75,12 @@ from susanoo.paths import (
     OFF_FILE,
     find_project_root,
     global_installed,
+    head_commit,
     home_state,
     is_initialized,
     project_mode,
     records_dir,
+    sibling_checkouts,
     state_dir,
 )
 from susanoo.pipeline import TaskPlan, message_floor, plan_task, project_context, route_floor, route_record
@@ -735,12 +737,13 @@ def cmd_report(ctx: Context, stdin: TextIO) -> int:
 def cmd_verify(ctx: Context, stdin: TextIO) -> int:
     args = ctx.args
     record: dict[str, Any] | None = None
+    store = RecordStore(ctx.root)
     if args.task or args.stdin:
         task = _task_text(args, stdin)
         override = args.profile
     else:
         try:
-            record = RecordStore(ctx.root).resolve_route(args.record, _session())
+            store, record = find_route(ctx.root, args.record, _session())
         except RecordError as exc:
             raise CLIError(f'{exc}. Pass the task text instead: susanoo verify "<task>"') from exc
         if not record.get("task"):
@@ -771,15 +774,24 @@ def cmd_verify(ctx: Context, stdin: TextIO) -> int:
         plan.verification, ctx.root, timeout=timeout, only=only, required_only=args.required_only
     )
     record_id = record.get("id") if record else None
-    if record_id and not args.no_record and is_initialized(ctx.root):
-        store = RecordStore(ctx.root)
-        for item in results:
-            item.record_id = str(record_id)
-            store.append("evidence", item.to_dict())
+    # The route may live in another checkout of this repository (see find_route): the checks ran
+    # here, on this checkout's code, and the evidence says so.
+    origin = _origin(ctx, store)
+    recorded = bool(record_id) and not args.no_record and is_initialized(store.root)
+    evidence = [e.to_dict() for e in results]
+    if recorded:
+        for data in evidence:
+            data["record_id"] = str(record_id)
+            data.update(origin)
+            store.append("evidence", data)
     if args.json:
-        ctx.emit_json({"record_id": record_id, "evidence": [e.to_dict() for e in results]})
+        ctx.emit_json({"record_id": record_id, "evidence": evidence})
     else:
         ctx.emit(render_evidence(results))
+        if recorded and origin:
+            ctx.emit(
+                f"Evidence recorded for route {record_id} in {store.root} (the checks ran in {ctx.root})."
+            )
     required = {s.id for s in plan.verification.steps if s.level == "required"}
     failed = [e for e in results if e.step in required and e.status in ("failed", "error", "timeout")]
     return EXIT_FAIL if failed else EXIT_OK
@@ -800,18 +812,37 @@ def _session() -> str | None:
     return os.environ.get("CLAUDE_CODE_SESSION_ID") or None
 
 
+def _origin(ctx: Context, store: RecordStore) -> dict[str, str]:
+    """Where evidence for a route in another checkout came from: this checkout and its commit."""
+    if store.root == ctx.root:
+        return {}
+    commit = head_commit(ctx.root)
+    return {"checkout": str(ctx.root), **({"commit": commit} if commit else {})}
+
+
 def _require_initialized(ctx: Context) -> RecordStore:
     if not is_initialized(ctx.root):
         raise CLIError("local records are disabled; run `susanoo init` first")
     return RecordStore(ctx.root)
 
 
-def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
-    store = _require_initialized(ctx)
+def _route_and_store(ctx: Context) -> tuple[RecordStore, dict[str, Any]]:
+    """The route named by ``ctx.args.record`` and the store holding it, here or in another checkout."""
     try:
-        record = store.resolve_route(ctx.args.record, _session())
+        store, record = find_route(ctx.root, ctx.args.record, _session())
     except RecordError as exc:
+        # A worktree without its own records is common; `susanoo init` is the remedy only when no
+        # checkout of the repository has records.
+        if not is_initialized(ctx.root) and not any(is_initialized(c) for c in sibling_checkouts(ctx.root)):
+            raise CLIError("local records are disabled; run `susanoo init` first") from exc
         raise CLIError(str(exc)) from exc
+    if not is_initialized(store.root):
+        raise CLIError("local records are disabled; run `susanoo init` first")
+    return store, record
+
+
+def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
+    store, record = _route_and_store(ctx)
     try:
         item = reported_evidence(
             ctx.args.step, ctx.args.status, ctx.args.evidence_command, ctx.args.note or ""
@@ -819,9 +850,10 @@ def cmd_evidence(ctx: Context, stdin: TextIO) -> int:
     except ValueError as exc:
         raise CLIError(str(exc)) from exc
     item.record_id = str(record["id"])
-    store.append("evidence", item.to_dict())
+    data = {**item.to_dict(), **_origin(ctx, store)}
+    store.append("evidence", data)
     if ctx.args.json:
-        ctx.emit_json(item.to_dict())
+        ctx.emit_json(data)
     else:
         ctx.emit(
             f"Recorded reported evidence for {item.record_id}: {item.step} = {item.status} (source: reported)"
@@ -834,11 +866,7 @@ def _csv(value: str | None) -> list[str]:
 
 
 def cmd_outcome(ctx: Context, stdin: TextIO) -> int:
-    store = _require_initialized(ctx)
-    try:
-        record = store.resolve_route(ctx.args.record, _session())
-    except RecordError as exc:
-        raise CLIError(str(exc)) from exc
+    store, record = _route_and_store(ctx)
     a = ctx.args
     for name in ("minutes", "interventions", "tokens", "cost", "regressions"):
         value = getattr(a, name)

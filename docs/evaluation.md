@@ -71,7 +71,7 @@ Each recommendation names the configuration to review. **Susanoo never applies c
 |---|---|
 | `routes.jsonl` | id, timestamp, version, task or task hash, profile, recommended, overridden, composite scores, dimension levels, signals, areas, controls, gaps, planned verification |
 | `outcomes.jsonl` | record id, status, source (human/agent/susanoo), duration, interventions, tokens, cost, regressions, agents, tools, notes; with transcript capture also `token_counts` (fresh input, cache writes, cache reads, output), `tool_calls` (calls per tool name), and `captured` (which fields came from the transcript, message count, time window) |
-| `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail |
+| `evidence.jsonl` | record id, step, status, source (executed/reported), command, exit code, duration, redacted output tail; for a route in another checkout of the repository (a git worktree), also the `checkout` the commands ran in and its `commit` |
 | `research.jsonl` | capability, decision, candidates, validation steps, limitations |
 
 All records stay on your machine in `.susanoo/records/`, which is git-ignored by default.

@@ -37,9 +37,13 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     - ``ready`` steps (Susanoo can run them) need *executed* evidence; the latest run must pass.
     - ``manual`` and ``unavailable`` steps need any recorded evidence, so the agent must at least
       report what was done or explicitly record that the step was skipped and why.
+
+    Runs in another checkout of the repository (a git worktree, ADR 0017) carry ``checkout``.
+    The latest run counts per checkout, and a step passes only when it passes in every checkout
+    that ran it, so a pass in one checkout never clears a failure in another.
     """
     record_id = route.get("id")
-    latest_executed: dict[str, str] = {}
+    executed: dict[tuple[str, str], str] = {}  # (step, checkout) -> latest executed status
     latest_any: dict[str, str] = {}
     for item in evidence:
         if item.get("record_id") != record_id:
@@ -47,10 +51,14 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
         step = str(item.get("step"))
         status = str(item.get("status"))
         if item.get("source") == "executed" and status != "skipped":
-            latest_executed[step] = status
+            executed[(step, str(item.get("checkout") or ""))] = status
             latest_any[step] = status
         elif item.get("source") == "reported":
             latest_any[step] = status
+    latest_executed: dict[str, str] = {}
+    for (step, _), status in executed.items():
+        if latest_executed.get(step, "passed") == "passed":
+            latest_executed[step] = status
     missing: list[str] = []
     failing: list[str] = []
     for step in route.get("verification", []):
