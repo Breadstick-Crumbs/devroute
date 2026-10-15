@@ -5,7 +5,8 @@ commit it saw. Recording refuses a commit that is not the branch's current tip, 
 older commit is never recorded as a review of a newer one. Records go to
 ``<git common dir>/susanoo/records/reviews.jsonl``, next to ``land.jsonl`` and shared by every
 worktree, because the session that reviews and the one that wrote the branch live in different
-worktrees. Nothing here is a gate yet: ``land --merge`` checking them is a later slice.
+worktrees. ``land --merge`` refuses a candidate without a passing code-review of the tip it
+tested (``[land] require_review``), and "verified" takes the review step from these records.
 """
 
 from __future__ import annotations
@@ -178,3 +179,12 @@ def review_for(reviews: list[dict[str, Any]], tip: str, tool: str = "code-review
         if review.get("tool") == tool and str(review.get("tip") or "").lower() == tip:
             return dict(review)
     return None
+
+
+def review_status(reviews: list[dict[str, Any]], tip: str) -> dict[str, str]:
+    """Per review tool, the newest review of exactly ``tip``: its status, or ``missing``."""
+    status: dict[str, str] = {}
+    for tool in REVIEW_TOOLS:
+        found = review_for(reviews, tip, tool)
+        status[tool] = str(found.get("status")) if found else "missing"
+    return status

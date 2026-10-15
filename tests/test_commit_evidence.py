@@ -403,6 +403,56 @@ def test_other_routes_evidence_and_routes_without_required_steps():
     )  # as the gate: a missing tool is reported, not demanded
 
 
+def rev(tip: str = SHA, status: str = "passed", tool: str = "code-review") -> dict[str, Any]:
+    return {"kind": "review", "tip": tip, "status": status, "tool": tool}
+
+
+def test_review_records_stand_for_the_review_step():
+    # The report was made after a later commit: bound to SHA, but the review saw OTHER.
+    evidence = [bound("unit_tests"), bound("independent_review", source="reported")]
+    assert is_verified(ROUTE, evidence, SHA)  # without review records, the report decides
+    assert unverified_steps(ROUTE, evidence, SHA, [rev(OTHER)]) == ["independent_review"]
+    assert unverified_steps(ROUTE, evidence, SHA, []) == ["independent_review"]
+    assert is_verified(ROUTE, evidence, SHA, [rev(OTHER), rev(SHA)])
+    assert is_verified(ROUTE, evidence, SHA.upper(), [rev(SHA.upper())])
+    # The report's commit no longer matters for that step, only the review of the tip.
+    stale_report = [bound("unit_tests"), bound("independent_review", source="reported", head=OTHER)]
+    assert is_verified(ROUTE, stale_report, SHA, [rev(SHA)])
+    # Other steps keep their evidence binding.
+    assert unverified_steps(ROUTE, [bound("unit_tests", head=OTHER), *evidence[1:]], SHA, [rev()]) == [
+        "unit_tests"
+    ]
+
+
+def test_review_records_are_never_looser_than_the_gate():
+    # The newest review of the tip decides, and it must have passed.
+    evidence = [bound("unit_tests"), bound("independent_review", source="reported")]
+    assert not is_verified(ROUTE, evidence, SHA, [rev(), rev(status="failed")])
+    assert is_verified(ROUTE, evidence, SHA, [rev(status="failed"), rev()])
+    assert not is_verified(ROUTE, evidence, SHA, [rev(tool="security-review")])
+    # A step the gate refuses never holds, whatever the review records say.
+    no_report = [bound("unit_tests")]
+    assert unverified_steps(ROUTE, no_report, SHA, [rev()]) == ["independent_review"]
+    failed_report = [bound("unit_tests"), bound("independent_review", "failed", source="reported")]
+    assert unverified_steps(ROUTE, failed_report, SHA, [rev()]) == ["independent_review"]
+    # An explained skip satisfies the gate but is not a review of the tip.
+    skipped = [bound("unit_tests"), bound("independent_review", "skipped", source="reported")]
+    assert unverified_steps(ROUTE, skipped, SHA, []) == ["independent_review"]
+    assert is_verified(ROUTE, skipped, SHA, [rev()])
+    assert not is_verified(ROUTE, evidence, None, [rev()])
+
+
+def test_a_security_control_also_needs_a_security_review():
+    route = {**ROUTE, "controls": ["security-review"]}
+    evidence = [bound("unit_tests"), bound("independent_review", source="reported")]
+    assert unverified_steps(route, evidence, SHA, [rev()]) == ["independent_review"]
+    assert unverified_steps(route, evidence, SHA, [rev(), rev(tool="security-review", status="failed")]) == [
+        "independent_review"
+    ]
+    assert is_verified(route, evidence, SHA, [rev(), rev(tool="security-review")])
+    assert is_verified(route, evidence, SHA)  # without review records, as before
+
+
 # --- review records ---------------------------------------------------------------------
 
 

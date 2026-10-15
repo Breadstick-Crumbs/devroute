@@ -7,7 +7,8 @@
    fails alone or only together with the earlier candidates.
 4. Merge the base into each candidate, check its tree equals the tested prefix, push.
 5. Only with ``--merge`` (given by the user): merge each pull request with ``gh`` against the
-   exact pushed head. Without it, stop at "ready to land".
+   exact pushed head, and only with a passing code-review recorded for the tip that was tested
+   (ADR 0015, ``[land] require_review``). Without it, stop at "ready to land".
 6. Clean up, and record the run.
 """
 
@@ -52,6 +53,7 @@ from susanoo.land.gitops import (
 )
 from susanoo.land.keepboth import KeepBothRule, Resolution, parse_rules, resolve_text
 from susanoo.land.records import DECISION_RULE, append_record, find_pass, read_records
+from susanoo.land.reviews import read_reviews, review_status
 
 SCRATCH_PREFIX = "susanoo-land-"
 ORPHAN_AGE_S = 12 * 3600
@@ -85,6 +87,12 @@ class Candidate:
     pushed: str | None = None
     merged: str | None = None
     conflicted: bool = False
+    review: dict[str, str] | None = None  # per review tool, the newest review of ``tip``
+
+    @property
+    def reviewed(self) -> bool:
+        """A passing code-review is recorded for exactly the tip that is tested."""
+        return (self.review or {}).get("code-review") == "passed"
 
     @property
     def label(self) -> str:
@@ -100,6 +108,7 @@ class Candidate:
             "remote": self.remote,
             "pushed": self.pushed,
             "merged": self.merged,
+            "review": self.review,
         }
 
 
@@ -240,6 +249,7 @@ class Lander:
         t = time.monotonic()
         self._make_scratch()
         self._load_plan()
+        self._reviews()
         if not self._combine():
             self._stage("combine", t)
             self.record["result"] = "conflict"
@@ -470,6 +480,53 @@ class Lander:
             self._warn(
                 f"required check {step_id} has no tool Susanoo can run; it is not part of this landing"
             )
+
+    # -- reviews (ADR 0015) ------------------------------------------------------------------
+
+    def _read_reviews(self) -> list[dict[str, Any]]:
+        return read_reviews(self.common) if self.common else []
+
+    def _reviews(self) -> None:
+        """Each candidate's review of the tip it tests. ``--merge`` refuses one without a pass when
+        ``[land] require_review`` (from the base) is on; otherwise a missing review is reported."""
+        required = self.plan.settings.require_review
+        self.record["review_required"] = required
+        reviews = self._read_reviews()
+        for cand in self.candidates:
+            cand.review = review_status(reviews, cand.tip)
+        self.say(
+            "code-review of the tested tips: "
+            + ", ".join(f"{c.label} {(c.review or {}).get('code-review')}" for c in self.candidates)
+        )
+        unreviewed = [c for c in self.candidates if not c.reviewed]
+        if not unreviewed or not required:
+            return
+        if self.options.merge:
+            raise LandError(self._review_needed(unreviewed) + "; nothing was merged")
+        self._warn(self._review_needed(unreviewed) + " before --merge")
+
+    def _review_needed(self, unreviewed: list[Candidate]) -> str:
+        what = "; ".join(
+            f"{c.label} at {_short(c.tip)} ({(c.review or {}).get('code-review', 'missing')})"
+            for c in unreviewed
+        )
+        if len(unreviewed) == 1:
+            one = unreviewed[0]
+            spec, tip = (str(one.pr["number"]) if one.pr else one.branch), one.tip
+        else:
+            spec, tip = "<pr-or-branch>", "<tip>"
+        return (
+            f"no passing code-review recorded for {what}: run /code-review on that commit and record the "
+            f"result with `susanoo review record {spec} --tip {tip} --status passed|failed --tool code-review`"
+        )
+
+    def _recheck_review(self, cand: Candidate) -> None:
+        """Right before a merge: a review recorded since the run started (a failed one) still counts."""
+        if not self.plan.settings.require_review:
+            return
+        cand.review = review_status(self._read_reviews(), cand.tip)
+        if not cand.reviewed:
+            raise LandError(self._review_needed([cand]) + f"; {cand.label} was not merged")
 
     def _merge(
         self, git: Git, ref: str, message: str, label: str, *, base_side: str, log: str = "conflicts"
@@ -832,6 +889,7 @@ class Lander:
         number = str(cand.pr["number"])
         args = ["pr", "merge", number, "--merge", "--match-head-commit", updated]
         args += ["--subject", _merge_subject(cand.pr), "--body", _merge_body(cand.pr)]
+        self._recheck_review(cand)
         for attempt in (1, 2):
             self._wait_for_head(number, updated)
             # As late as possible: a base that moves after this is caught right after the merge.
@@ -867,15 +925,26 @@ class Lander:
         specs = " ".join(str(c.pr["number"]) if c.pr else c.branch for c in self.order)
         base = f" --base {self.base}" if self.options.base else ""
         remote = f" --remote {self.options.remote}" if self.options.remote != "origin" else ""
+        unreviewed = [c for c in self.candidates if not c.reviewed]
+        needs_review = bool(unreviewed) and self.plan.settings.require_review
         self.say("ready to land. To merge (the user runs or approves this):")
         self.say(f"  susanoo land {specs}{base}{remote} --merge")
+        if needs_review:
+            self.say(
+                "  --merge refuses until each has a passing code-review of its tested tip: "
+                + ", ".join(f"{c.label} {_short(c.tip)}" for c in unreviewed)
+            )
         first = self.order[0]
         if first.pr and first.pushed:
             self.say(
                 f"  it runs, first: gh pr merge {first.pr['number']} --merge --match-head-commit {first.pushed} "
                 f"with the subject {_merge_subject(first.pr)!r}"
             )
-        self._status("ready", "waiting for the user's --merge")
+        if needs_review:
+            labels = " ".join(c.label for c in unreviewed)
+            self._status("ready", f"needs a passing code-review of {labels}, then the user's --merge")
+        else:
+            self._status("ready", "waiting for the user's --merge")
 
     def _status(self, result: str, detail: str) -> None:
         labels = " ".join(c.label for c in self.candidates)

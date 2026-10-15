@@ -1433,7 +1433,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--merge",
         action="store_true",
-        help="merge the pull requests with gh after the checks pass; only the user gives this flag",
+        help="merge the pull requests with gh after the checks pass, each only with a passing code-review "
+        "of its tip; the user approves every --merge (the hook asks in every mode)",
     )
     p.add_argument("--no-push", action="store_true", help="test only; push nothing")
     p.add_argument("--no-cache", action="store_true", help="rerun the checks even if this exact tree passed")

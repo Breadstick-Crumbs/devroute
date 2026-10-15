@@ -84,6 +84,22 @@ def evidence_status(route: dict[str, Any], evidence: list[dict[str, Any]]) -> tu
     return missing, failing
 
 
+# Steps a recorded review stands for (ADR 0015), by the tools whose review they need. With review
+# records given, such a step holds only when the newest review of the tip by each tool passed: a
+# reported result is bound to the commit it was reported on, not the commit that was reviewed.
+REVIEW_STEPS: dict[str, tuple[str, ...]] = {"independent_review": ("code-review",)}
+# A route carrying this control needs a passing /security-review of the tip for those steps too.
+SECURITY_REVIEW_CONTROL = "security-review"
+
+
+def review_tools(route: dict[str, Any], step_id: str) -> tuple[str, ...]:
+    """The review tools whose passing review of the tip ``step_id`` needs, or () for none."""
+    tools = REVIEW_STEPS.get(step_id, ())
+    if tools and SECURITY_REVIEW_CONTROL in [str(c) for c in route.get("controls", []) or []]:
+        tools = (*tools, "security-review")
+    return tools
+
+
 def _demanded(route: dict[str, Any]) -> list[dict[str, Any]]:
     """The required steps the evidence gate asks evidence for (see ``evidence_status``)."""
     return [
@@ -94,7 +110,12 @@ def _demanded(route: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def unverified_steps(route: dict[str, Any], evidence: list[dict[str, Any]], tip: str | None) -> list[str]:
+def unverified_steps(
+    route: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    tip: str | None,
+    reviews: list[dict[str, Any]] | None = None,
+) -> list[str]:
     """Required steps of ``route`` whose checks do not hold for commit ``tip`` (ADR 0015).
 
     A step holds when the evidence gate accepts it and its newest evidence the gate counts was
@@ -102,6 +123,12 @@ def unverified_steps(route: dict[str, Any], evidence: list[dict[str, Any]], tip:
     for a step Susanoo can run, a passing executed run; for a step it cannot, a reported pass or
     explained skip, as the gate asks. Evidence without ``head`` or ``dirty``, including every
     record written before they existed, never holds. ``tip`` None (unknown) holds nothing.
+
+    With ``reviews`` (review records, see ``land.reviews``), a step a review stands for
+    (``review_tools``) holds instead when the gate accepts it and the newest review of ``tip`` by
+    each of its tools passed; its reported evidence then needs no ``head``, and an explained skip
+    or a review of another commit does not count. Never looser than the gate: a step the gate
+    refuses never holds.
     """
     demanded = _demanded(route)
     missing, failing = evidence_status(route, evidence)
@@ -124,27 +151,45 @@ def unverified_steps(route: dict[str, Any], evidence: list[dict[str, Any]], tip:
         step_id = str(step.get("id"))
         found = newest.get(step_id)
         accepted = ("passed",) if step_id in ready else ("passed", "skipped")
-        head = found.get("head") if found else None
-        holds = (
-            found is not None
-            and step_id not in missing
-            and step_id not in failing
-            and found.get("status") in accepted
-            and isinstance(head, str)
-            and head.lower() == tip
-            and found.get("dirty") is False
-        )
+        gate = found is not None and step_id not in missing and step_id not in failing
+        tools = review_tools(route, step_id) if reviews is not None else ()
+        if tools:
+            holds = gate and all(_review_passed(reviews or [], tip, tool) for tool in tools)
+        else:
+            head = found.get("head") if found else None
+            holds = (
+                gate
+                and found is not None
+                and found.get("status") in accepted
+                and isinstance(head, str)
+                and head.lower() == tip
+                and found.get("dirty") is False
+            )
         if not holds:
             unverified.append(step_id)
     return unverified
 
 
-def is_verified(route: dict[str, Any], evidence: list[dict[str, Any]], tip: str | None) -> bool:
+def _review_passed(reviews: list[dict[str, Any]], tip: str, tool: str) -> bool:
+    from susanoo.land.reviews import review_for  # only when reviews are given: hooks stay light
+
+    found = review_for(reviews, tip, tool)
+    return found is not None and found.get("status") == "passed"
+
+
+def is_verified(
+    route: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    tip: str | None,
+    reviews: list[dict[str, Any]] | None = None,
+) -> bool:
     """Whether ``route``'s checks hold for commit ``tip``: ADR 0015's "verified".
 
-    A route with no required step is never verified, because nothing bound it to a commit.
+    With ``reviews``, the steps a review stands for need a passing review of ``tip`` (see
+    ``unverified_steps``). A route with no required step is never verified, because nothing
+    bound it to a commit.
     """
-    return bool(tip) and bool(_demanded(route)) and not unverified_steps(route, evidence, tip)
+    return bool(tip) and bool(_demanded(route)) and not unverified_steps(route, evidence, tip, reviews)
 
 
 def route_state(store: RecordStore, route: dict[str, Any]) -> RouteState:

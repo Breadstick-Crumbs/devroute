@@ -73,6 +73,7 @@ class LandSettings:
     timeout: float
     keep_both: Any = None  # raw rules, parsed by keepboth.parse_rules
     skipped: list[str] = field(default_factory=list)  # required steps Susanoo cannot run
+    require_review: bool = True  # --merge needs a passing code-review of each candidate's tip
 
     def key(self, tools: dict[str, str]) -> str:
         """Fingerprint of everything that decides a result besides the trees."""
@@ -189,7 +190,12 @@ def load_settings(config: Config, plan_steps: list[Any], timeout: float) -> Land
         isinstance(k, str) and isinstance(v, str) for k, v in env.items()
     ):
         raise ConfigError("[land] env must be a table of strings")
-    return LandSettings(unique, compares, setup, dict(env), timeout, land.get("keep_both"), skipped)
+    require_review = land.get("require_review", True)
+    if not isinstance(require_review, bool):
+        raise ConfigError("[land] require_review must be true or false")
+    return LandSettings(
+        unique, compares, setup, dict(env), timeout, land.get("keep_both"), skipped, require_review
+    )
 
 
 def _expand(value: str, tree: Path) -> str:
