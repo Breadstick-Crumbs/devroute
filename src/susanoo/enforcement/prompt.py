@@ -9,8 +9,9 @@ any workflow the user named, so that:
 - only the user can choose a lighter workflow than Susanoo's.
 
 One file per session, written only by the prompt hook and overwritten on every prompt. A prompt
-made only of the app's blocks (another session's note, a notification; ADR 0016) keeps the user's
-floor, autonomy request, and named workflows, and only moves the turn on (id, time, kind). A separate
+made only of the app's blocks (another session's note, a notification; ADR 0016) keeps the floor
+of the user's last message, clears its autonomy request and named workflows, and moves the turn on
+(id, time, kind). A separate
 marker file records that the route-before-edit gate already stopped an edit for that prompt, so
 the floor is never rewritten (or lost) by a tool-call hook.
 """
